@@ -1,5 +1,5 @@
 <template>
-  <div class="page">
+  <div class="page" :class="{ mobilePage: isMobile }">
     <div class="header">
       <div>
         <h1 class="title">价格审批</h1>
@@ -20,7 +20,7 @@
     <div class="panel">
       <div v-if="loading" class="hint">加载中...</div>
       <p v-else-if="error" class="error">{{ error }}</p>
-      <table v-else-if="list.length" class="table">
+      <table v-else-if="list.length" class="table" :class="{ mobileCards: isMobile }">
         <thead>
           <tr>
             <th>类型</th>
@@ -65,7 +65,7 @@
 
     <Teleport to="body">
       <div v-if="auditModalOpen" class="modalOverlay" @click.self="closeAudit">
-        <div class="modal modalWide">
+        <div class="modal modalWide" :class="{ mobileSheet: isMobile }">
           <div class="modalHeader">
             <h3 class="modalTitle">价格变更审批</h3>
             <button class="modalClose" @click="closeAudit">&times;</button>
@@ -119,7 +119,7 @@
       </div>
 
       <div v-if="createModalOpen" class="modalOverlay" @click.self="closeCreate">
-        <div class="modal modalWide">
+        <div class="modal modalWide" :class="{ mobileSheet: isMobile }">
           <div class="modalHeader">
             <h3 class="modalTitle">发起价格审批</h3>
             <button class="modalClose" @click="closeCreate">&times;</button>
@@ -175,7 +175,9 @@ import {
   PRICE_APPROVAL_STATUS_LABEL,
   PRICE_APPROVAL_STATUS_OPTIONS
 } from '../../constants/enums'
+import { useIsMobile } from '../../composables/useIsMobile'
 
+const { isMobile } = useIsMobile()
 const loading = ref(false)
 const error = ref('')
 const list = ref<PriceApprovalItem[]>([])
@@ -376,4 +378,37 @@ onMounted(() => load(1))
 .radioItem { display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; }
 .textarea { width: 100%; padding: 10px 12px; border: 1px solid #e8e8ec; border-radius: 8px; font-size: 14px; box-sizing: border-box; resize: vertical; font-family: inherit; }
 .modalFooter { display: flex; justify-content: flex-end; gap: 12px; margin-top: 8px; }
+@media (max-width: 768px) {
+  .page { max-width: none; }
+  .header { flex-direction: column; margin-bottom: 16px; }
+  .title { font-size: 21px; }
+  .header .btnPrimary { width: 100%; }
+  .toolbar { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+  .toolbar .input { width: 100%; min-width: 0; box-sizing: border-box; }
+  .panel { padding: 12px; border-radius: 14px; }
+  .mobileCards thead { display: none; }
+  .mobileCards, .mobileCards tbody, .mobileCards tr, .mobileCards td { display: block; width: 100%; }
+  .mobileCards tr { padding: 12px 0; border-bottom: 1px solid #f0f0f3; }
+  .mobileCards td {
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+    padding: 6px 0; text-align: right; border-bottom: none;
+  }
+  .mobileCards td::before { color: #8c8c9a; text-align: left; flex-shrink: 0; }
+  .mobileCards td:nth-child(1)::before { content: '类型'; }
+  .mobileCards td:nth-child(2)::before { content: '申请人'; }
+  .mobileCards td:nth-child(3)::before { content: '原因'; }
+  .mobileCards td:nth-child(4)::before { content: '状态'; }
+  .mobileCards td:nth-child(5)::before { content: '申请时间'; }
+  .mobileCards td:nth-child(6)::before { content: '操作'; }
+  .mobileCards .reasonCell {
+    max-width: none; overflow: visible; text-overflow: unset;
+    white-space: normal; word-break: break-word;
+  }
+  .pager { justify-content: center; }
+  .modalOverlay { padding: 0; align-items: flex-end; }
+  .modal.mobileSheet { max-width: 100%; width: 100%; border-radius: 18px 18px 0 0; max-height: 90vh; }
+  .infoRow { flex-direction: column; align-items: flex-start; }
+  .diffHead, .diffLine { grid-template-columns: 1fr; }
+  .rawDiff { flex-wrap: wrap; justify-content: flex-start; }
+}
 </style>

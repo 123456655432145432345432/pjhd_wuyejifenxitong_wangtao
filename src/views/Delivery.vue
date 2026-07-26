@@ -1,5 +1,5 @@
 <template>
-    <div class="page">
+    <div class="page" :class="{ mobilePage: isMobile }">
       <div class="header">
         <div>
           <h1 class="title">送货管理</h1>
@@ -61,7 +61,7 @@
               <span>{{ loading ? '加载中' : loadError ? '同步异常' : '实时同步中' }}</span>
             </div>
           </div>
-          <table class="table">
+          <table class="table courierStatusTable" :class="{ mobileCards: isMobile }">
             <thead>
               <tr>
                 <th>快递员</th>
@@ -100,7 +100,7 @@
           <div class="header">
             <h3 class="title">最新订单动态</h3>
           </div>
-          <table class="table">
+          <table class="table orderTable" :class="{ mobileCards: isMobile }">
             <thead>
               <tr>
                 <th>时间</th>
@@ -122,7 +122,7 @@
                 <td>
                   <div class="name">{{ order.residentName }}</div>
                 </td>
-                <td>{{ order.productDesc }}</td>
+                <td class="productCell">{{ order.productDesc }}</td>
                 <td>{{ order.fee }}</td>
                 <td>
                   <span class="orderStatus" :class="order.statusClass">
@@ -199,7 +199,9 @@ import {
 } from '../api/mappers'
 import { ApiError } from '../api/request'
 import { DELIVERY_CAPACITY_DIMENSION } from '../constants/enums'
+import { useIsMobile } from '../composables/useIsMobile'
 
+const { isMobile } = useIsMobile()
 const loading = ref(true)
 const loadError = ref('')
 const capacityLoading = ref(false)
@@ -352,8 +354,38 @@ onMounted(reload)
   .stats { grid-template-columns: repeat(2, 1fr); }
   .panels { grid-template-columns: 1fr; }
 }
+@media (max-width: 768px) {
+  .page { max-width: none; }
+  .header { flex-direction: column; gap: 16px; }
+  .title { font-size: 21px; }
+  .btnRefresh { width: 100%; justify-content: center; }
+  .panel { padding: 12px; border-radius: 14px; }
+  .mobileCards thead { display: none; }
+  .mobileCards, .mobileCards tbody, .mobileCards tr, .mobileCards td { display: block; width: 100%; }
+  .mobileCards tr { padding: 12px 0; border-bottom: 1px solid #f0f0f3; }
+  .mobileCards tr:last-child { border-bottom: none; }
+  .mobileCards td {
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    padding: 6px 0; text-align: right; border-bottom: none !important; word-break: break-word;
+  }
+  .mobileCards td::before { color: #8c8c9a; text-align: left; flex-shrink: 0; }
+  .courierStatusTable.mobileCards td:nth-child(1)::before { content: '快递员'; }
+  .courierStatusTable.mobileCards td:nth-child(2)::before { content: '今日完成'; }
+  .courierStatusTable.mobileCards td:nth-child(3)::before { content: '本月收入'; }
+  .courierStatusTable.mobileCards td:nth-child(4)::before { content: '状态'; }
+  .orderTable.mobileCards td:nth-child(1)::before { content: '时间'; }
+  .orderTable.mobileCards td:nth-child(2)::before { content: '用户'; }
+  .orderTable.mobileCards td:nth-child(3)::before { content: '商品'; }
+  .orderTable.mobileCards td:nth-child(4)::before { content: '费用'; }
+  .orderTable.mobileCards td:nth-child(5)::before { content: '状态'; }
+  .mobileCards td.empty {
+    justify-content: center; text-align: center; padding: 24px 12px !important;
+  }
+  .mobileCards td.empty::before { content: none; }
+  .mobileCards .productCell { white-space: normal; word-break: break-word; }
+  .capacity .header { flex-direction: column; gap: 12px; }
+}
 @media (max-width: 640px) {
   .stats { grid-template-columns: 1fr; }
-  .header { flex-direction: column; gap: 16px; }
 }
 </style>

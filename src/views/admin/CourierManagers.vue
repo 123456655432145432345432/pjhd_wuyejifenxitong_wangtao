@@ -1,5 +1,5 @@
 <template>
-  <div class="page">
+  <div class="page" :class="{ mobilePage: isMobile }">
     <div class="header">
       <div>
         <h1 class="title">快递负责人</h1>
@@ -19,7 +19,7 @@
     <div class="panel">
       <div v-if="loading" class="hint">加载中...</div>
       <p v-else-if="error" class="error">{{ error }}</p>
-      <table v-else-if="list.length" class="table">
+      <table v-else-if="list.length" class="table managerTable" :class="{ mobileCards: isMobile }">
         <thead>
           <tr>
             <th>姓名</th>
@@ -57,7 +57,7 @@
 
     <Teleport to="body">
       <div v-if="modalOpen" class="modalOverlay" @click.self="closeModal">
-        <div class="modal">
+        <div class="modal" :class="{ mobileSheet: isMobile }">
           <div class="modalHeader">
             <h3 class="modalTitle">{{ editingId ? '编辑快递负责人' : '新增快递负责人' }}</h3>
             <button class="modalClose" @click="closeModal">&times;</button>
@@ -107,7 +107,7 @@
       </div>
 
       <div v-if="detailOpen" class="modalOverlay" @click.self="detailOpen = false">
-        <div class="modal modalWide">
+        <div class="modal modalWide" :class="{ mobileSheet: isMobile }">
           <div class="modalHeader">
             <h3 class="modalTitle">负责人详情 · {{ detailTarget?.name }}</h3>
             <button class="modalClose" @click="detailOpen = false">&times;</button>
@@ -126,7 +126,7 @@
               <ResidentSearchSelect v-model="newCourierId" :status="RESIDENT_STATUS.ACTIVE" />
               <button class="btnPrimary" :disabled="binding || !newCourierId" @click="bindCourier">添加</button>
             </div>
-            <table v-if="couriers.length" class="table">
+            <table v-if="couriers.length" class="table courierTable" :class="{ mobileCards: isMobile }">
               <thead><tr><th>姓名</th><th>手机号</th><th>状态</th><th>操作</th></tr></thead>
               <tbody>
                 <tr v-for="c in couriers" :key="c.id">
@@ -164,8 +164,10 @@ import {
 } from '../../constants/enums'
 import { resolveResidentDisplayName } from '../../api/mappers'
 import { useAuthStore } from '../../stores/auth'
+import { useIsMobile } from '../../composables/useIsMobile'
 
 const auth = useAuthStore()
+const { isMobile } = useIsMobile()
 const loading = ref(false)
 const error = ref('')
 const list = ref<CourierManagerItem[]>([])
@@ -409,4 +411,41 @@ onMounted(async () => {
 .addCourier { display: flex; gap: 8px; margin-bottom: 16px; align-items: flex-start; }
 .addCourier > :first-child { flex: 1; min-width: 0; }
 .field .input { width: 100%; box-sizing: border-box; }
+.actions { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+@media (max-width: 768px) {
+  .page { max-width: none; }
+  .header { flex-direction: column; margin-bottom: 16px; }
+  .title { font-size: 21px; }
+  .header .btnPrimary { width: 100%; }
+  .toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .toolbar .input { width: 100%; min-width: 0; box-sizing: border-box; }
+  .toolbar .btnPrimary { grid-column: 1 / -1; width: 100%; }
+  .panel { padding: 12px; border-radius: 14px; }
+  .mobileCards thead { display: none; }
+  .mobileCards, .mobileCards tbody, .mobileCards tr, .mobileCards td { display: block; width: 100%; }
+  .mobileCards tr { padding: 12px 0; border-bottom: 1px solid #f0f0f3; }
+  .mobileCards td {
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    padding: 6px 0; text-align: right; border-bottom: none; word-break: break-word;
+  }
+  .mobileCards td::before { color: #8c8c9a; text-align: left; flex-shrink: 0; }
+  .managerTable.mobileCards td:nth-child(1)::before { content: '姓名'; }
+  .managerTable.mobileCards td:nth-child(2)::before { content: '手机号'; }
+  .managerTable.mobileCards td:nth-child(3)::before { content: '小区'; }
+  .managerTable.mobileCards td:nth-child(4)::before { content: '负责区域'; }
+  .managerTable.mobileCards td:nth-child(5)::before { content: '快递员数'; }
+  .managerTable.mobileCards td:nth-child(6)::before { content: '状态'; }
+  .managerTable.mobileCards td:nth-child(7)::before { content: '操作'; }
+  .courierTable.mobileCards td:nth-child(1)::before { content: '姓名'; }
+  .courierTable.mobileCards td:nth-child(2)::before { content: '手机号'; }
+  .courierTable.mobileCards td:nth-child(3)::before { content: '状态'; }
+  .courierTable.mobileCards td:nth-child(4)::before { content: '操作'; }
+  .actions { justify-content: flex-end; }
+  .pager { justify-content: center; }
+  .detailGrid { grid-template-columns: 1fr; }
+  .addCourier { flex-direction: column; }
+  .addCourier .btnPrimary { width: 100%; }
+  .modalOverlay { padding: 0; align-items: flex-end; }
+  .modal.mobileSheet { max-width: 100%; width: 100%; border-radius: 18px 18px 0 0; max-height: 90vh; }
+}
 </style>
