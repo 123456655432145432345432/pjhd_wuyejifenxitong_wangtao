@@ -193,11 +193,13 @@
               <input v-model="form.targetTags" class="input" placeholder="逗号分隔，如：新业主,首套房" />
             </div>
             <div class="field">
-              <label class="label">封面图 URL</label>
-              <input v-model="form.coverUrl" class="input" maxlength="500" placeholder="https://..." />
-              <div v-if="form.coverUrl.trim()" class="coverPreview">
-                <img :src="form.coverUrl.trim()" alt="封面预览" @error="onCoverError" />
-              </div>
+              <label class="label">封面图</label>
+              <MediaUploader
+                v-model="form.coverUrl"
+                category="merchant"
+                accept="image"
+                :max="1"
+              />
             </div>
             <div class="field">
               <label class="label">优惠信息</label>
@@ -248,6 +250,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import MediaUploader from '../../components/MediaUploader.vue'
 import { merchantApi, specialOfferApi } from '../../api/services'
 import type { MerchantItem, SpecialOfferCreatePayload, SpecialOfferItem } from '../../api/types'
 import { ApiError } from '../../api/request'
@@ -528,7 +531,7 @@ function validateForm() {
   if (form.minConsumption != null && form.minConsumption < 0) return '最低消费不能为负数'
   if (form.totalQuota != null && form.totalQuota < 1) return '总配额须不小于 1'
   if (form.perUserQuota != null && form.perUserQuota < 1) return '每人限领须不小于 1'
-  if (form.coverUrl.trim().length > 500) return '封面图 URL 不能超过 500 字'
+  if (form.coverUrl.trim().length > 500) return '封面图地址不能超过 500 字'
   return ''
 }
 
@@ -631,7 +634,6 @@ onMounted(async () => {
 .label { display: block; font-size: 13px; color: #8c8c9a; margin-bottom: 6px; }
 .label em { color: #e05c5c; font-style: normal; }
 .textarea { width: 100%; padding: 8px 12px; border: 1px solid #e8e8ec; border-radius: 8px; resize: vertical; box-sizing: border-box; }
-.coverPreview img { margin-top: 8px; max-width: 100%; max-height: 120px; border-radius: 8px; object-fit: cover; }
 .detailCover { margin-bottom: 16px; }
 .detailCover img { width: 100%; max-height: 200px; object-fit: cover; border-radius: 8px; }
 .detailList { list-style: none; margin: 0; padding: 0; }

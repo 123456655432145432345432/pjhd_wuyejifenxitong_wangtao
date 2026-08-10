@@ -94,8 +94,13 @@
               <input v-model="form.specialty" class="input" />
             </div>
             <div class="field">
-              <label class="label">头像 URL</label>
-              <input v-model="form.avatarUrl" class="input" />
+              <label class="label">头像</label>
+              <MediaUploader
+                v-model="form.avatarUrl"
+                category="avatar"
+                accept="image"
+                :max="1"
+              />
             </div>
             <div class="fieldRow">
               <div class="field">
@@ -155,6 +160,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import MediaUploader from '../../components/MediaUploader.vue'
 import { consultationAdminApi } from '../../api/services'
 import { ApiError } from '../../api/request'
 import type { ConsultantItem } from '../../api/types'

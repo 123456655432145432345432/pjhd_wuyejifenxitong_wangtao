@@ -3,13 +3,47 @@
     <div class="header">
       <div>
         <h1 class="title">配送范围与消息服务</h1>
-        <p class="desc">选择配送覆盖的小区（可多选），并配置用户消息服务（接修窗帘等需求）</p>
+        <p class="desc">配置配送方式与距离、可选服务小区，以及用户消息服务</p>
       </div>
     </div>
 
     <div class="grid">
+      <div class="card">
+        <div class="cardHead">配送方式与距离</div>
+        <p class="hint">可组合勾选小区内 / 小区外；距离维度用于匹配配送价格区间（§76）</p>
+        <div v-if="modeLoading" class="hint">加载中...</div>
+        <template v-else>
+          <div class="field">
+            <label class="label">配送方式（可组合）</label>
+            <div class="checkboxGroup compact">
+              <label class="checkbox">
+                <input v-model="modeForm.inCommunity" type="checkbox" />
+                <span>小区内配送（小区内部人员）</span>
+              </label>
+              <label class="checkbox">
+                <input v-model="modeForm.outCommunity" type="checkbox" />
+                <span>小区外配送（外部快递人员）</span>
+              </label>
+            </div>
+          </div>
+          <div class="field">
+            <label class="label">配送距离</label>
+            <select v-model="modeForm.distanceType" class="input">
+              <option v-for="opt in distanceOptions" :key="opt.value" :value="opt.value">
+                {{ opt.label }}
+              </option>
+            </select>
+          </div>
+          <p v-if="modeError" class="error">{{ modeError }}</p>
+          <p v-if="modeSuccess" class="success">{{ modeSuccess }}</p>
+          <button type="button" class="btnPrimary" :disabled="modeSaving" @click="saveDeliveryMode">
+            {{ modeSaving ? '保存中...' : '保存配送方式' }}
+          </button>
+        </template>
+      </div>
+
       <div class="card scopeCard">
-        <div class="cardHead">配送范围</div>
+        <div class="cardHead">服务小区</div>
         <div v-if="scopeLoading" class="hint">加载中...</div>
         <template v-else>
           <label class="checkbox">
@@ -36,7 +70,7 @@
           <p v-if="scopeError" class="error">{{ scopeError }}</p>
           <p v-if="scopeSuccess" class="success">{{ scopeSuccess }}</p>
           <button type="button" class="btnPrimary" :disabled="scopeSaving" @click="saveScope">
-            {{ scopeSaving ? '保存中...' : '保存配送范围' }}
+            {{ scopeSaving ? '保存中...' : '保存服务小区' }}
           </button>
         </template>
       </div>
@@ -70,7 +104,7 @@
               <span>{{ cat.name }}</span>
             </label>
           </div>
-          <p v-if="!categories.length" class="hint">暂无分类字典，可先开通后由后台配置</p>
+          <p v-if="!categories.length" class="hint">暂无分类字典</p>
         </div>
         <p v-if="msgError" class="error">{{ msgError }}</p>
         <p v-if="msgSuccess" class="success">{{ msgSuccess }}</p>
@@ -83,14 +117,34 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { merchantPortalApi, serviceCategoryApi } from '../../api/services'
+import { onMounted, reactive, ref } from 'vue'
+import { deliveryRulesApi, merchantPortalApi, serviceCategoryApi } from '../../api/services'
 import { ApiError } from '../../api/request'
 import type { MerchantServiceScopeCommunity, ServiceCategoryDictItem } from '../../api/types'
-import { SERVICE_RADIUS, SERVICE_RADIUS_OPTIONS, getPhase2ErrorMessage } from '../../constants/enums'
+import {
+  DELIVERY_SCOPE,
+  MERCHANT_DISTANCE_TYPE,
+  MERCHANT_DISTANCE_TYPE_OPTIONS,
+  SERVICE_RADIUS,
+  SERVICE_RADIUS_OPTIONS,
+  getPhase2ErrorMessage
+} from '../../constants/enums'
 import { useIsMobile } from '../../composables/useIsMobile'
 
 const { isMobile } = useIsMobile()
+
+const modeLoading = ref(false)
+const modeSaving = ref(false)
+const modeError = ref('')
+const modeSuccess = ref('')
+const merchantId = ref('')
+const modeForm = reactive({
+  inCommunity: true,
+  outCommunity: true,
+  distanceType: MERCHANT_DISTANCE_TYPE.ANY as string
+})
+const distanceOptions = ref([...MERCHANT_DISTANCE_TYPE_OPTIONS])
+
 const scopeLoading = ref(false)
 const scopeSaving = ref(false)
 const scopeError = ref('')
@@ -119,6 +173,25 @@ function communityKey(c: MerchantServiceScopeCommunity) {
   return String(c.communityId ?? '')
 }
 
+function scopeFromCheckboxes() {
+  if (modeForm.inCommunity && modeForm.outCommunity) return DELIVERY_SCOPE.BOTH
+  if (modeForm.inCommunity) return DELIVERY_SCOPE.IN_COMMUNITY
+  if (modeForm.outCommunity) return DELIVERY_SCOPE.OUT_COMMUNITY
+  return ''
+}
+
+function applyScopeToCheckboxes(scope?: string) {
+  const value = scope || DELIVERY_SCOPE.BOTH
+  modeForm.inCommunity =
+    value === DELIVERY_SCOPE.BOTH ||
+    value === DELIVERY_SCOPE.IN_COMMUNITY ||
+    value === DELIVERY_SCOPE.COMMUNITY_INSIDE
+  modeForm.outCommunity =
+    value === DELIVERY_SCOPE.BOTH ||
+    value === DELIVERY_SCOPE.OUT_COMMUNITY ||
+    value === DELIVERY_SCOPE.COMMUNITY_OUTSIDE
+}
+
 function onServeAllChange() {
   if (serveAll.value) selectedIds.value = []
 }
@@ -129,6 +202,64 @@ function selectAllCommunities() {
 
 function clearCommunitySelection() {
   selectedIds.value = []
+}
+
+async function loadScopeOptions() {
+  try {
+    const data = await deliveryRulesApi.scopeOptions()
+    if (data.distanceTypes?.length) {
+      distanceOptions.value = data.distanceTypes.map((item) => ({
+        value: item.code,
+        label: item.description
+      }))
+    }
+  } catch {
+    // 回退本地枚举
+  }
+}
+
+async function loadDeliveryMode() {
+  modeLoading.value = true
+  modeError.value = ''
+  try {
+    const shop = await merchantPortalApi.my()
+    merchantId.value = shop.id
+    applyScopeToCheckboxes(shop.deliveryScope)
+    modeForm.distanceType = shop.distanceType || MERCHANT_DISTANCE_TYPE.ANY
+  } catch (e) {
+    modeError.value = resolveError(e)
+  } finally {
+    modeLoading.value = false
+  }
+}
+
+async function saveDeliveryMode() {
+  if (!merchantId.value) {
+    modeError.value = '店铺信息未加载'
+    return
+  }
+  const deliveryScope = scopeFromCheckboxes()
+  if (!deliveryScope) {
+    modeError.value = '请至少勾选一种配送方式（小区内 / 小区外）'
+    return
+  }
+  modeSaving.value = true
+  modeError.value = ''
+  modeSuccess.value = ''
+  try {
+    const shop = await merchantPortalApi.update(merchantId.value, {
+      deliveryScope,
+      distanceType: modeForm.distanceType || MERCHANT_DISTANCE_TYPE.ANY
+    })
+    merchantId.value = shop.id
+    applyScopeToCheckboxes(shop.deliveryScope ?? deliveryScope)
+    modeForm.distanceType = shop.distanceType || modeForm.distanceType
+    modeSuccess.value = '配送方式与距离已保存'
+  } catch (e) {
+    modeError.value = resolveError(e)
+  } finally {
+    modeSaving.value = false
+  }
 }
 
 async function loadScope() {
@@ -171,7 +302,7 @@ async function saveScope() {
       serveAllCommunities: serveAll.value,
       communityIds: serveAll.value ? undefined : [...selectedIds.value]
     })
-    scopeSuccess.value = '配送范围已保存'
+    scopeSuccess.value = '服务小区已保存'
     await loadScope()
   } catch (e) {
     scopeError.value = resolveError(e)
@@ -199,7 +330,7 @@ async function saveMessageService() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadScope(), loadCategories()])
+  await Promise.all([loadScopeOptions(), loadDeliveryMode(), loadScope(), loadCategories()])
 })
 </script>
 
@@ -256,7 +387,7 @@ onMounted(async () => {
 .scopeCard .btnLink:hover {
   color: #4a4a82;
 }
-.scopeCard .checkbox input[type='checkbox'] {
+.checkbox input[type='checkbox'] {
   accent-color: #5c5c9e;
 }
 .checkboxGroup {
@@ -265,6 +396,9 @@ onMounted(async () => {
   gap: 8px;
   max-height: 280px;
   overflow-y: auto;
+}
+.checkboxGroup.compact {
+  max-height: none;
 }
 .checkbox {
   display: inline-flex;
@@ -307,6 +441,7 @@ onMounted(async () => {
 .hint {
   color: #8c8c9a;
   font-size: 13px;
+  margin: 0;
 }
 .error {
   color: #d14343;

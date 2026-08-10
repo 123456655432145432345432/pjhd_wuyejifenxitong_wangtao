@@ -7,16 +7,117 @@
 
 html {
   -webkit-text-size-adjust: 100%;
+  overscroll-behavior: none;
 }
 
 @media (max-width: 768px) {
   body {
     background: #f4f5f7;
+    overscroll-behavior: none;
+    /* 减少原生 WebView 边缘回弹/拉伸 */
+    -webkit-overflow-scrolling: auto;
   }
 
   .mobileSheet {
     max-width: 100%;
     border-radius: var(--mobile-sheet-radius) var(--mobile-sheet-radius) 0 0;
     margin-top: auto;
+  }
+}
+
+/**
+ * 移动端表格字段分层显示
+ * - primary: 标题级，单行省略
+ * - clamp: 中长文，默认最多 2 行，可点开展开
+ * - nowrap: 状态/金额/时间/手机号等短字段
+ */
+.mCellText {
+  min-width: 0;
+  max-width: 100%;
+  color: inherit;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.mCellText--primary {
+  display: inline-block;
+  max-width: 100%;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  vertical-align: bottom;
+}
+
+.mCellText--nowrap {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  vertical-align: bottom;
+}
+
+.mCellText--clamp {
+  /* 桌面保持正常换行，由各列表自身的 max-width/ellipsis 约束；移动端再截断 */
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 768px) {
+  .mCellText--clamp {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: var(--m-clamp-lines, 2);
+    line-clamp: var(--m-clamp-lines, 2);
+    overflow: hidden;
+  }
+
+  .mCellText--clamp.is-expanded {
+    display: block;
+    -webkit-line-clamp: unset;
+    line-clamp: unset;
+    overflow: visible;
+  }
+
+  .mCellText--clamp.is-expandable {
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-color: rgba(92, 92, 158, 0.35);
+    text-underline-offset: 2px;
+  }
+
+  .mCellText--clamp.is-expandable.is-expanded {
+    text-decoration: none;
+  }
+
+  /* 卡片行内：值侧限宽，避免把左侧标签挤没 */
+  .table.mobileCards td > .mCellText {
+    flex: 1 1 auto;
+    max-width: 68%;
+    text-align: right;
+  }
+
+  .table.mobileCards td {
+    align-items: flex-start;
+  }
+
+  /* 长字段改为上下结构，扫读更稳 */
+  .table.mobileCards td.mCellStack {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    text-align: left;
+  }
+
+  .table.mobileCards td.mCellStack::before {
+    text-align: left;
+  }
+
+  .table.mobileCards td.mCellStack > .mCellText {
+    max-width: none;
+    text-align: left;
   }
 }

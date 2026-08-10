@@ -3,7 +3,7 @@
     <div class="header">
       <div>
         <h1 class="title">店铺概览</h1>
-        <p class="desc">查看经营数据，管理店铺基本信息</p>
+        <p class="desc">查看经营数据，管理店铺基本信息。订单确认完成后，本单收入计入可提现。</p>
       </div>
       <div class="headerActions">
         <template v-if="shop && !loading">
@@ -34,13 +34,13 @@
           <div class="label">累计收入</div>
           <div class="value">¥{{ formatMoney(shop.totalRevenue) }}</div>
         </div>
+        <div class="statCard">
+          <div class="label">可提现余额</div>
+          <div class="value">¥{{ formatMoney(shop.withdrawableAmount) }}</div>
+        </div>
         <div class="statCard purple">
           <div class="label">在售商品</div>
           <div class="value">{{ shop.products?.length ?? 0 }}</div>
-        </div>
-        <div class="statCard">
-          <div class="label">店铺状态</div>
-          <div class="value small">{{ getEnumLabel(MERCHANT_STATUS_LABEL, shop.status) }}</div>
         </div>
       </div>
 
@@ -52,12 +52,15 @@
             <div><dt>名称</dt><dd>{{ shop.name }}</dd></div>
             <div><dt>分类</dt><dd>{{ shop.category || '—' }}</dd></div>
             <div><dt>等级</dt><dd>{{ getEnumLabel(MERCHANT_LEVEL_LABEL, shop.merchantLevel) }}</dd></div>
+            <div><dt>来源</dt><dd>{{ getEnumLabel(MERCHANT_SOURCE_LABEL, shop.merchantSource) }}</dd></div>
             <div><dt>审核</dt><dd>{{ getEnumLabel(MERCHANT_AUDIT_STATUS_LABEL, shop.auditStatus) }}</dd></div>
             <div><dt>电话</dt><dd>{{ shop.contactPhone || '—' }}</dd></div>
             <div><dt>地址</dt><dd>{{ shop.address || '—' }}</dd></div>
             <div><dt>营业时间</dt><dd>{{ shop.businessHours || '—' }}</dd></div>
             <div><dt>配送费</dt><dd>¥{{ formatMoney(shop.deliveryFee) }}</dd></div>
             <div><dt>免配送门槛</dt><dd>{{ shop.freeDeliveryThreshold != null ? `¥${formatMoney(shop.freeDeliveryThreshold)}` : '—' }}</dd></div>
+            <div><dt>配送方式</dt><dd>{{ getEnumLabel(DELIVERY_SCOPE_LABEL, shop.deliveryScope, '—') }}</dd></div>
+            <div><dt>配送距离</dt><dd>{{ getEnumLabel(DISTANCE_TYPE_LABEL, shop.distanceType, '—') }}</dd></div>
           </dl>
 
           <form v-else class="form" @submit.prevent="save">
@@ -90,16 +93,17 @@
               </div>
             </div>
             <div class="field">
-              <label class="label">封面图 URL</label>
-              <input v-model="form.coverUrlsText" class="input" placeholder="多个 URL 用英文逗号分隔" />
+              <label class="label">封面图</label>
+              <MediaUploader v-model="form.coverUrls" category="merchant" accept="image" :max="9" />
             </div>
             <div class="field">
-              <label class="label">视频 URL</label>
-              <input v-model="form.videoUrl" class="input" maxlength="500" />
+              <label class="label">视频</label>
+              <MediaUploader v-model="form.videoUrl" category="merchant" accept="video" :max="1" />
             </div>
             <div class="readonlyRow">
               <span>分类：{{ shop.category || '—' }}</span>
               <span>等级：{{ getEnumLabel(MERCHANT_LEVEL_LABEL, shop.merchantLevel) }}</span>
+              <span>来源：{{ getEnumLabel(MERCHANT_SOURCE_LABEL, shop.merchantSource) }}</span>
               <span>审核：{{ getEnumLabel(MERCHANT_AUDIT_STATUS_LABEL, shop.auditStatus) }}</span>
             </div>
           </form>
@@ -128,11 +132,14 @@ import type { MyMerchantDetail } from '../../api/types'
 import { ApiError } from '../../api/request'
 import {
   getEnumLabel,
+  DELIVERY_SCOPE_LABEL,
+  DISTANCE_TYPE_LABEL,
   MERCHANT_AUDIT_STATUS_LABEL,
   MERCHANT_LEVEL_LABEL,
-  MERCHANT_STATUS_LABEL
+  MERCHANT_SOURCE_LABEL
 } from '../../constants/enums'
 import { useIsMobile } from '../../composables/useIsMobile'
+import MediaUploader from '../../components/MediaUploader.vue'
 
 const { isMobile } = useIsMobile()
 const shop = ref<MyMerchantDetail | null>(null)
@@ -151,7 +158,7 @@ const form = reactive({
   businessHours: '',
   deliveryFee: undefined as number | undefined,
   freeDeliveryThreshold: undefined as number | undefined,
-  coverUrlsText: '',
+  coverUrls: [] as string[],
   videoUrl: ''
 })
 
@@ -169,15 +176,8 @@ function syncFormFromShop(data: MyMerchantDetail) {
   form.deliveryFee = data.deliveryFee != null ? Number(data.deliveryFee) : undefined
   form.freeDeliveryThreshold =
     data.freeDeliveryThreshold != null ? Number(data.freeDeliveryThreshold) : undefined
-  form.coverUrlsText = data.coverUrls?.join(', ') || ''
+  form.coverUrls = Array.isArray(data.coverUrls) ? [...data.coverUrls] : []
   form.videoUrl = data.videoUrl || ''
-}
-
-function parseCoverUrls(text: string) {
-  return text
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean)
 }
 
 async function load() {
@@ -220,7 +220,7 @@ async function save() {
   saveError.value = ''
   saveSuccess.value = ''
   try {
-    const coverUrls = parseCoverUrls(form.coverUrlsText)
+    const coverUrls = form.coverUrls.filter(Boolean)
     shop.value = await merchantPortalApi.update(shop.value.id, {
       name,
       description: form.description.trim() || undefined,

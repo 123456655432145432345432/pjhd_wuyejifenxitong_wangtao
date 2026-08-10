@@ -14,19 +14,13 @@
 
         <div class="logo">
 
-          <svg viewBox="0 0 40 40" fill="none">
-
-            <rect width="40" height="40" rx="8" fill="rgba(255,255,255,0.2)" />
-
-            <path d="M12 28V14l8-5 8 5v14h-6v-7h-4v7H12z" fill="white" />
-
-          </svg>
+          <img :src="appLogo" alt="邻里商城服务管理端" />
 
         </div>
 
-        <h1 class="title">万达物业</h1>
+        <h1 class="title">邻里商城服务管理端</h1>
 
-        <p class="desc">智享万达 · 社区管理系统</p>
+        <p class="desc">智享邻里 · 社区管理系统</p>
 
         <p class="hint">统一管理住户、积分、商家与物业运营</p>
 
@@ -153,8 +147,10 @@ import { useRouter } from 'vue-router'
 import IconSvg from '../components/IconSvg.vue'
 import { useAuthStore } from '../stores/auth'
 import { getRoleHomeRoute } from '../constants/roles'
+import { isMobileShellRole } from '../constants/mobilePortal'
 import { ApiError } from '../api/request'
 import ccbBg from '../assets/images/ccb.jpg'
+import appLogo from '../assets/images/app-logo.png'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -204,7 +200,15 @@ async function handleSubmit() {
   try {
 
     await auth.login(form.phone, form.password, form.remember)
-    router.replace({ name: getRoleHomeRoute(auth.profile?.role) })
+    if (!auth.isLoggedIn || !auth.profile?.role) {
+      error.value = '登录状态异常，请重试'
+      return
+    }
+    const entryRoute =
+      window.innerWidth <= 768 && isMobileShellRole(auth.profile?.role)
+        ? 'mobile-home'
+        : getRoleHomeRoute(auth.profile?.role)
+    await router.replace({ name: entryRoute })
 
   } catch (e) {
 
@@ -304,11 +308,16 @@ async function handleSubmit() {
 
 
 
-.logo svg {
+.logo svg,
+.logo img {
 
   width: 100%;
 
   height: 100%;
+
+  object-fit: contain;
+
+  border-radius: 12px;
 
 }
 

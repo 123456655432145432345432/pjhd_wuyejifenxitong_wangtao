@@ -2,8 +2,8 @@
   <div class="page">
     <div class="header">
       <div>
-        <h1 class="title">商品管理</h1>
-        <p class="desc">维护店铺商品与库存</p>
+        <h1 class="title">{{ pageTitle }}</h1>
+        <p class="desc">{{ pageDesc }}</p>
       </div>
       <button class="btnPrimary" @click="openCreate">新增商品</button>
     </div>
@@ -12,6 +12,7 @@
       <div v-if="loading" class="loading">加载中...</div>
       <p v-else-if="error" class="error">{{ error }}</p>
       <template v-else>
+        <p v-if="shopHint" class="hint">{{ shopHint }}</p>
         <div v-if="products.length && isMobile" class="mobileList">
           <article v-for="item in products" :key="item.id" class="mobileCard">
             <img v-if="item.coverUrl" :src="item.coverUrl" :alt="item.name" class="coverThumb" />
@@ -87,26 +88,21 @@
             </div>
             <div class="field">
               <label class="label">分类</label>
-              <input
-                v-model="form.category"
-                class="input"
-                maxlength="50"
-                placeholder="如：饮料"
-              />
+              <select v-model="form.category" class="input">
+                <option value="">请选择平台分类</option>
+                <option
+                  v-for="opt in categorySelectOptions"
+                  :key="opt.value"
+                  :value="opt.value"
+                >
+                  {{ opt.label }}
+                </option>
+              </select>
+              <p class="formHint">分类由平台统一设计，发布时从列表中选择。</p>
             </div>
             <div class="field">
-              <label class="label">封面图 URL</label>
-              <input
-                v-model="form.coverUrl"
-                class="input"
-                maxlength="500"
-                placeholder="https://example.com/product.jpg"
-                @input="coverPreviewError = false"
-              />
-              <div v-if="form.coverUrl.trim()" class="coverPreview">
-                <img :src="form.coverUrl.trim()" alt="封面预览" @error="onCoverError" />
-                <p v-if="coverPreviewError" class="previewHint">图片加载失败，请检查 URL</p>
-              </div>
+              <label class="label">封面图</label>
+              <MediaUploader v-model="form.coverUrl" category="merchant" accept="image" :max="1" />
             </div>
             <div class="field">
               <label class="label">描述</label>
@@ -186,22 +182,33 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { merchantPortalApi } from '../../api/services'
 import type { ProductCreatePayload, ProductItem, ProductUpdatePayload } from '../../api/types'
 import { ApiError } from '../../api/request'
-import { ENTITY_STATUS } from '../../constants/enums'
+import { ENTITY_STATUS, PRODUCT_CATEGORY_OPTIONS } from '../../constants/enums'
 import { useIsMobile } from '../../composables/useIsMobile'
+import MediaUploader from '../../components/MediaUploader.vue'
 
+const route = useRoute()
 const { isMobile } = useIsMobile()
+const isActivityLeaderShop = computed(() => route.name === 'activity-leader-products')
+const pageTitle = computed(() => (isActivityLeaderShop.value ? '我的小店' : '商品管理'))
+const pageDesc = computed(() =>
+  isActivityLeaderShop.value
+    ? '首次上架商品将自动开通组长小店，商品进入主商城'
+    : '维护店铺商品与库存'
+)
+
 const products = ref<ProductItem[]>([])
 const loading = ref(false)
 const error = ref('')
+const shopHint = ref('')
 const modalOpen = ref(false)
 const editingId = ref('')
 const submitting = ref(false)
 const formError = ref('')
-const coverPreviewError = ref(false)
 
 const form = reactive({
   name: '',
@@ -215,6 +222,16 @@ const form = reactive({
   status: ENTITY_STATUS.ACTIVE
 })
 
+/** 编辑时若历史分类不在平台列表中，临时并入选项以免丢失 */
+const categorySelectOptions = computed(() => {
+  const base = PRODUCT_CATEGORY_OPTIONS.map((o) => ({ value: o.value, label: o.label }))
+  const current = form.category.trim()
+  if (current && !base.some((o) => o.value === current)) {
+    base.push({ value: current, label: `${current}（历史）` })
+  }
+  return base
+})
+
 function formatMoney(value?: number) {
   if (value === undefined || value === null) return '0.00'
   return Number(value).toFixed(2)
@@ -224,10 +241,6 @@ function statusLabel(status?: string) {
   if (status === ENTITY_STATUS.ACTIVE) return '上架'
   if (status === ENTITY_STATUS.INACTIVE) return '下架'
   return status || '—'
-}
-
-function onCoverError() {
-  coverPreviewError.value = true
 }
 
 function resetForm() {
@@ -241,12 +254,12 @@ function resetForm() {
   form.description = ''
   form.status = ENTITY_STATUS.ACTIVE
   formError.value = ''
-  coverPreviewError.value = false
 }
 
 async function load() {
   loading.value = true
   error.value = ''
+  shopHint.value = ''
   try {
     const shop = await merchantPortalApi.my()
     const res = await merchantPortalApi.products({
@@ -257,7 +270,13 @@ async function load() {
     })
     products.value = res.list?.length ? res.list : shop.products || []
   } catch (e) {
-    error.value = e instanceof ApiError ? e.message : '商品加载失败'
+    products.value = []
+    // 组长首次访问尚未自动建店时，允许直接新增商品触发绑定
+    if (isActivityLeaderShop.value) {
+      shopHint.value = '尚未开通小店：点击「新增商品」上架后将自动创建组长小店'
+    } else {
+      error.value = e instanceof ApiError ? e.message : '商品加载失败'
+    }
   } finally {
     loading.value = false
   }
@@ -281,7 +300,6 @@ function openEdit(item: ProductItem) {
   form.description = item.description || ''
   form.status = item.status || ENTITY_STATUS.ACTIVE
   formError.value = ''
-  coverPreviewError.value = false
   modalOpen.value = true
 }
 
@@ -294,7 +312,7 @@ function validateForm(): string | null {
   if (!name) return '请输入商品名称'
   if (name.length > 100) return '商品名称不能超过 100 字'
   if (form.category.trim().length > 50) return '分类不能超过 50 字'
-  if (form.coverUrl.trim().length > 500) return '封面图 URL 不能超过 500 字'
+  if (form.coverUrl.trim().length > 500) return '封面图地址过长'
   if (form.price == null || form.price < 0.01) return '请输入有效价格（≥ 0.01）'
   if (form.memberPrice != null && form.memberPrice < 0.01) return '会员价需 ≥ 0.01'
   if (form.pointPrice != null && form.pointPrice < 1) return '积分价需 ≥ 1'
@@ -360,6 +378,7 @@ onMounted(load)
 .panel { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); overflow-x: auto; }
 .loading, .empty, .error { text-align: center; padding: 32px 0; color: #8c8c9a; font-size: 14px; }
 .error { color: #e05c5c; }
+.hint { font-size: 13px; color: #5c5c9e; background: #f5f5fb; border-radius: 8px; padding: 10px 12px; margin: 0 0 12px; text-align: left; }
 .table { width: 100%; border-collapse: collapse; min-width: 880px; }
 .table th, .table td { padding: 12px 10px; text-align: left; border-bottom: 1px solid #f0f0f3; font-size: 13px; vertical-align: middle; }
 .table th { color: #8c8c9a; font-weight: 500; }
@@ -385,6 +404,7 @@ onMounted(load)
 .coverPreview { margin-top: 10px; }
 .coverPreview img { width: 120px; height: 120px; object-fit: cover; border-radius: 8px; border: 1px solid #f0f0f3; }
 .previewHint { margin-top: 6px; font-size: 12px; color: #e05c5c; }
+.formHint { margin: 6px 0 0; font-size: 12px; color: #8c8c9a; }
 .mobileList { display: flex; flex-direction: column; gap: 12px; }
 .mobileCard { display: flex; gap: 12px; align-items: flex-start; border: 1px solid #ececf2; border-radius: 10px; padding: 12px; }
 .mobileContent { flex: 1; min-width: 0; }

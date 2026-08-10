@@ -71,8 +71,13 @@
                 <input v-model="productForm.productId" class="input" placeholder="prd_xxx" />
               </div>
               <div class="field">
-                <label class="label">封面 URL</label>
-                <input v-model="productForm.coverUrl" class="input" placeholder="https://..." />
+                <label class="label">封面图</label>
+                <MediaUploader
+                  v-model="productForm.coverUrl"
+                  category="merchant"
+                  accept="image"
+                  :max="1"
+                />
               </div>
             </div>
             <div v-if="publishMode === 'activity'" class="fieldGroup">
@@ -155,12 +160,12 @@
               <input v-model="form.merchantId" class="input" placeholder="merchant_xxx，商家公告时填写" />
             </div>
             <div class="field">
-              <label class="label">封面图片 URL</label>
-              <textarea
-                v-model="form.coverUrlsText"
-                class="contentInput"
-                rows="2"
-                placeholder="每行一个图片地址，可选"
+              <label class="label">封面图</label>
+              <MediaUploader
+                v-model="form.coverUrls"
+                category="announcement"
+                accept="image"
+                :max="9"
               />
             </div>
             <div class="field">
@@ -487,6 +492,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import IconSvg from '../components/IconSvg.vue'
+import MediaUploader from '../components/MediaUploader.vue'
 import { useIsMobile } from '../composables/useIsMobile'
 import { announcementApi, announcementExtApi, residentApi } from '../api/services'
 import { mapAnnouncements } from '../api/mappers'
@@ -557,7 +563,7 @@ const form = ref<{
   merchantId: string
   collectEnabled: boolean
   collectFields: AnnouncementCollectField[]
-  coverUrlsText: string
+  coverUrls: string[]
   deliveryChannel: string
 }>({
   title: '',
@@ -568,7 +574,7 @@ const form = ref<{
   merchantId: '',
   collectEnabled: false,
   collectFields: [] as AnnouncementCollectField[],
-  coverUrlsText: '',
+  coverUrls: [] as string[],
   deliveryChannel: DELIVERY_CHANNEL.ANNOUNCEMENT_BOARD
 })
 const selectAllBuildings = ref(true)
@@ -727,13 +733,6 @@ async function loadBuildingOptions() {
   }
 }
 
-function parseCoverUrls(text: string) {
-  return text
-    .split(/[\n,]/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-}
-
 function buildCollectFields() {
   if (!form.value.collectEnabled) return undefined
   const fields = form.value.collectFields
@@ -768,7 +767,7 @@ function buildCreatePayload(status: string): AnnouncementCreatePayload {
   if (buildings?.length) payload.targetBuildings = buildings
   const targetRoles = buildTargetRoles()
   if (targetRoles?.length) payload.targetRoles = targetRoles
-  const coverUrls = parseCoverUrls(form.value.coverUrlsText)
+  const coverUrls = form.value.coverUrls.filter((item) => item.trim())
   if (coverUrls.length) payload.coverUrls = coverUrls
   const collectFields = buildCollectFields()
   if (collectFields?.length) payload.collectFields = collectFields
@@ -795,8 +794,8 @@ function buildUpdatePayload(status: string): AnnouncementUpdatePayload {
   if (!selectAllTargetRoles.value) {
     payload.targetRoles = buildTargetRoles() ?? []
   }
-  const coverUrls = parseCoverUrls(form.value.coverUrlsText)
-  if (coverUrls.length) payload.coverUrls = coverUrls
+  const updateCoverUrls = form.value.coverUrls.filter((item) => item.trim())
+  if (updateCoverUrls.length) payload.coverUrls = updateCoverUrls
   const collectFields = buildCollectFields()
   if (collectFields?.length) payload.collectFields = collectFields
   return payload
@@ -824,7 +823,7 @@ function resetForm() {
     merchantId: '',
     collectEnabled: false,
     collectFields: [],
-    coverUrlsText: '',
+    coverUrls: [],
     deliveryChannel: DELIVERY_CHANNEL.ANNOUNCEMENT_BOARD
   }
   selectAllBuildings.value = true
@@ -863,7 +862,7 @@ function applyDetailToForm(data: AnnouncementItem) {
   form.value.collectFields = data.collectFields?.length
     ? data.collectFields.map((field) => ({ ...field }))
     : []
-  form.value.coverUrlsText = data.coverUrls?.join('\n') || ''
+  form.value.coverUrls = data.coverUrls?.length ? [...data.coverUrls] : []
   form.value.deliveryChannel = data.deliveryChannel || DELIVERY_CHANNEL.ANNOUNCEMENT_BOARD
   selectAllBuildings.value = !data.targetBuildings?.length
   formError.value = ''

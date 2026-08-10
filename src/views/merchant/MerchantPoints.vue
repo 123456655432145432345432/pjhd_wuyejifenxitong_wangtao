@@ -14,10 +14,7 @@
         <div class="field">
           <label class="label">积分数量</label>
           <input v-model.number="purchaseForm.pointAmount" type="number" min="1" class="input" />
-        </div>
-        <div class="field">
-          <label class="label">支付金额（元）</label>
-          <input v-model.number="purchaseForm.payAmount" type="number" min="0.01" step="0.01" class="input" />
+          <p class="hint">支付金额由系统按商家兑换比例自动计算（以商家挂接配置与审核记录为准）。</p>
         </div>
         <button class="btnPrimary" :disabled="purchaseSubmitting" @click="submitPurchase">
           {{ purchaseSubmitting ? '提交中...' : '提交购买申请' }}
@@ -153,7 +150,7 @@ const purchaseMsgType = ref('success')
 const grantMsg = ref('')
 const grantMsgType = ref('success')
 
-const purchaseForm = reactive({ pointAmount: 1000, payAmount: 100 })
+const purchaseForm = reactive({ pointAmount: 1000 })
 const grantForm = reactive({
   orderId: '',
   pointAmount: 50,
@@ -175,6 +172,7 @@ function formatMoney(value?: number) {
 
 const POINT_PURCHASE_STATUS_LABEL: Record<string, string> = {
   pending: '审核中',
+  pending_audit: '审核中',
   approved: '已通过',
   rejected: '已拒绝'
 }
@@ -249,19 +247,22 @@ async function reloadAll() {
 }
 
 async function submitPurchase() {
-  if (!purchaseForm.pointAmount || !purchaseForm.payAmount) {
-    purchaseMsg.value = '请填写积分数量和支付金额'
+  if (!purchaseForm.pointAmount || purchaseForm.pointAmount < 1) {
+    purchaseMsg.value = '请填写有效积分数量'
     purchaseMsgType.value = 'error'
     return
   }
   purchaseSubmitting.value = true
   purchaseMsg.value = ''
   try {
-    await merchantPortalApi.purchasePoints({
-      pointAmount: purchaseForm.pointAmount,
-      payAmount: purchaseForm.payAmount
+    const result = await merchantPortalApi.purchasePoints({
+      pointAmount: purchaseForm.pointAmount
     })
-    purchaseMsg.value = '购买申请已提交，等待审核'
+    const payText =
+      result.payAmount !== undefined && result.payAmount !== null
+        ? `，应付 ¥${formatMoney(result.payAmount)}`
+        : ''
+    purchaseMsg.value = `购买申请已提交${payText}，等待审核`
     purchaseMsgType.value = 'success'
     await reloadAll()
   } catch (e) {

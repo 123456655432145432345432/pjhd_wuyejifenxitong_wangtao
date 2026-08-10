@@ -4,7 +4,7 @@
       <button v-if="mobile" class="appHeaderMenuBtn" @click="emit('toggle-menu')">
         <IconSvg :name="menuOpen ? 'close' : 'menu'" />
       </button>
-      <span class="appHeaderBrand">万达花园物业</span>
+      <span class="appHeaderBrand">邻里商城服务管理端</span>
       <span v-if="!mobile" class="appHeaderDivider">/</span>
       <span class="appHeaderCurrent">{{ pageTitle }}</span>
     </div>
@@ -15,7 +15,6 @@
           v-model="selectedCompanyId"
           class="companySelect"
           :disabled="!canSwitchCompany"
-          @change="onCompanyChange"
         >
           <option v-for="company in companies" :key="company.id" :value="company.id">
             {{ company.name }}
@@ -92,11 +91,6 @@ async function loadCompanies() {
   } catch (e) {
     console.error(e)
   }
-}
-
-function onCompanyChange() {
-  if (!canSwitchCompany.value) return
-  router.go(0)
 }
 
 function handleLogout() {

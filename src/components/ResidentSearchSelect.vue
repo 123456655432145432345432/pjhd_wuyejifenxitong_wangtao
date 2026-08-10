@@ -48,6 +48,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:modelValue': [value: string]
+  select: [item: ResidentItem]
 }>()
 
 const root = ref<HTMLElement | null>(null)
@@ -104,6 +105,7 @@ function onInput() {
 
 function select(item: ResidentItem) {
   emit('update:modelValue', item.id)
+  emit('select', item)
   keyword.value = formatLabel(item)
   open.value = false
 }

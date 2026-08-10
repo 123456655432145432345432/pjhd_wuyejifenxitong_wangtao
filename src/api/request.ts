@@ -21,11 +21,17 @@ export class ApiError extends Error {
   }
 }
 
-/** 优先拼接后端 errors[].message，否则回退 message */
+/** 提现等业务常见错误码兜底文案（后端已返回 message 时仍优先用后端） */
+const KNOWN_ERROR_MESSAGES: Record<number, string> = {
+  94003: '可提现余额不足',
+  94005: '当前账号已被阻止提现'
+}
+
+/** 优先拼接后端 errors[].message，否则回退 message / 已知错误码文案 */
 export function formatApiError(e: unknown, fallback = '操作失败') {
   if (e instanceof ApiError) {
     const detail = e.errors?.map((item) => item.message).filter(Boolean).join('；')
-    return detail || e.message || fallback
+    return detail || e.message || KNOWN_ERROR_MESSAGES[e.code] || fallback
   }
   if (e instanceof Error) return e.message || fallback
   return fallback
@@ -167,14 +173,25 @@ function handleForbidden(json: ApiResponse<unknown>, res: Response) {
   throw new ApiError(json.code || res.status, message)
 }
 
+export type RequestAuthOptions = {
+  /** 为 true 时鉴权失败只抛错，不触发全局登出（用于登录后补拉 profile） */
+  softAuth?: boolean
+}
+
 export async function request<T>(
   path: string,
-  options: RequestInit = {},
+  options: RequestInit & RequestAuthOptions = {},
   auth = true,
   retried = false
 ): Promise<T> {
-  const headers = new Headers(options.headers || {})
-  if (!headers.has('Content-Type') && options.body) {
+  const { softAuth, ...fetchOptions } = options
+  const headers = new Headers(fetchOptions.headers || {})
+  // FormData 须由浏览器自动带 multipart boundary，不可手动设 Content-Type
+  if (
+    !headers.has('Content-Type') &&
+    fetchOptions.body &&
+    !(fetchOptions.body instanceof FormData)
+  ) {
     headers.set('Content-Type', 'application/json')
   }
 
@@ -187,7 +204,7 @@ export async function request<T>(
   }
 
   const res = await fetch(`${API_BASE_URL}${withCompanyQuery(path)}`, {
-    ...options,
+    ...fetchOptions,
     headers
   })
 
@@ -198,6 +215,9 @@ export async function request<T>(
   }
 
   if (auth && !retried && AUTH_ERROR_CODES.has(json.code)) {
+    if (softAuth) {
+      throw new ApiError(json.code, json.message || '登录已过期，请重新登录')
+    }
     if (json.code === 20002) {
       await tryRefreshToken()
       return request<T>(path, options, auth, true)
@@ -215,7 +235,7 @@ export async function request<T>(
 
 export async function requestRaw<T>(
   path: string,
-  options: RequestInit = {},
+  options: RequestInit & RequestAuthOptions = {},
   auth = true
 ): Promise<T> {
   return request<T>(path, options, auth)

@@ -3,7 +3,7 @@
       <div class="header">
         <div>
           <h1 class="title">送货管理</h1>
-          <p class="desc">管理快递配送、快递员与订单</p>
+          <p class="desc">配送监控看板（配送费/起送门槛由商家设置，成本从商家费用扣除；物业不做配送定价干预）</p>
         </div>
         <button class="btnRefresh" :disabled="loading" @click="reload">
           <IconSvg name="refresh" />
@@ -81,11 +81,11 @@
                 <td>
                   <div class="userInfo">
                     <div class="avatar" :style="{ background: courier.avatarColor }">{{ courier.initials }}</div>
-                    <span class="name">{{ courier.name }}</span>
+                    <MobileCellText variant="primary">{{ courier.name }}</MobileCellText>
                   </div>
                 </td>
-                <td>{{ courier.todayCompleted }}</td>
-                <td>{{ courier.monthIncome }}</td>
+                <td><MobileCellText variant="nowrap">{{ courier.todayCompleted }}</MobileCellText></td>
+                <td><MobileCellText variant="nowrap">{{ courier.monthIncome }}</MobileCellText></td>
                 <td>
                   <span class="status" :class="courier.statusClass">
                     {{ courier.statusLabel }}
@@ -118,12 +118,14 @@
                 <td colspan="5" class="empty">暂无配送记录</td>
               </tr>
               <tr v-for="order in deliveryOrders" :key="order.id">
-                <td>{{ order.time }}</td>
+                <td><MobileCellText variant="nowrap">{{ order.time }}</MobileCellText></td>
                 <td>
-                  <div class="name">{{ order.residentName }}</div>
+                  <MobileCellText variant="primary">{{ order.residentName }}</MobileCellText>
                 </td>
-                <td class="productCell">{{ order.productDesc }}</td>
-                <td>{{ order.fee }}</td>
+                <td class="productCell mCellStack">
+                  <MobileCellText>{{ order.productDesc }}</MobileCellText>
+                </td>
+                <td><MobileCellText variant="nowrap">{{ order.fee }}</MobileCellText></td>
                 <td>
                   <span class="orderStatus" :class="order.statusClass">
                     {{ order.statusLabel }}
@@ -190,6 +192,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import IconSvg from '../components/IconSvg.vue'
+import MobileCellText from '../components/MobileCellText.vue'
 import { deliveryApi } from '../api/services'
 import {
   mapCapacityBars,
@@ -365,10 +368,12 @@ onMounted(reload)
   .mobileCards tr { padding: 12px 0; border-bottom: 1px solid #f0f0f3; }
   .mobileCards tr:last-child { border-bottom: none; }
   .mobileCards td {
-    display: flex; justify-content: space-between; align-items: center; gap: 12px;
-    padding: 6px 0; text-align: right; border-bottom: none !important; word-break: break-word;
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+    padding: 6px 0; text-align: right; border-bottom: none !important;
   }
   .mobileCards td::before { color: #8c8c9a; text-align: left; flex-shrink: 0; }
+  .mobileCards .userInfo { max-width: 68%; justify-content: flex-end; min-width: 0; }
+  .mobileCards .userInfo .mCellText { max-width: 100%; }
   .courierStatusTable.mobileCards td:nth-child(1)::before { content: '快递员'; }
   .courierStatusTable.mobileCards td:nth-child(2)::before { content: '今日完成'; }
   .courierStatusTable.mobileCards td:nth-child(3)::before { content: '本月收入'; }
@@ -382,7 +387,7 @@ onMounted(reload)
     justify-content: center; text-align: center; padding: 24px 12px !important;
   }
   .mobileCards td.empty::before { content: none; }
-  .mobileCards .productCell { white-space: normal; word-break: break-word; }
+  .mobileCards .productCell { white-space: normal; }
   .capacity .header { flex-direction: column; gap: 12px; }
 }
 @media (max-width: 640px) {

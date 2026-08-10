@@ -3,13 +3,14 @@
     <div class="header">
       <div>
         <h1 class="title">服务需求</h1>
-        <p class="desc">响应匹配到本店的服务需求，5 分钟内接单，协商后发送费用通知</p>
+        <p class="desc">正式方案为表单报价（金额/币种/说明/有效小时），住户确认支付后生成服务订单</p>
       </div>
       <button type="button" class="btnSecondary" :disabled="loading" @click="loadList">刷新</button>
     </div>
 
     <div class="panel">
       <div v-if="loading" class="hint">加载中...</div>
+      <p v-else-if="gateBlocked" class="bannerWarn">{{ gateBlocked }}</p>
       <p v-else-if="error" class="error">{{ error }}</p>
       <div v-else-if="list.length && isMobile" class="mobileList">
         <article v-for="item in list" :key="item.id" class="mobileCard">
@@ -17,9 +18,9 @@
           <p class="mobileDescription">{{ item.description || '—' }}</p>
           <p class="mobileMeta">{{ item.createdAt || '—' }} · {{ item.contactPhone || '—' }}</p>
           <div class="actions">
-            <button type="button" class="linkBtn" @click="accept(item.id)">接单</button>
-            <button type="button" class="linkBtn" @click="skip(item.id)">跳过</button>
-            <button type="button" class="linkBtn" @click="openQuote(item)">费用通知</button>
+            <button type="button" class="linkBtn" :disabled="actionsDisabled" @click="accept(item.id)">接单</button>
+            <button type="button" class="linkBtn" :disabled="actionsDisabled" @click="skip(item.id)">跳过</button>
+            <button type="button" class="linkBtn" :disabled="actionsDisabled" @click="openQuote(item)">费用通知</button>
           </div>
         </article>
       </div>
@@ -42,9 +43,9 @@
             <td>{{ item.status || getEnumLabel(SERVICE_REQUEST_STATUS_LABEL, item.statusCode) }}</td>
             <td>{{ item.contactPhone || '—' }}</td>
             <td class="actions">
-              <button type="button" class="linkBtn" @click="accept(item.id)">接单</button>
-              <button type="button" class="linkBtn" @click="skip(item.id)">跳过</button>
-              <button type="button" class="linkBtn" @click="openQuote(item)">费用通知</button>
+              <button type="button" class="linkBtn" :disabled="actionsDisabled" @click="accept(item.id)">接单</button>
+              <button type="button" class="linkBtn" :disabled="actionsDisabled" @click="skip(item.id)">跳过</button>
+              <button type="button" class="linkBtn" :disabled="actionsDisabled" @click="openQuote(item)">费用通知</button>
             </td>
           </tr>
         </tbody>
@@ -94,7 +95,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { merchantPortalApi } from '../../api/services'
 import { ApiError } from '../../api/request'
 import type { ServiceRequestItem } from '../../api/types'
@@ -109,6 +110,7 @@ import { useIsMobile } from '../../composables/useIsMobile'
 const { isMobile } = useIsMobile()
 const loading = ref(false)
 const error = ref('')
+const gateCode = ref<number | null>(null)
 const list = ref<ServiceRequestItem[]>([])
 
 const quoteOpen = ref(false)
@@ -122,8 +124,19 @@ const quoteForm = ref({
   validHours: 24
 })
 
+const gateBlocked = computed(() => {
+  if (gateCode.value == null) return ''
+  return getPhase2ErrorMessage(gateCode.value, error.value)
+})
+const actionsDisabled = computed(() => gateCode.value === 60002 || gateCode.value === 60005)
+
 function resolveError(e: unknown) {
-  if (e instanceof ApiError) return getPhase2ErrorMessage(e.code, e.message)
+  if (e instanceof ApiError) {
+    if (e.code === 60002 || e.code === 60005) {
+      gateCode.value = e.code
+    }
+    return getPhase2ErrorMessage(e.code, e.message)
+  }
   if (e instanceof Error) return e.message
   return '操作失败'
 }
@@ -131,6 +144,7 @@ function resolveError(e: unknown) {
 async function loadList() {
   loading.value = true
   error.value = ''
+  gateCode.value = null
   try {
     const res = await merchantPortalApi.serviceRequestPending({ page: 1, pageSize: 50 })
     list.value = res.list || []
@@ -143,6 +157,7 @@ async function loadList() {
 }
 
 async function accept(id: string) {
+  if (actionsDisabled.value) return
   try {
     await merchantPortalApi.acceptServiceRequest(id)
     await loadList()
@@ -152,6 +167,7 @@ async function accept(id: string) {
 }
 
 async function skip(id: string) {
+  if (actionsDisabled.value) return
   try {
     await merchantPortalApi.skipServiceRequest(id)
     await loadList()
@@ -161,6 +177,7 @@ async function skip(id: string) {
 }
 
 function openQuote(item: ServiceRequestItem) {
+  if (actionsDisabled.value) return
   quoteId.value = item.id
   quoteForm.value = {
     amount: item.quote?.amount || 0,
@@ -173,6 +190,7 @@ function openQuote(item: ServiceRequestItem) {
 }
 
 async function submitQuote() {
+  if (actionsDisabled.value) return
   if (!quoteForm.value.amount || quoteForm.value.amount <= 0) {
     quoteError.value = '请填写有效金额'
     return
@@ -251,6 +269,18 @@ onMounted(loadList)
   padding: 0;
   cursor: pointer;
   font: inherit;
+}
+.linkBtn:disabled {
+  color: #b0b0ba;
+  cursor: not-allowed;
+}
+.bannerWarn {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fff7e6;
+  color: #d48806;
+  font-size: 13px;
 }
 .btnPrimary {
   padding: 10px 18px;

@@ -18,7 +18,7 @@ import type {
   ResidentItem,
   RolePresetDto
 } from './types'
-import { getEnumLabel, ANNOUNCEMENT_STATUS, ANNOUNCEMENT_STATUS_LABEL, ANNOUNCEMENT_TYPE_LABEL, COURIER_STATUS, COURIER_STATUS_LABEL, DELIVERY_STATUS, DELIVERY_STATUS_LABEL, MERCHANT_AUDIT_STATUS_LABEL, MERCHANT_LEVEL_LABEL, MERCHANT_STATUS_LABEL, PERMISSION_MODULE_LABEL, RESIDENT_STATUS, RESIDENT_STATUS_LABEL, RESIDENT_USER_TYPE, ROLE_LABEL, normalizeAnnouncementType, formatAnnouncementTargetRoles } from '../constants/enums'
+import { getEnumLabel, ANNOUNCEMENT_STATUS, ANNOUNCEMENT_STATUS_LABEL, ANNOUNCEMENT_TYPE_LABEL, COURIER_STATUS, COURIER_STATUS_LABEL, DELIVERY_STATUS, DELIVERY_STATUS_LABEL, MERCHANT_AUDIT_STATUS_LABEL, MERCHANT_LEVEL_LABEL, MERCHANT_SOURCE_LABEL, MERCHANT_STATUS_LABEL, PERMISSION_MODULE_LABEL, RESIDENT_STATUS, RESIDENT_STATUS_LABEL, RESIDENT_USER_TYPE, ROLE_LABEL, normalizeAnnouncementType, formatAnnouncementTargetRoles } from '../constants/enums'
 
 const avatarColors = ['#5c5c9e', '#3aaf7d', '#f5a623', '#e05c5c', '#6a6aae']
 
@@ -49,6 +49,11 @@ const PROPERTY_COMPANY_CONFIG_KEYS: (keyof PropertyCompanyConfig)[] = [
   'coordinatorShareRate',
   'sectorLeaderRate',
   'individualLeaderRate',
+  'platformShareRate',
+  'platformDeliveryShareRate',
+  'platformWithdrawalFeeShareRate',
+  'regionalLeaderRate',
+  'projectLeaderRate',
   'coinDisplayEnabled',
   'coinIssueMode',
   'coinExpiryDays',
@@ -94,6 +99,24 @@ export function normalizePropertyCompanyDetail(
     communityCount: raw.communityCount,
     communities: raw.communities,
     admins: raw.admins,
+    deliveryPerKgFee: raw.deliveryPerKgFee,
+    pointExchangeRate: raw.pointExchangeRate,
+    platformShareRate: raw.platformShareRate,
+    platformDeliveryShareRate: raw.platformDeliveryShareRate,
+    platformWithdrawalFeeShareRate: raw.platformWithdrawalFeeShareRate,
+    regionalLeaderRate: raw.regionalLeaderRate,
+    projectLeaderRate: raw.projectLeaderRate,
+    autoWithdrawalEnabled: raw.autoWithdrawalEnabled,
+    autoWithdrawalPeriodDays: raw.autoWithdrawalPeriodDays,
+    coinUseCondition: raw.coinUseCondition,
+    coinPointThreshold: raw.coinPointThreshold,
+    companyAccountBalance: raw.companyAccountBalance,
+    residentPointShareRate: raw.residentPointShareRate,
+    merchantPointShareRate: raw.merchantPointShareRate,
+    coinPointShareRate: raw.coinPointShareRate,
+    sharedPointShareRate: raw.sharedPointShareRate,
+    createdAt: raw.createdAt,
+    updatedAt: raw.updatedAt,
     config: extractPropertyCompanyConfig(raw)
   }
 }
@@ -255,19 +278,70 @@ function resolveResidentName(item: ResidentItem) {
 export function mapResidents(list: ResidentItem[]) {
   return list.map(item => {
     const name = resolveResidentName(item)
+    const buildingPart = (item.building || '').trim()
+    const floorPart = (item.floor || '').trim()
+    const unitPart = (item.unit || '').trim()
+    const roomPart = (item.room || '').trim()
+    const hasAddress = !!(buildingPart || floorPart || unitPart || roomPart)
     return {
       id: item.id,
       name,
       phone: item.phone || '-',
       initials: initials(name),
       avatarColor: avatarColor(item.id || name),
-      building: [item.building, item.unit, item.room].filter(Boolean).join('') || '-',
+      building: buildingPart || '未填写',
+      floor: floorPart || '未填写',
+      unit: unitPart || '未填写',
+      room: roomPart || '未填写',
+      buildingRaw: buildingPart,
+      floorRaw: floorPart,
+      unitRaw: unitPart,
+      roomRaw: roomPart,
+      hasAddress,
+      addressLabel: hasAddress
+        ? [buildingPart, floorPart, unitPart, roomPart].filter(Boolean).join('-')
+        : '未填写楼栋/楼层/单元/房号',
       identity: item.userType === RESIDENT_USER_TYPE.OWNER ? 'owner' as const : 'tenant' as const,
       status: item.status || RESIDENT_STATUS.ACTIVE,
       statusLabel: getEnumLabel(RESIDENT_STATUS_LABEL, item.status),
-      familyCount: item.familyId ? '—' : '—',
-      registerTime: item.createdAt || '-'
+      familyId: item.familyId || '',
+      familyCount: item.familyId ? '有家庭' : '无',
+      registerTime: item.createdAt || '-',
+      hasArrears: !!item.hasArrears,
+      arrearsCount: item.arrearsCount ?? 0,
+      arrearsAmount: item.arrearsAmount ?? 0,
+      arrearsPeriodStart: item.arrearsPeriodStart || '',
+      arrearsPeriodEnd: item.arrearsPeriodEnd || '',
+      pointBalance: item.pointBalance,
+      familyPointBalance: item.familyPointBalance,
+      communityId: item.communityId || ''
     }
+  })
+}
+
+/** 楼栋-楼层-单元-房号自然排序；未填地址排最后（后端 sort 未支持时前端兜底） */
+export function sortResidentsByAddress<T extends {
+  buildingRaw?: string
+  floorRaw?: string
+  unitRaw?: string
+  roomRaw?: string
+  hasAddress?: boolean
+  registerTime?: string
+}>(list: T[]): T[] {
+  const collator = new Intl.Collator('zh-CN', { numeric: true, sensitivity: 'base' })
+  return [...list].sort((a, b) => {
+    const aHas = a.hasAddress ? 1 : 0
+    const bHas = b.hasAddress ? 1 : 0
+    if (aHas !== bHas) return bHas - aHas
+    const buildingCmp = collator.compare(a.buildingRaw || '', b.buildingRaw || '')
+    if (buildingCmp !== 0) return buildingCmp
+    const floorCmp = collator.compare(a.floorRaw || '', b.floorRaw || '')
+    if (floorCmp !== 0) return floorCmp
+    const unitCmp = collator.compare(a.unitRaw || '', b.unitRaw || '')
+    if (unitCmp !== 0) return unitCmp
+    const roomCmp = collator.compare(a.roomRaw || '', b.roomRaw || '')
+    if (roomCmp !== 0) return roomCmp
+    return collator.compare(a.registerTime || '', b.registerTime || '')
   })
 }
 
@@ -285,11 +359,12 @@ export function mapMerchants(list: MerchantItem[]) {
     category: item.category || '-',
     categoryCode: item.category?.includes('餐') ? 'dining' as const : 'retail' as const,
     merchantLevel: getEnumLabel(MERCHANT_LEVEL_LABEL, item.merchantLevel),
+    merchantSource: getEnumLabel(MERCHANT_SOURCE_LABEL, item.merchantSource, '—'),
     auditStatus: getEnumLabel(MERCHANT_AUDIT_STATUS_LABEL, item.auditStatus),
     status: item.status,
     statusLabel: getEnumLabel(MERCHANT_STATUS_LABEL, item.status, '—'),
     commissionRate: item.commissionRate !== undefined ? `${formatPercent(item.commissionRate)}%` : '-',
-    pointsRatio: item.pointExchangeRate !== undefined ? `${item.pointExchangeRate} / ¥1` : '-',
+    pointsRatio: item.pointExchangeRate !== undefined ? `1元=${item.pointExchangeRate}积分` : '-',
     cashbackRate: item.coinRebateRate !== undefined ? `${formatPercent(item.coinRebateRate)}%` : '0%',
     ownerPrice: item.memberDiscountPrice ? `${item.memberDiscountPrice}元` : '-'
   }))
@@ -369,10 +444,10 @@ export function mapProfitSpaceDisplay(data: MerchantProfitSpace | null) {
     coordinatorShareAmount: shareAmount(coordinatorShare),
     shareBreakdown: [
       mapShare('物业收益', propertyShare),
-      mapShare('统筹收益', coordinatorShare),
+      mapShare('统筹/周总收益', coordinatorShare),
       mapShare('片区负责人', sectorLeaderShare),
       mapShare('个人负责人', individualLeaderShare),
-      mapShare('平台收益', platformShare)
+      mapShare('我们公司/平台收益', platformShare)
     ],
     revenueGrowth: data?.comparison?.revenueGrowthRate !== undefined
       ? `${formatPercent(data.comparison.revenueGrowthRate)}%`
@@ -386,15 +461,33 @@ export function mapProfitSpaceDisplay(data: MerchantProfitSpace | null) {
 export function mapPointsUsers(list: ResidentItem[]) {
   return list.map(item => {
     const name = resolveResidentName(item)
+    const buildingPart = (item.building || '').trim()
+    const floorPart = (item.floor || '').trim()
+    const unitPart = (item.unit || '').trim()
+    const roomPart = (item.room || '').trim()
+    const hasAddress = !!(buildingPart || floorPart || unitPart || roomPart)
     return {
       id: item.id,
       name,
       initials: initials(name),
       avatarColor: avatarColor(item.id || name),
-      room: [item.building, item.room].filter(Boolean).join('') || '-',
+      room: hasAddress
+        ? [buildingPart, floorPart, unitPart, roomPart].filter(Boolean).join('-')
+        : '未填写',
+      buildingRaw: buildingPart,
+      floorRaw: floorPart,
+      unitRaw: unitPart,
+      roomRaw: roomPart,
+      hasAddress,
+      registerTime: item.createdAt || '',
       points: `${formatMoney(item.pointBalance)} pts`,
+      familyPoints:
+        item.familyPointBalance == null ? '—' : `${formatMoney(item.familyPointBalance)} pts`,
+      pointBalance: item.pointBalance ?? 0,
+      familyPointBalance: item.familyPointBalance,
       pcoin: `${formatMoney(item.coinBalance)} PCoin`,
       coinBalance: item.coinBalance ?? 0,
+      coinFrozen: !!item.coinFrozen,
       status: item.status === RESIDENT_STATUS.FROZEN || item.status === RESIDENT_STATUS.DISABLED
         ? 'frozen' as const
         : 'normal' as const
@@ -550,7 +643,8 @@ export function mapPointPoolOverview(pool?: PointPool) {
 export function mapPointsOverview(pool?: PointPool, overview?: DashboardOverview) {
   const summary = overview?.summary || {}
   const circulation = overview?.coinTotalIssued ?? summary.totalCoinIssued ?? 0
-  const consumed = summary.totalCoinRedeemed ?? Math.round(circulation * 0.25)
+  // 缺字段时不再用 ×0.25 造数；展示层对 undefined 显示「—」
+  const consumed = summary.totalCoinRedeemed
   const poolOverview = mapPointPoolOverview(pool)
   const hasPoolData = pool?.equivalentAmount != null || pool?.balance != null
   return {
@@ -560,7 +654,7 @@ export function mapPointsOverview(pool?: PointPool, overview?: DashboardOverview
       : formatMoney(overview?.pointPoolBalance ?? summary.totalPointsIssued),
     pcoinTotal: circulation,
     pcoinConsumed: consumed,
-    pcoinCirculating: Math.max(circulation - consumed, 0)
+    pcoinCirculating: consumed != null ? Math.max(circulation - consumed, 0) : undefined
   }
 }
 
@@ -568,6 +662,7 @@ function deliveryStatusClass(status?: string) {
   if (status === DELIVERY_STATUS.ACCEPTED || status === DELIVERY_STATUS.GRABBED) return 'grabbed'
   if (status === DELIVERY_STATUS.PENDING) return 'pending'
   if (status === DELIVERY_STATUS.DELIVERING) return 'delivering'
+  if (status === DELIVERY_STATUS.DELIVERED || status === DELIVERY_STATUS.COMPLETED) return 'completed'
   return 'completed'
 }
 

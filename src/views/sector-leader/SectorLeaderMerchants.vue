@@ -3,7 +3,7 @@
     <div class="header">
       <div>
         <h1 class="title">板块商家</h1>
-        <p class="desc">管理本板块商家、个体负责人与入驻审核</p>
+        <p class="desc">管理本板块商家与个体负责人；入驻审核由统筹负责人处理</p>
       </div>
       <div v-if="tab === 'individuals' && canManageIndividualLeaders" class="headerActions">
         <button class="btnPrimary" @click="openIndividualCreate">新增个体负责人</button>
@@ -84,7 +84,7 @@
             <tr>
               <th>姓名</th>
               <th>板块</th>
-              <th>分成比例</th>
+              <th>抽佣比例</th>
               <th>状态</th>
               <th>操作</th>
             </tr>
@@ -96,7 +96,7 @@
               <td>{{ formatRate(item.commissionRate) }}</td>
               <td>{{ getEnumLabel(ENTITY_STATUS_LABEL, item.status) }}</td>
               <td class="actions">
-                <button class="btnLink" @click="openDistribution(item)">设置分成</button>
+                <button class="btnLink" @click="openDistribution(item)">设置抽佣</button>
                 <button class="btnLink danger" :disabled="removingIndividualId === item.id" @click="removeIndividual(item)">
                   移除
                 </button>
@@ -125,8 +125,7 @@
               <td>{{ item.contactPhone || '—' }}</td>
               <td>{{ item.createdAt || '—' }}</td>
               <td class="actions">
-                <button class="btnLink" @click="auditPending(item, true)">通过</button>
-                <button class="btnLink danger" @click="openReject(item)">拒绝</button>
+                <span class="hintInline">待统筹审核</span>
               </td>
             </tr>
           </tbody>
@@ -189,7 +188,7 @@
               <input v-model="individualForm.name" class="input" maxlength="50" />
             </div>
             <div class="field">
-              <label class="label">分成比例（0~1）</label>
+              <label class="label">平台抽佣比例（0~1，如 0.10=平台盘10%）</label>
               <input v-model.number="individualForm.commissionRate" type="number" min="0" max="1" step="0.01" class="input" />
             </div>
             <p v-if="individualFormError" class="error">{{ individualFormError }}</p>
@@ -206,12 +205,12 @@
       <div v-if="distributionTarget" class="modalOverlay" @click.self="closeDistribution">
         <div class="modal" :class="{ mobileSheet: isMobile }">
           <div class="modalHeader">
-            <h3 class="modalTitle">设置分成 - {{ distributionTarget.name || distributionTarget.id }}</h3>
+            <h3 class="modalTitle">设置抽佣 - {{ distributionTarget.name || distributionTarget.id }}</h3>
             <button class="modalClose" @click="closeDistribution">&times;</button>
           </div>
           <div class="modalBody">
             <div class="field">
-              <label class="label">分成比例（0~1）</label>
+              <label class="label">平台抽佣比例（0~1，如 0.10=平台盘10%）</label>
               <input v-model.number="distributionRate" type="number" min="0" max="1" step="0.01" class="input" />
             </div>
             <p v-if="distributionError" class="error">{{ distributionError }}</p>
@@ -263,27 +262,6 @@
         </div>
       </div>
 
-      <div v-if="rejectTarget" class="modalOverlay" @click.self="closeReject">
-        <div class="modal" :class="{ mobileSheet: isMobile }">
-          <div class="modalHeader">
-            <h3 class="modalTitle">拒绝商家「{{ rejectTarget.name }}」</h3>
-            <button class="modalClose" @click="closeReject">&times;</button>
-          </div>
-          <div class="modalBody">
-            <div class="field">
-              <label class="label">拒绝原因</label>
-              <textarea v-model="rejectReason" class="textarea" rows="3" />
-            </div>
-            <p v-if="rejectError" class="error">{{ rejectError }}</p>
-          </div>
-          <div class="modalFooter">
-            <button class="btnGhost" @click="closeReject">取消</button>
-            <button class="btnDanger" :disabled="rejecting" @click="confirmReject">
-              {{ rejecting ? '提交中...' : '确认拒绝' }}
-            </button>
-          </div>
-        </div>
-      </div>
     </Teleport>
   </div>
 </template>
@@ -354,11 +332,6 @@ const merchantForm = reactive({
   contactPhone: '',
   address: ''
 })
-
-const rejectTarget = ref<MerchantItem | null>(null)
-const rejectReason = ref('')
-const rejectError = ref('')
-const rejecting = ref(false)
 
 const sectorLeaderId = computed(() => portal.detail?.id || '')
 const canManageIndividualLeaders = computed(
@@ -553,7 +526,7 @@ function closeDistribution() {
 async function submitDistribution() {
   if (!distributionTarget.value || !sectorLeaderId.value || !canManageIndividualLeaders.value) return
   if (distributionRate.value == null) {
-    distributionError.value = '请填写分成比例'
+    distributionError.value = '请填写平台抽佣比例'
     return
   }
   distributionSaving.value = true
@@ -617,48 +590,6 @@ async function submitMerchant() {
   }
 }
 
-async function auditPending(item: MerchantItem, approved: boolean, reason?: string) {
-  if (!sectorLeaderId.value) return
-  try {
-    await sectorLeaderPortalApiExt.auditMerchant(sectorLeaderId.value, {
-      merchantId: item.id,
-      approved,
-      reason
-    })
-    await loadPending(page.value)
-  } catch (e) {
-    error.value = e instanceof ApiError ? e.message : '审核失败'
-  }
-}
-
-function openReject(item: MerchantItem) {
-  rejectTarget.value = item
-  rejectReason.value = ''
-  rejectError.value = ''
-}
-
-function closeReject() {
-  rejectTarget.value = null
-}
-
-async function confirmReject() {
-  if (!rejectTarget.value) return
-  if (!rejectReason.value.trim()) {
-    rejectError.value = '请填写拒绝原因'
-    return
-  }
-  rejecting.value = true
-  rejectError.value = ''
-  try {
-    await auditPending(rejectTarget.value, false, rejectReason.value.trim())
-    closeReject()
-  } catch (e) {
-    rejectError.value = e instanceof ApiError ? e.message : '拒绝失败'
-  } finally {
-    rejecting.value = false
-  }
-}
-
 onMounted(() => load(1))
 </script>
 
@@ -697,6 +628,7 @@ onMounted(() => load(1))
 .modalBody { padding: 20px; }
 .modalFooter { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 20px; border-top: 1px solid #f0f0f3; }
 .hint { font-size: 14px; color: #5c5c66; margin-bottom: 16px; }
+.hintInline { font-size: 13px; color: #8c8c9a; }
 .field { margin-bottom: 8px; }
 .label { display: block; font-size: 13px; color: #8c8c9a; margin-bottom: 6px; }
 .textarea { width: 100%; padding: 8px 12px; border: 1px solid #e8e8ec; border-radius: 8px; resize: vertical; box-sizing: border-box; }

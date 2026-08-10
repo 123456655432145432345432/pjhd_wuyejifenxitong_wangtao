@@ -7,6 +7,8 @@
       </div>
     </div>
 
+    <p v-if="auditSuccess" class="bannerSuccess">{{ auditSuccess }}</p>
+
     <div class="tabs">
       <button class="tab" :class="{ active: tab === 'all' }" @click="switchTab('all')">全部商家</button>
       <button class="tab" :class="{ active: tab === 'official' }" @click="switchTab('official')">官方认证商家</button>
@@ -63,14 +65,30 @@
                 />
                 <span v-else class="coverPlaceholder">—</span>
               </td>
-              <td class="nameCell">{{ item.name }}</td>
-              <td>{{ item.category || '—' }}</td>
-              <td>{{ getEnumLabel(MERCHANT_LEVEL_LABEL, item.merchantLevel) }}</td>
-              <td>{{ getEnumLabel(MERCHANT_AUDIT_STATUS_LABEL, item.auditStatus) }}</td>
-              <td>{{ getEnumLabel(MERCHANT_STATUS_LABEL, item.status) }}</td>
-              <td>{{ item.contactPhone || '—' }}</td>
-              <td>{{ item.rankOrder ?? '—' }}</td>
-              <td class="timeCell">{{ item.createdAt || '—' }}</td>
+              <td class="nameCell">
+                <MobileCellText variant="primary">{{ item.name }}</MobileCellText>
+              </td>
+              <td>
+                <MobileCellText variant="nowrap">{{ item.category || '—' }}</MobileCellText>
+              </td>
+              <td>
+                <MobileCellText variant="nowrap">{{ getEnumLabel(MERCHANT_LEVEL_LABEL, item.merchantLevel) }}</MobileCellText>
+              </td>
+              <td>
+                <MobileCellText variant="nowrap">{{ getEnumLabel(MERCHANT_AUDIT_STATUS_LABEL, item.auditStatus) }}</MobileCellText>
+              </td>
+              <td>
+                <MobileCellText variant="nowrap">{{ getEnumLabel(MERCHANT_STATUS_LABEL, item.status) }}</MobileCellText>
+              </td>
+              <td>
+                <MobileCellText variant="nowrap">{{ item.contactPhone || '—' }}</MobileCellText>
+              </td>
+              <td>
+                <MobileCellText variant="nowrap">{{ item.rankOrder ?? '—' }}</MobileCellText>
+              </td>
+              <td class="timeCell">
+                <MobileCellText variant="nowrap">{{ item.createdAt || '—' }}</MobileCellText>
+              </td>
               <td class="actions">
                 <div class="actionsInner">
                   <button type="button" class="btnLink" @click="openDetail(item.id)">详情</button>
@@ -176,12 +194,22 @@
                 <textarea v-model="editForm.description" class="textarea" rows="2" />
               </div>
               <div class="field">
-                <label class="label">封面图 URL</label>
-                <input v-model="editForm.coverUrlsText" class="input" placeholder="多个 URL 用英文逗号分隔" />
+                <label class="label">封面图</label>
+                <MediaUploader
+                  v-model="editForm.coverUrls"
+                  category="merchant"
+                  accept="image"
+                  :max="9"
+                />
               </div>
               <div class="field">
-                <label class="label">视频 URL</label>
-                <input v-model="editForm.videoUrl" class="input" maxlength="500" />
+                <label class="label">视频</label>
+                <MediaUploader
+                  v-model="editForm.videoUrl"
+                  category="merchant"
+                  accept="video"
+                  :max="1"
+                />
               </div>
               <div class="fieldRow">
                 <div class="field">
@@ -199,14 +227,25 @@
               </div>
               <div class="fieldRow">
                 <div class="field">
-                  <label class="label">配送费</label>
-                  <input v-model="editForm.deliveryFee" type="number" min="0" step="0.01" class="input" />
+                  <label class="label">配送费（商家自设，只读）</label>
+                  <input
+                    :value="editForm.deliveryFee === '' ? '' : editForm.deliveryFee"
+                    type="text"
+                    class="input"
+                    disabled
+                  />
                 </div>
                 <div class="field">
-                  <label class="label">满额免配送</label>
-                  <input v-model="editForm.freeDeliveryThreshold" type="number" min="0" step="0.01" class="input" />
+                  <label class="label">满额免配送（商家自设，只读）</label>
+                  <input
+                    :value="editForm.freeDeliveryThreshold === '' ? '' : editForm.freeDeliveryThreshold"
+                    type="text"
+                    class="input"
+                    disabled
+                  />
                 </div>
               </div>
+              <p class="auditHint">配送费与满额免配送由商家在店铺概览中自行设置，统筹仅可查看。</p>
               <div class="field">
                 <label class="label">排序权重</label>
                 <input v-model.number="editForm.rankOrder" type="number" min="0" step="1" class="input" />
@@ -229,6 +268,9 @@
             <button class="modalClose" @click="closeAudit">&times;</button>
           </div>
           <form class="modalBody" @submit.prevent="submitAudit">
+            <p class="auditHint">
+              分类：{{ auditTarget.category || '—' }} · 电话：{{ auditTarget.contactPhone || '—' }}
+            </p>
             <div class="field">
               <label class="label">审核结果</label>
               <select v-model="auditForm.auditResult" class="input">
@@ -247,61 +289,7 @@
                 required
               />
             </div>
-            <template v-if="auditForm.auditResult === AUDIT_RESULT.APPROVED">
-              <div class="field">
-                <label class="label">商家等级</label>
-                <select v-model="auditForm.merchantLevel" class="input">
-                  <option v-for="opt in MERCHANT_LEVEL_OPTIONS" :key="opt.value" :value="opt.value">
-                    {{ opt.label }}
-                  </option>
-                </select>
-              </div>
-              <div class="field">
-                <label class="label">分类</label>
-                <input
-                  v-model="auditForm.category"
-                  type="text"
-                  class="input"
-                  maxlength="50"
-                  placeholder="如：外卖"
-                />
-              </div>
-              <div class="field">
-                <label class="label">营业时间</label>
-                <input
-                  v-model="auditForm.businessHours"
-                  type="text"
-                  class="input"
-                  maxlength="50"
-                  placeholder="如：08:00-22:00"
-                />
-              </div>
-              <div class="fieldRow">
-                <div class="field">
-                  <label class="label">配送费</label>
-                  <input v-model="auditForm.deliveryFee" type="text" class="input" placeholder="如：0.30" />
-                </div>
-                <div class="field">
-                  <label class="label">满额免配送费</label>
-                  <input
-                    v-model="auditForm.freeDeliveryThreshold"
-                    type="text"
-                    class="input"
-                    placeholder="如：50.00"
-                  />
-                </div>
-              </div>
-            </template>
-            <div class="field">
-              <label class="label">备注（选填）</label>
-              <textarea
-                v-model="auditForm.remark"
-                class="textarea"
-                rows="2"
-                maxlength="200"
-                placeholder="审核备注"
-              />
-            </div>
+            <p v-else class="auditHint">通过后将自动开通商家账号，请通知申请人重新登录商家端。</p>
             <p v-if="auditError" class="error">{{ auditError }}</p>
             <div class="modalFooter">
               <button type="button" class="btnGhost" @click="closeAudit">取消</button>
@@ -318,8 +306,10 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import MediaUploader from '../../components/MediaUploader.vue'
+import MobileCellText from '../../components/MobileCellText.vue'
 import { merchantApi, coordinatorManageApi } from '../../api/services'
-import type { MerchantAuditPayload, MerchantItem, MerchantUpdatePayload } from '../../api/types'
+import type { MerchantItem, MerchantUpdatePayload } from '../../api/types'
 import { ApiError } from '../../api/request'
 import {
   AUDIT_RESULT,
@@ -329,6 +319,7 @@ import {
   MERCHANT_LEVEL,
   MERCHANT_LEVEL_LABEL,
   MERCHANT_LEVEL_OPTIONS,
+  MERCHANT_SOURCE_LABEL,
   MERCHANT_STATUS,
   MERCHANT_STATUS_LABEL
 } from '../../constants/enums'
@@ -364,7 +355,7 @@ const editingId = ref('')
 const editForm = reactive({
   name: '',
   description: '',
-  coverUrlsText: '',
+  coverUrls: [] as string[],
   videoUrl: '',
   contactPhone: '',
   businessHours: '',
@@ -377,16 +368,11 @@ const editForm = reactive({
 const auditTarget = ref<MerchantItem | null>(null)
 const auditing = ref(false)
 const auditError = ref('')
+const auditSuccess = ref('')
 const freezingId = ref('')
 const auditForm = reactive({
   auditResult: AUDIT_RESULT.APPROVED,
-  merchantLevel: MERCHANT_LEVEL.PROPERTY_CERTIFIED,
-  category: '',
-  businessHours: '',
-  deliveryFee: '',
-  freeDeliveryThreshold: '',
-  rejectReason: '',
-  remark: ''
+  rejectReason: ''
 })
 
 const detailRows = computed(() => {
@@ -399,6 +385,7 @@ const detailRows = computed(() => {
     { label: '商家名称', value: d.name || '—' },
     { label: '分类', value: d.category || '—' },
     { label: '等级', value: getEnumLabel(MERCHANT_LEVEL_LABEL, d.merchantLevel) },
+    { label: '商家来源', value: getEnumLabel(MERCHANT_SOURCE_LABEL, d.merchantSource) },
     { label: '等级权重', value: d.levelWeight != null ? String(d.levelWeight) : '—' },
     { label: '审核状态', value: getEnumLabel(MERCHANT_AUDIT_STATUS_LABEL, d.auditStatus) },
     { label: '营业状态', value: getEnumLabel(MERCHANT_STATUS_LABEL, d.status) },
@@ -553,7 +540,7 @@ function openEditFromDetail() {
 function applyDetailToEditForm(data: MerchantItem) {
   editForm.name = data.name || ''
   editForm.description = data.description || ''
-  editForm.coverUrlsText = data.coverUrls?.join(', ') || ''
+  editForm.coverUrls = data.coverUrls?.length ? [...data.coverUrls] : []
   editForm.videoUrl = data.videoUrl || ''
   editForm.contactPhone = data.contactPhone || ''
   editForm.businessHours = data.businessHours || ''
@@ -589,10 +576,7 @@ async function submitEdit() {
   editSubmitting.value = true
   editError.value = ''
   try {
-    const coverUrls = editForm.coverUrlsText
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean)
+    const coverUrls = editForm.coverUrls.filter((s) => s.trim())
     const payload: MerchantUpdatePayload = {
       name: editForm.name.trim() || undefined,
       description: editForm.description.trim() || undefined,
@@ -601,8 +585,7 @@ async function submitEdit() {
       contactPhone: editForm.contactPhone.trim() || undefined,
       businessHours: editForm.businessHours.trim() || undefined,
       address: editForm.address.trim() || undefined,
-      deliveryFee: editForm.deliveryFee !== '' ? editForm.deliveryFee : undefined,
-      freeDeliveryThreshold: editForm.freeDeliveryThreshold !== '' ? editForm.freeDeliveryThreshold : undefined,
+      // 配送费 / 满额免配送由商家自设，统筹编辑不写入
       rankOrder: editForm.rankOrder
     }
     await merchantApi.update(editingId.value, payload, propertyCompanyId())
@@ -615,38 +598,9 @@ async function submitEdit() {
   }
 }
 
-function applyMerchantToAuditForm(merchant: MerchantItem) {
+function applyMerchantToAuditForm(_merchant: MerchantItem) {
   auditForm.auditResult = AUDIT_RESULT.APPROVED
-  auditForm.merchantLevel = merchant.merchantLevel || MERCHANT_LEVEL.PROPERTY_CERTIFIED
-  auditForm.category = merchant.category || ''
-  auditForm.businessHours = merchant.businessHours || ''
-  auditForm.deliveryFee = merchant.deliveryFee != null ? String(merchant.deliveryFee) : ''
-  auditForm.freeDeliveryThreshold = merchant.freeDeliveryThreshold != null
-    ? String(merchant.freeDeliveryThreshold)
-    : ''
   auditForm.rejectReason = ''
-  auditForm.remark = ''
-}
-
-function buildAuditPayload(): MerchantAuditPayload {
-  const payload: MerchantAuditPayload = {
-    auditResult: auditForm.auditResult
-  }
-  if (auditForm.remark.trim()) {
-    payload.remark = auditForm.remark.trim()
-  }
-  if (auditForm.auditResult === AUDIT_RESULT.REJECTED) {
-    payload.rejectReason = auditForm.rejectReason.trim()
-  } else {
-    payload.merchantLevel = auditForm.merchantLevel
-    if (auditForm.category.trim()) payload.category = auditForm.category.trim()
-    if (auditForm.businessHours.trim()) payload.businessHours = auditForm.businessHours.trim()
-    if (auditForm.deliveryFee.trim()) payload.deliveryFee = auditForm.deliveryFee.trim()
-    if (auditForm.freeDeliveryThreshold.trim()) {
-      payload.freeDeliveryThreshold = auditForm.freeDeliveryThreshold.trim()
-    }
-  }
-  return payload
 }
 
 function openAudit(item: MerchantItem) {
@@ -674,12 +628,29 @@ async function submitAudit() {
     auditError.value = '请填写拒绝原因'
     return
   }
+  const cid = coordinatorId()
+  if (!cid) {
+    auditError.value = '统筹信息未加载，请刷新后重试'
+    return
+  }
   auditing.value = true
   auditError.value = ''
   try {
-    await merchantApi.audit(auditTarget.value.id, buildAuditPayload())
+    const approved = auditForm.auditResult === AUDIT_RESULT.APPROVED
+    await coordinatorManageApi.auditMerchant(cid, {
+      merchantId: auditTarget.value.id,
+      approved,
+      rejectReason: approved ? undefined : auditForm.rejectReason.trim()
+    })
+    const name = auditTarget.value.name
+    auditSuccess.value = approved
+      ? `已通过「${name}」的入驻申请，已自动开通商家账号。请通知申请人重新登录商家端`
+      : `已拒绝「${name}」的入驻申请`
     closeAudit()
     await load(page.value)
+    setTimeout(() => {
+      auditSuccess.value = ''
+    }, 4000)
   } catch (e) {
     auditError.value = e instanceof ApiError ? e.message : '审核失败，请确认是否有商家审核权限'
   } finally {
@@ -704,6 +675,14 @@ onMounted(async () => {
 .title { font-size: 24px; font-weight: 600; color: #1f1f2e; margin-bottom: 8px; }
 .desc { font-size: 14px; color: #8c8c9a; }
 .tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.bannerSuccess {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f6ffed;
+  color: #389e0d;
+  font-size: 13px;
+}
 .tab { padding: 8px 16px; border-radius: 8px; border: 1px solid #e8e8ec; background: #fff; color: #5c5c66; cursor: pointer; font-size: 14px; }
 .tab:hover { border-color: #5c5c9e; color: #5c5c9e; }
 .tab.active { background: #5c5c9e; color: #fff; border-color: #5c5c9e; }
@@ -752,6 +731,7 @@ onMounted(async () => {
 .badge { font-size: 12px; color: #5c5c9e; background: #f0f0ff; padding: 4px 8px; border-radius: 4px; flex-shrink: 0; white-space: nowrap; }
 .loading, .empty, .error { font-size: 14px; color: #8c8c9a; padding: 12px 0; }
 .error { color: #e05c5c; }
+.auditHint { margin: 0 0 8px; font-size: 12px; color: #8c8c9a; line-height: 1.5; }
 .pager { display: flex; align-items: center; gap: 12px; margin-top: 16px; font-size: 14px; }
 .modalOverlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 16px; }
 .modal { width: 480px; max-width: calc(100vw - 32px); background: #fff; border-radius: 12px; overflow: hidden; max-height: 90vh; overflow-y: auto; }
@@ -779,12 +759,28 @@ onMounted(async () => {
   .searchInput { grid-column: 1 / -1; min-width: 0; max-width: none; }
   .toolbar .btnPrimary, .toolbar .btnGhost { width: 100%; }
   .panel { padding: 12px; border-radius: 14px; }
+  /* 移动卡片模式下取消桌面表宽，避免字段值被挤出可视区 */
+  .tableWrap { overflow: visible; }
+  .mobileCards { min-width: 0; }
   .mobileCards thead { display: none; }
   .mobileCards, .mobileCards tbody, .mobileCards tr, .mobileCards td { display: block; width: 100%; }
   .mobileCards tr { padding: 14px 0; border-bottom: 1px solid #f0f0f3; }
   .mobileCards tr:last-child { border-bottom: 0; }
-  .mobileCards td { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; text-align: right; }
-  .mobileCards td::before { color: #8c8c9a; text-align: left; flex-shrink: 0; }
+  .mobileCards td {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 6px 0;
+    text-align: right;
+    color: #1f1f2e;
+    box-sizing: border-box;
+  }
+  .mobileCards td::before {
+    color: #8c8c9a;
+    text-align: left;
+    flex-shrink: 0;
+  }
   .mobileCards td:nth-child(1)::before { content: '封面'; }
   .mobileCards td:nth-child(2)::before { content: '商家名称'; }
   .mobileCards td:nth-child(3)::before { content: '分类'; }
@@ -795,6 +791,8 @@ onMounted(async () => {
   .mobileCards td:nth-child(8)::before { content: '排序'; }
   .mobileCards td:nth-child(9)::before { content: '创建时间'; }
   .mobileCards td:nth-child(10)::before { content: '操作'; }
+  .mobileCards .nameCell { max-width: none; font-weight: 600; }
+  .mobileCards .nameCell > .mCellText { font-weight: 600; }
   .mobileCards .actions { height: auto; }
   .actionsInner { justify-content: flex-end; flex-wrap: wrap; }
   .pager { justify-content: center; }

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>物业积分服务系统 · 分账结构可视化</title>
+<style>
+  :root{
+    --bg:#0f172a; --panel:#1e293b; --panel2:#273449;
+    --txt:#e2e8f0; --muted:#94a3b8; --line:#334155;
+    --c-platform:#6366f1; --c-property:#10b981;
+    --c-coord:#f59e0b; --c-sector:#ef4444; --c-indiv:#ec4899;
+    --c-deliver:#06b6d4; --c-courier:#84cc16; --c-us:#8b5cf6;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+    background:linear-gradient(160deg,#0f172a,#111c33);color:var(--txt);padding:28px 16px 60px;}
+  .wrap{max-width:1080px;margin:0 auto;}
+  h1{font-size:24px;margin:0 0 4px;font-weight:700;letter-spacing:.5px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:24px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 22px;margin-bottom:20px;
+    box-shadow:0 8px 24px rgba(0,0,0,.25)}
+  .card h2{font-size:16px;margin:0 0 4px;display:flex;align-items:center;gap:8px}
+  .card .desc{color:var(--muted);font-size:12.5px;margin:0 0 16px;line-height:1.6}
+  .pill{font-size:11px;padding:2px 9px;border-radius:999px;background:var(--panel2);color:var(--muted);border:1px solid var(--line)}
+  .flow{display:flex;flex-wrap:wrap;gap:18px}
+  .col{flex:1;min-width:240px}
+  .flow-label{font-size:12px;color:var(--muted);margin-bottom:8px;text-align:center}
+  .node{border-radius:10px;padding:12px 14px;margin-bottom:10px;color:#0b1220;font-weight:600;position:relative}
+  .node small{display:block;font-weight:500;color:rgba(0,0,0,.62);font-size:11.5px;margin-top:2px}
+  .split{background:var(--panel2);border:1px dashed var(--line);border-radius:10px;padding:12px}
+  .bar{height:30px;border-radius:7px;background:#0b1220;overflow:hidden;display:flex;margin-top:6px}
+  .bar > span{height:100%;display:flex;align-items:center;justify-content:center;font-size:11px;color:#0b1220;font-weight:700;white-space:nowrap}
+  .legend{display:flex;flex-wrap:wrap;gap:10px 18px;margin-top:6px;font-size:12px;color:var(--muted)}
+  .legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600;font-size:12px}
+  td.num{text-align:right;font-variant-numeric:tabular-nums}
+  .tag{font-size:11px;padding:1px 7px;border-radius:6px;background:var(--panel2);border:1px solid var(--line);color:var(--muted)}
+  .note{font-size:12px;color:var(--muted);line-height:1.7;background:#0b1220;border:1px solid var(--line);
+    border-radius:10px;padding:12px 14px;margin-top:8px}
+  .note b{color:var(--txt)}
+  .arrow{color:var(--muted);font-size:11px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:760px){.grid2{grid-template-columns:1fr}}
+  .kbd{font-family:ui-monospace,monospace;background:#0b1220;border:1px solid var(--line);padding:1px 6px;border-radius:5px;font-size:12px;color:#cbd5e1}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>物业积分服务系统 · 分账结构可视化</h1>
+  <div class="sub">当前实现口径（代码默认值） · 生成于 2026-08-09 · 平台盘 1:6:3 / 管理内 4:3:3 / 配送费与平台盘分离</div>
+
+  <!-- 总览：一笔订单的钱去哪了 -->
+  <div class="card">
+    <h2>① 一笔订单的资金流向 <span class="pill">10 元商品 + 1 元配送费 示例</span></h2>
+    <p class="desc">订单实付 = 商品价格 + 配送费。<b>平台盘只从商品价格计提分账</b>；<b>配送费单独拆分</b>，平台抽 10%（可调）、余额全归配送员（不保底）。</p>
+    <div class="flow">
+      <div class="col">
+        <div class="flow-label">商品价格 10.00 元 → 平台盘（五分账）</div>
+        <div class="split">
+          <div class="node" style="background:var(--c-platform)">我们公司 10% <small>平台服务费 0.10</small></div>
+          <div class="node" style="background:var(--c-property)">物业 60% <small>物业分成 0.60</small></div>
+          <div class="node" style="background:var(--c-coord)">管理/统筹 30% <small>0.30（见下分层）</small></div>
+          <div style="margin:10px 0 4px;font-size:12px;color:var(--muted)">└ 管理盘内部 4:3:3</div>
+          <div class="node" style="background:var(--c-coord);opacity:.95;margin-left:14px">统筹本人 40% <small>0.12</small></div>
+          <div class="node" style="background:var(--c-sector);margin-left:14px">板块负责人 30% <small>0.09</small></div>
+          <div class="node" style="background:var(--c-indiv);margin-left:14px">个体负责人 30% <small>0.09</small></div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="flow-label">配送费 1.00 元 → 单独分账</div>
+        <div class="split">
+          <div class="node" style="background:var(--c-us)">平台抽成 10% <small>platformDeliveryShareRate（可调） 0.10</small></div>
+          <div class="node" style="background:var(--c-courier)">配送员 90% <small>无保底，余额全归 0.90</small></div>
+          <div class="note">旧方案：配送员收入 = 平台盘×15% 并保底 0.6~5 元。<br>
+            例：平台盘仅 0.48 时 ×15% = 0.072 → 被硬拉到 0.6，<b>平台倒贴</b>。<br>
+            新方案下配送员来自配送费，<b>不再出现倒贴</b>。</div>
+        </div>
+      </div>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--c-platform)"></i>我们公司</span>
+      <span><i style="background:var(--c-property)"></i>物业</span>
+      <span><i style="background:var(--c-coord)"></i>统筹/管理</span>
+      <span><i style="background:var(--c-sector)"></i>板块负责人</span>
+      <span><i style="background:var(--c-indiv)"></i>个体负责人</span>
+      <span><i style="background:var(--c-us)"></i>平台(配送费抽成)</span>
+      <span><i style="background:var(--c-courier)"></i>配送员</span>
+    </div>
+  </div>
+
+  <!-- 平台盘比例条 -->
+  <div class="card">
+    <h2>② 平台盘三档比例（默认 1:6:3）</h2>
+    <p class="desc">平台盘 = (实付 − 配送费) × 商家佣金比例 − 积分 − 金币。三档之和必须 = 100%。</p>
+    <div class="bar">
+      <span style="background:var(--c-platform);width:10%">我们公司 10%</span>
+      <span style="background:var(--c-property);width:60%">物业 60%</span>
+      <span style="background:var(--c-coord);width:30%">管理 30%</span>
+    </div>
+    <div style="margin-top:16px" class="bar">
+      <span style="background:var(--c-coord);width:40%">统筹本人 40%</span>
+      <span style="background:var(--c-sector);width:30%">板块 30%</span>
+      <span style="background:var(--c-indiv);width:30%">个体 30%</span>
+    </div>
+    <div class="arrow" style="margin-top:8px">↑ 管理盘（30%）内部再按 4:3:3 拆分</div>
+  </div>
+
+  <!-- 配置表 -->
+  <div class="card">
+    <h2>③ 分账字段与默认值对照</h2>
+    <p class="desc">以下为 <span class="kbd">PropertyCompany</span> 实体字段与 <span class="kbd">PropertyCompanyService</span> 默认值。所有比例均可经 <span class="kbd">updateShareRates</span>（平台管理员）动态调整；校验逻辑：B 方案下「平台+物业+管理」三档之和须为 100%。</p>
+    <table>
+      <thead><tr><th>层级</th><th>字段</th><th class="num">默认</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>平台盘</td><td><span class="tag">platform_share_rate</span></td><td class="num">0.1000</td><td>我们公司（平台服务费）</td></tr>
+        <tr><td>平台盘</td><td><span class="tag">property_share_rate</span></td><td class="num">0.6000</td><td>物业</td></tr>
+        <tr><td>平台盘</td><td><span class="tag">coordinator_share_rate</span></td><td class="num">0.3000</td><td>管理/统筹盘</td></tr>
+        <tr><td>管理内</td><td><span class="tag">sector_leader_rate</span></td><td class="num">0.6000</td><td>板块抽统筹盘的 60%</td></tr>
+        <tr><td>管理内</td><td><span class="tag">individual_leader_rate</span></td><td class="num">0.5000</td><td>个体抽板块的 50%</td></tr>
+        <tr><td>配送费</td><td><span class="tag">platform_delivery_share_rate</span></td><td class="num">0.1000</td><td>平台从配送费抽成（可调）</td></tr>
+        <tr><td>配送费</td><td><span class="tag">courier_earning</span></td><td class="num">= 配送费 − 平台抽成</td><td>配送员收入，无保底</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 备注 -->
+  <div class="card">
+    <h2>④ 关键说明</h2>
+    <div class="note">
+      <b>开关：</b><span class="kbd">courierShareFromDeliveryFee = true</span>（B 方案，默认开启）。关闭则回退 A 方案（平台盘含 15% 快递档、0.6~5 保底）。<br><br>
+      <b>动态可调：</b>平台盘三档、管理内三档、平台配送抽成都可在后台按物业配置，无需改代码。<br><br>
+      <b>资金链路：</b>扫呗真分账（CBK）仅冻结"物业分成"单笔，平台盘五级分账为记账层，不影响资金流向。<br><br>
+      <b>存量数据：</b>数据库中既有物业（碧桂园/万达/华润）仍为旧 <span class="kbd">0.5/0.25/0.1</span>，需回填 SQL 对齐后才满足新校验；新增物业自动按 1:6:3 + 4:3:3 落库。
+    </div>
+  </div>
+
+  <div class="sub" style="text-align:center;margin-top:8px">本页为静态展示，数据来源：后端分账模块当前默认值，非实时读取数据库。</div>
+</div>
+</body>
+</html>

@@ -6,6 +6,7 @@
           <p class="desc">{{ periodDesc }}</p>
         </div>
         <div class="actions" :class="{ actionsMobile: isMobile }">
+          <button class="btnSecondary" @click="openEarnModal">发放物业币</button>
           <button class="btnSecondary" @click="openCoinModal('freeze')">冻结物业币</button>
           <button class="btnSecondary" @click="openCoinModal('unfreeze')">解冻物业币</button>
           <button class="btnSecondary" @click="openAuditModal">审核注册</button>
@@ -201,6 +202,62 @@
     </Teleport>
 
     <Teleport to="body">
+      <div v-if="earnModalOpen" class="modalOverlay" @click.self="closeEarnModal">
+        <div class="modal" :class="{ mobileSheet: isMobile }">
+          <div class="modalHeader">
+            <h3 class="modalTitle">发放物业币</h3>
+            <button class="modalClose" @click="closeEarnModal">&times;</button>
+          </div>
+          <form class="modalBody" @submit.prevent="submitEarnModal">
+            <div class="field">
+              <label class="label">选择业主</label>
+              <ResidentSearchSelect
+                :key="earnModalKey"
+                v-model="earnForm.residentId"
+                auto-open
+                @select="onEarnResidentSelect"
+              />
+            </div>
+            <div class="field">
+              <label class="label">发放金额</label>
+              <input
+                v-model.number="earnForm.coinAmount"
+                type="number"
+                min="0.01"
+                step="0.01"
+                class="input"
+                placeholder="最少 0.01"
+                required
+              />
+            </div>
+            <div class="field">
+              <label class="label">来源</label>
+              <div class="readonly">手动发放（manual）</div>
+            </div>
+            <div class="field">
+              <label class="label">描述（选填）</label>
+              <textarea
+                v-model="earnForm.description"
+                class="textarea"
+                rows="3"
+                maxlength="200"
+                placeholder="如：管理员充值、测试账号补充物业币"
+              />
+            </div>
+            <p v-if="earnError" class="error">{{ earnError }}</p>
+            <p v-if="earnSuccess" class="success">{{ earnSuccess }}</p>
+            <div class="modalFooter">
+              <button type="button" class="btnSecondary" @click="closeEarnModal">取消</button>
+              <button type="submit" class="btnPrimary" :disabled="earnSubmitting">
+                {{ earnSubmitting ? '提交中...' : '确认发放' }}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
       <div v-if="auditModalOpen" class="modalOverlay" @click.self="closeAuditModal">
         <div class="modal modalScroll" :class="{ mobileSheet: isMobile }">
           <div class="modalHeader">
@@ -257,14 +314,8 @@
                 <label class="label">营业时间</label>
                 <input v-model="auditForm.businessHours" type="text" class="input" maxlength="50" placeholder="如：08:00-22:00" />
               </div>
-              <div class="field">
-                <label class="label">配送费</label>
-                <input v-model="auditForm.deliveryFee" type="text" class="input" placeholder="如：0.30" />
-              </div>
-              <div class="field">
-                <label class="label">满额免配送费</label>
-                <input v-model="auditForm.freeDeliveryThreshold" type="text" class="input" placeholder="如：50.00" />
-              </div>
+              <p class="auditHint">配送费、满额免配送由商家自行设置；配送成本从商家费用中扣除，审核时不做干预。</p>
+              <p class="auditHint">通过后将自动开通商家账号，请通知申请人重新登录商家端。</p>
             </template>
             <div class="field">
               <label class="label">备注（选填）</label>
@@ -364,9 +415,9 @@ import IconSvg from '../components/IconSvg.vue'
 import ResidentSearchSelect from '../components/ResidentSearchSelect.vue'
 import FreezeRecordSelect from '../components/FreezeRecordSelect.vue'
 import PendingMerchantSelect from '../components/PendingMerchantSelect.vue'
-import { dashboardApi, announcementApi, merchantApi, operationLogApi, residentApi } from '../api/services'
-import type { AnnouncementCreatePayload, MerchantAuditPayload, MerchantItem } from '../api/types'
-import { mapDashboardStats, mapOperationLogs, mapPeriodDescription, mapRecentActivity, mapTopMerchants } from '../api/mappers'
+import { dashboardApi, announcementApi, merchantApi, operationLogApi, propertyCoinApi, residentApi } from '../api/services'
+import type { AnnouncementCreatePayload, MerchantAuditPayload, MerchantItem, ResidentItem } from '../api/types'
+import { formatMoney, mapDashboardStats, mapOperationLogs, mapPeriodDescription, mapRecentActivity, mapTopMerchants } from '../api/mappers'
 import { ApiError } from '../api/request'
 import { useIsMobile } from '../composables/useIsMobile'
 import { getAccessToken } from '../stores/tokenStore'
@@ -379,6 +430,7 @@ import {
   AUDIT_RESULT,
   MERCHANT_LEVEL,
   MERCHANT_LEVEL_OPTIONS,
+  PROPERTY_COIN_SOURCE,
   type AuditResult
 } from '../constants/enums'
 
@@ -415,6 +467,18 @@ const coinForm = ref({
   reason: ''
 })
 
+const earnModalOpen = ref(false)
+const earnModalKey = ref(0)
+const earnSubmitting = ref(false)
+const earnError = ref('')
+const earnSuccess = ref('')
+const earnSelectedName = ref('')
+const earnForm = ref({
+  residentId: '',
+  coinAmount: 0,
+  description: '管理员充值'
+})
+
 const auditModalOpen = ref(false)
 const auditModalKey = ref(0)
 const auditSubmitting = ref(false)
@@ -428,8 +492,6 @@ const auditForm = ref<{
   merchantLevel: string
   category: string
   businessHours: string
-  deliveryFee: string
-  freeDeliveryThreshold: string
 }>({
   merchantId: '',
   auditResult: AUDIT_RESULT.APPROVED,
@@ -437,9 +499,7 @@ const auditForm = ref<{
   remark: '',
   merchantLevel: MERCHANT_LEVEL.PROPERTY_CERTIFIED,
   category: '',
-  businessHours: '',
-  deliveryFee: '',
-  freeDeliveryThreshold: ''
+  businessHours: ''
 })
 
 const announcementModalOpen = ref(false)
@@ -525,6 +585,32 @@ function closeCoinModal() {
   resetCoinForm()
 }
 
+function resetEarnForm() {
+  earnForm.value = {
+    residentId: '',
+    coinAmount: 0,
+    description: '管理员充值'
+  }
+  earnSelectedName.value = ''
+  earnError.value = ''
+  earnSuccess.value = ''
+}
+
+function openEarnModal() {
+  earnModalOpen.value = true
+  resetEarnForm()
+  earnModalKey.value++
+}
+
+function closeEarnModal() {
+  earnModalOpen.value = false
+  resetEarnForm()
+}
+
+function onEarnResidentSelect(item: ResidentItem) {
+  earnSelectedName.value = item.name || item.phone || item.id
+}
+
 function resetAuditForm() {
   auditForm.value = {
     merchantId: '',
@@ -533,9 +619,7 @@ function resetAuditForm() {
     remark: '',
     merchantLevel: MERCHANT_LEVEL.PROPERTY_CERTIFIED,
     category: '',
-    businessHours: '',
-    deliveryFee: '',
-    freeDeliveryThreshold: ''
+    businessHours: ''
   }
   auditError.value = ''
   auditSuccess.value = ''
@@ -629,10 +713,6 @@ async function submitAnnouncementModal() {
 function onMerchantSelect(merchant: MerchantItem) {
   auditForm.value.category = merchant.category || ''
   auditForm.value.businessHours = merchant.businessHours || ''
-  auditForm.value.deliveryFee = merchant.deliveryFee != null ? String(merchant.deliveryFee) : ''
-  auditForm.value.freeDeliveryThreshold = merchant.freeDeliveryThreshold != null
-    ? String(merchant.freeDeliveryThreshold)
-    : ''
   if (merchant.merchantLevel) {
     auditForm.value.merchantLevel = merchant.merchantLevel
   }
@@ -674,15 +754,11 @@ async function submitAuditModal() {
       payload.merchantLevel = auditForm.value.merchantLevel
       if (auditForm.value.category.trim()) payload.category = auditForm.value.category.trim()
       if (auditForm.value.businessHours.trim()) payload.businessHours = auditForm.value.businessHours.trim()
-      if (auditForm.value.deliveryFee.trim()) payload.deliveryFee = auditForm.value.deliveryFee.trim()
-      if (auditForm.value.freeDeliveryThreshold.trim()) {
-        payload.freeDeliveryThreshold = auditForm.value.freeDeliveryThreshold.trim()
-      }
     }
 
     const result = await merchantApi.audit(merchantId, payload)
     auditSuccess.value = auditForm.value.auditResult === AUDIT_RESULT.APPROVED
-      ? `已通过「${result.name}」的入驻申请`
+      ? `已通过「${result.name}」的入驻申请，已自动开通商家账号。请通知申请人重新登录商家端`
       : `已拒绝「${result.name}」的入驻申请`
     await refreshOperationLogs()
     setTimeout(closeAuditModal, 1500)
@@ -731,6 +807,53 @@ async function submitCoinModal() {
     coinError.value = e instanceof ApiError ? e.message : '操作失败，请稍后重试'
   } finally {
     coinSubmitting.value = false
+  }
+}
+
+async function submitEarnModal() {
+  const residentId = earnForm.value.residentId.trim()
+  const coinAmount = Number(earnForm.value.coinAmount)
+  const description = earnForm.value.description.trim()
+
+  if (!residentId) {
+    earnError.value = '请选择业主'
+    return
+  }
+  if (!coinAmount || coinAmount < 0.01) {
+    earnError.value = '发放金额须不少于 0.01'
+    return
+  }
+
+  earnSubmitting.value = true
+  earnError.value = ''
+  earnSuccess.value = ''
+
+  try {
+    const result = await propertyCoinApi.earn({
+      residentId,
+      coinAmount,
+      source: PROPERTY_COIN_SOURCE.MANUAL,
+      description: description || undefined
+    })
+    const balance = result.newBalance ?? result.balance
+    const name = earnSelectedName.value || '该用户'
+    earnSuccess.value =
+      balance !== undefined
+        ? `已向 ${name} 发放 ${formatMoney(coinAmount)} 物业币，余额 ¥${formatMoney(balance)}`
+        : `已向 ${name} 发放 ${formatMoney(coinAmount)} 物业币`
+    await refreshOperationLogs()
+    try {
+      const overview = await dashboardApi.overview()
+      periodDesc.value = mapPeriodDescription(overview)
+      stats.value = mapDashboardStats(overview)
+    } catch {
+      /* 发放成功即可，总览刷新失败不影响 */
+    }
+    setTimeout(closeEarnModal, 1500)
+  } catch (e) {
+    earnError.value = e instanceof ApiError ? e.message : '发放失败，请稍后重试'
+  } finally {
+    earnSubmitting.value = false
   }
 }
 
@@ -940,6 +1063,23 @@ onMounted(async () => {
 .field .textarea:focus { border-color: #5c5c9e; }
 .field .textarea { resize: vertical; min-height: 80px; font-family: inherit; }
 .field .hint { font-size: 12px; color: #8c8c9a; margin-top: 6px; }
+.readonly {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f4f5f7;
+  color: #1f1f2e;
+  font-size: 14px;
+}
+.auditHint {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #8c6d1f;
+  background: #fffbe6;
+  border: 1px solid #ffe58f;
+  border-radius: 8px;
+}
 .error { font-size: 13px; color: #e05c5c; margin-bottom: 12px; }
 .success { font-size: 13px; color: #3aaf7d; margin-bottom: 12px; }
 .modalFooter {

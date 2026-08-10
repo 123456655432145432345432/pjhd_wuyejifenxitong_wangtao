@@ -2,8 +2,14 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { authApi } from '../api/services'
 import { configureRequest } from '../api/request'
-import { canUseProfileApi, normalizeAdminIdentity } from '../constants/roles'
-import type { UserProfile } from '../api/types'
+import {
+  canUseProfileApi,
+  extractPropertySubRole,
+  normalizeAdminIdentity,
+  normalizePropertySubRole
+} from '../constants/roles'
+import { USER_ROLE } from '../constants/enums'
+import type { LoginResult, UserProfile } from '../api/types'
 import {
   clearTokens,
   getAccessToken,
@@ -17,38 +23,82 @@ const AUTH_KEY = 'wuyejifen_auth'
 const PROFILE_KEY = 'userProfile'
 const COMPANY_KEY = 'propertyCompanyId'
 
-/** 兼容 snake_case / 子角色误作主角色 的 profile 字段 */
-function normalizeProfile(
-  raw:
-    | UserProfile
-    | (UserProfile & {
-        property_sub_role?: string
-        individual_leader_id?: string
-        sector_leader_id?: string
-        coordinator_id?: string
-      })
-    | null
-): UserProfile | null {
+type LooseProfile = UserProfile & {
+  property_sub_role?: string | null
+  individual_leader_id?: string
+  sector_leader_id?: string
+  coordinator_id?: string
+  resident?: LooseProfile
+  user?: LooseProfile
+}
+
+/** 尝试从 JWT payload 读取子角色（部分环境会把 claim 打进 token） */
+function readSubRoleFromAccessToken(token?: string): string | undefined {
+  if (!token) return undefined
+  try {
+    const parts = token.split('.')
+    if (parts.length < 2) return undefined
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    const json = JSON.parse(atob(base64)) as Record<string, unknown>
+    return extractPropertySubRole(json)
+  } catch {
+    return undefined
+  }
+}
+
+function pickLoginUser(data: LoginResult & Record<string, unknown>): LooseProfile | null {
+  const candidate = (data.resident || data.user || data.profile || null) as LooseProfile | null
+  if (!candidate) return null
+  const topLevelSub = extractPropertySubRole(data)
+  if (topLevelSub && !extractPropertySubRole(candidate)) {
+    return { ...candidate, propertySubRole: topLevelSub }
+  }
+  return candidate
+}
+
+/** 兼容 snake_case / 嵌套 resident / 子角色误作主角色 */
+function normalizeProfile(raw: LooseProfile | UserProfile | null): UserProfile | null {
   if (!raw) return null
-  const snakeSub = raw.property_sub_role
+  const nested = (raw as LooseProfile).resident || (raw as LooseProfile).user
+  const merged: LooseProfile = nested
+    ? {
+        ...nested,
+        ...raw,
+        role: raw.role || nested.role,
+        propertySubRole:
+          extractPropertySubRole(raw) ||
+          extractPropertySubRole(nested) ||
+          nested.propertySubRole ||
+          raw.propertySubRole
+      }
+    : { ...raw }
+
+  const rawSub =
+    extractPropertySubRole(merged) ||
+    normalizePropertySubRole(merged.propertySubRole) ||
+    normalizePropertySubRole(merged.property_sub_role)
+
   const { role, propertySubRole } = normalizeAdminIdentity({
-    role: raw.role,
-    propertySubRole: raw.propertySubRole || snakeSub
+    role: merged.role,
+    propertySubRole: rawSub
   })
+
   return {
-    ...raw,
-    role: role || raw.role,
+    ...merged,
+    role: role || merged.role,
     propertySubRole,
-    individualLeaderId: raw.individualLeaderId || raw.individual_leader_id,
-    sectorLeaderId: raw.sectorLeaderId || raw.sector_leader_id,
-    coordinatorId: raw.coordinatorId || raw.coordinator_id
+    individualLeaderId: merged.individualLeaderId || merged.individual_leader_id,
+    sectorLeaderId: merged.sectorLeaderId || merged.sector_leader_id,
+    coordinatorId: merged.coordinatorId || merged.coordinator_id
   }
 }
 
 export const useAuthStore = defineStore('auth', () => {
   const profile = ref<UserProfile | null>(normalizeProfile(readProfile()))
   const propertyCompanyId = ref(readCompanyId())
-  const isLoggedIn = ref(!!localStorage.getItem(AUTH_KEY) && hasValidSession())
+  const isLoggedIn = ref(
+    hasValidSession() && (!!localStorage.getItem(AUTH_KEY) || !!normalizeProfile(readProfile()))
+  )
   const username = ref(profile.value?.name || localStorage.getItem('wuyejifen_user') || '')
 
   configureRequest({
@@ -119,22 +169,33 @@ export const useAuthStore = defineStore('auth', () => {
     remember: boolean
   ) {
     setTokens(access, refresh, remember)
-    profile.value = normalizeProfile(user)
+    const tokenSub = readSubRoleFromAccessToken(access)
+    const normalized = normalizeProfile(user)
+    profile.value = normalized
+      ? {
+          ...normalized,
+          propertySubRole: normalized.propertySubRole || tokenSub
+        }
+      : normalized
     propertyCompanyId.value = companyId
     username.value = profile.value?.name || username.value
 
+    // 始终持久化 role + propertySubRole（JWT 无子角色时依赖 profile）
+    if (profile.value) {
+      localStorage.setItem(PROFILE_KEY, JSON.stringify(profile.value))
+      if (profile.value.name) localStorage.setItem('wuyejifen_user', profile.value.name)
+    }
+    if (companyId) localStorage.setItem(COMPANY_KEY, companyId)
+
     if (remember) {
       localStorage.setItem(AUTH_KEY, '1')
-      localStorage.setItem(COMPANY_KEY, companyId)
-      if (profile.value) localStorage.setItem(PROFILE_KEY, JSON.stringify(profile.value))
-      if (profile.value?.name) localStorage.setItem('wuyejifen_user', profile.value.name)
     }
     isLoggedIn.value = true
   }
 
   async function login(phone: string, password: string, remember = true) {
-    const data = await authApi.adminLogin(phone, password)
-    const user = data.resident || null
+    const data = (await authApi.adminLogin(phone, password)) as LoginResult & Record<string, unknown>
+    const user = pickLoginUser(data)
     setSession(
       data.accessToken,
       data.refreshToken,
@@ -142,9 +203,24 @@ export const useAuthStore = defineStore('auth', () => {
       user?.propertyCompanyId || propertyCompanyId.value,
       remember
     )
+    localStorage.setItem(AUTH_KEY, '1')
+    isLoggedIn.value = true
+
+    const loginSub =
+      extractPropertySubRole(user) ||
+      extractPropertySubRole(data) ||
+      readSubRoleFromAccessToken(data.accessToken)
+
     try {
-      if (canUseProfileApi(user?.role)) {
-        persistProfile(await authApi.profile())
+      const roleForProfile = normalizeAdminIdentity(profile.value).role || user?.role
+      if (canUseProfileApi(roleForProfile)) {
+        const detail = (await authApi.profile({ softAuth: true })) as LooseProfile
+        const detailSub = extractPropertySubRole(detail)
+        persistProfile({
+          ...detail,
+          // 资料未带回子角色时，保留登录 / JWT 中的 property_leader
+          propertySubRole: detailSub || loginSub || profile.value?.propertySubRole
+        })
         username.value = profile.value?.name || username.value
         if (profile.value?.propertyCompanyId) {
           propertyCompanyId.value = profile.value.propertyCompanyId
@@ -152,8 +228,21 @@ export const useAuthStore = defineStore('auth', () => {
         }
       }
     } catch {
-      // profile 获取失败不影响登录
+      // 保留 admin-login 返回的 resident（含 propertySubRole）
+      if (loginSub && profile.value && !profile.value.propertySubRole) {
+        patchProfile({ propertySubRole: loginSub })
+      }
     }
+
+    // 最终兜底：物业管理员若仍无子角色，无法展示领导菜单——再写一次登录侧解析结果
+    if (
+      profile.value?.role === USER_ROLE.PROPERTY_ADMIN &&
+      !profile.value.propertySubRole &&
+      loginSub
+    ) {
+      patchProfile({ propertySubRole: loginSub })
+    }
+
     void bindPushAfterLogin(profile.value?.id || user?.id)
     return true
   }

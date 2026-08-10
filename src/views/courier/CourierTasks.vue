@@ -3,13 +3,15 @@
     <div class="header">
       <div>
         <h1 class="title">我的任务</h1>
-        <p class="desc">管理已接配送任务</p>
+        <p class="desc">
+          管理已接配送任务。完成配送后预计收入计入可提现（配送费 − 我们公司抽成，无保底；与分成明细配送员收入同一笔）。
+        </p>
       </div>
-      <button class="btnGhost" :disabled="loading" @click="load(page)">刷新</button>
+      <button class="btnGhost" :disabled="loading" @click="load(page, true)">刷新</button>
     </div>
 
     <div class="toolbar">
-      <select v-model="statusFilter" class="select" @change="load(1)">
+      <select v-model="statusFilter" class="select" @change="load(1, true)">
         <option v-for="opt in COURIER_TASK_STATUS_OPTIONS" :key="opt.value || 'all'" :value="opt.value">
           {{ opt.label }}
         </option>
@@ -19,7 +21,8 @@
     <div class="panel">
       <div v-if="loading" class="loading">加载中...</div>
       <p v-else-if="error" class="error">{{ error }}</p>
-      <template v-else>
+      <p v-if="!loading && success" class="success">{{ success }}</p>
+      <template v-if="!loading">
         <table v-if="tasks.length && !isMobile" class="table">
           <thead>
             <tr>
@@ -27,7 +30,7 @@
               <th>商家</th>
               <th>取货地址</th>
               <th>送达地址</th>
-              <th>收益</th>
+              <th>预计收入</th>
               <th>状态</th>
               <th>接单/超时</th>
               <th>操作</th>
@@ -79,7 +82,7 @@
                 {{ getEnumLabel(DELIVERY_STATUS_LABEL, item.status) }}
               </span>
             </div>
-            <div class="taskEarning">收益 ¥{{ formatMoney(item.courierEarning ?? item.fee) }}</div>
+            <div class="taskEarning">预计收入 ¥{{ formatMoney(item.courierEarning ?? item.fee) }}</div>
             <div class="taskAddress">
               <span>取货</span>
               <strong>{{ item.pickupAddress || item.merchantAddress || '—' }}</strong>
@@ -142,7 +145,10 @@
               <li><span>取货地址</span><strong>{{ detailItem.pickupAddress || detailItem.merchantAddress || '—' }}</strong></li>
               <li><span>送达地址</span><strong>{{ detailItem.deliveryAddress || '—' }}</strong></li>
               <li><span>联系电话</span><strong>{{ detailItem.contactPhone || '—' }}</strong></li>
-              <li><span>配送收益</span><strong>¥{{ formatMoney(detailItem.courierEarning ?? detailItem.fee) }}</strong></li>
+              <li>
+                <span>预计收入</span>
+                <strong>¥{{ formatMoney(detailItem.courierEarning ?? detailItem.fee) }}</strong>
+              </li>
               <li><span>接单时间</span><strong>{{ detailItem.acceptedAt || '—' }}</strong></li>
               <li><span>超时时间</span><strong>{{ detailItem.timeoutAt || '—' }}</strong></li>
               <li><span>完成时间</span><strong>{{ detailItem.deliveredAt || '—' }}</strong></li>
@@ -176,11 +182,19 @@
             <button class="modalClose" @click="closeComplete">&times;</button>
           </div>
           <div class="modalBody">
-            <p class="hint">订单 {{ completeTarget.orderNo || completeTarget.orderId }}</p>
+            <p class="hint">
+              订单 {{ completeTarget.orderNo || completeTarget.orderId }}
+              · 预计收入 ¥{{ formatMoney(completeTarget.courierEarning ?? completeTarget.fee) }}
+            </p>
             <p v-if="completeError" class="error">{{ completeError }}</p>
             <div class="field">
-              <label class="label">送达凭证 URL（可选，多个用英文逗号分隔，最多 5 张）</label>
-              <input v-model="completeForm.proofUrlsText" class="input" placeholder="https://..." />
+              <label class="label">送达凭证（可选，最多 5 张）</label>
+              <MediaUploader
+                v-model="completeForm.proofUrls"
+                category="proof"
+                accept="image"
+                :max="5"
+              />
             </div>
             <div class="field">
               <label class="label">备注</label>
@@ -202,7 +216,8 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { onMounted } from 'vue'
-import { courierPortalApi } from '../../api/services'
+import MediaUploader from '../../components/MediaUploader.vue'
+import { courierManagerApi, courierPortalApi } from '../../api/services'
 import type { CourierDeliveryItem } from '../../api/types'
 import { ApiError } from '../../api/request'
 import {
@@ -217,6 +232,7 @@ const { isMobile } = useIsMobile()
 const tasks = ref<CourierDeliveryItem[]>([])
 const loading = ref(false)
 const error = ref('')
+const success = ref('')
 const statusFilter = ref('')
 const actionId = ref('')
 const page = ref(1)
@@ -225,7 +241,7 @@ const detailItem = ref<CourierDeliveryItem | null>(null)
 const completeTarget = ref<CourierDeliveryItem | null>(null)
 const completeError = ref('')
 const completeForm = reactive({
-  proofUrlsText: '',
+  proofUrls: [] as string[],
   remark: '已送达'
 })
 
@@ -237,7 +253,7 @@ function formatMoney(value?: number) {
 function statusClass(status?: string) {
   if (status === DELIVERY_STATUS.ACCEPTED || status === DELIVERY_STATUS.GRABBED) return 'accepted'
   if (status === DELIVERY_STATUS.DELIVERING) return 'delivering'
-  if (status === DELIVERY_STATUS.COMPLETED) return 'completed'
+  if (status === DELIVERY_STATUS.DELIVERED || status === DELIVERY_STATUS.COMPLETED) return 'completed'
   if (status === DELIVERY_STATUS.CANCELLED || status === DELIVERY_STATUS.FAILED) return 'cancelled'
   return ''
 }
@@ -250,17 +266,10 @@ function canComplete(item: CourierDeliveryItem) {
   return item.status === DELIVERY_STATUS.DELIVERING
 }
 
-function parseProofUrls(text: string) {
-  return text
-    .split(',')
-    .map((url) => url.trim())
-    .filter(Boolean)
-    .slice(0, 5)
-}
-
-async function load(pageNo = 1) {
+async function load(pageNo = 1, clearSuccess = false) {
   loading.value = true
   error.value = ''
+  if (clearSuccess) success.value = ''
   try {
     const res = await courierPortalApi.my({
       page: pageNo,
@@ -279,7 +288,7 @@ async function load(pageNo = 1) {
 }
 
 function changePage(next: number) {
-  load(next)
+  load(next, true)
 }
 
 function openDetail(item: CourierDeliveryItem) {
@@ -292,7 +301,7 @@ function closeDetail() {
 
 function openComplete(item: CourierDeliveryItem) {
   completeTarget.value = item
-  completeForm.proofUrlsText = ''
+  completeForm.proofUrls = []
   completeForm.remark = '已送达'
   completeError.value = ''
 }
@@ -331,15 +340,24 @@ async function startDeliveryFromDetail() {
 
 async function submitComplete() {
   if (!completeTarget.value) return
-  actionId.value = completeTarget.value.id
+  const target = completeTarget.value
+  const earning = Number(target.courierEarning ?? target.fee ?? 0)
+  actionId.value = target.id
   completeError.value = ''
-  const proofImageUrls = parseProofUrls(completeForm.proofUrlsText)
+  const proofImageUrls = completeForm.proofUrls.filter((url) => url.trim()).slice(0, 5)
   try {
-    await courierPortalApi.complete(completeTarget.value.id, {
+    await courierPortalApi.complete(target.id, {
       proofImageUrls: proofImageUrls.length ? proofImageUrls : undefined,
       remark: completeForm.remark.trim() || undefined
     })
     closeComplete()
+    // 入账触发：完成配送后立刻以接口返回为准刷新可提现（勿本地累加）
+    const wallet = await courierManagerApi.my().catch(() => null)
+    const withdrawable = wallet?.withdrawableAmount
+    success.value =
+      withdrawable != null
+        ? `配送已完成。可提现余额 ¥${formatMoney(Number(withdrawable))}（本单预计收入 ¥${formatMoney(earning)}）`
+        : `配送已完成。本单预计收入 ¥${formatMoney(earning)}，请打开提现页确认可提现余额`
     await load(page.value)
   } catch (e) {
     completeError.value = e instanceof ApiError ? e.message : '完成配送失败'
@@ -361,8 +379,9 @@ onMounted(() => load(1))
 .btnGhost { padding: 8px 14px; border-radius: 8px; border: 1px solid #e8e8ec; background: #fff; color: #5c5c66; font-size: 14px; cursor: pointer; }
 .btnGhost:hover { border-color: #5c5c9e; color: #5c5c9e; }
 .panel { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); overflow-x: auto; }
-.loading, .empty, .error { text-align: center; padding: 32px 0; color: #8c8c9a; font-size: 14px; }
+.loading, .empty, .error, .success { text-align: center; padding: 32px 0; color: #8c8c9a; font-size: 14px; }
 .error { color: #e05c5c; }
+.success { color: #3aaf7d; padding-top: 0; }
 .table { width: 100%; border-collapse: collapse; min-width: 980px; }
 .table tbody tr { border-bottom: 1px solid #f0f0f3; }
 .table th, .table td { padding: 10px; text-align: left; font-size: 13px; vertical-align: middle; }
@@ -377,63 +396,46 @@ onMounted(() => load(1))
 .tag.cancelled { background: #fff1f0; color: #cf1322; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; white-space: nowrap; }
 .linkBtn { color: #5c5c9e; cursor: pointer; background: none; border: none; padding: 0; font-size: 13px; }
-.linkBtn:disabled { opacity: 0.6; cursor: not-allowed; }
+.linkBtn:disabled { opacity: 0.45; cursor: not-allowed; }
 .pagination { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 16px; }
-.pageBtn { padding: 6px 12px; border: 1px solid #e8e8ec; border-radius: 8px; background: #fff; cursor: pointer; }
+.pageBtn { width: 32px; height: 32px; border-radius: 6px; border: 1px solid #e8e8ec; background: #fff; cursor: pointer; }
+.pageBtn:disabled { opacity: 0.4; cursor: not-allowed; }
 .pageInfo { font-size: 13px; color: #8c8c9a; }
-.modalOverlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 16px; }
-.modal { width: 520px; max-width: 100%; background: #fff; border-radius: 12px; overflow: hidden; }
-.modalHeader { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #f0f0f3; }
-.modalTitle { font-size: 16px; font-weight: 600; }
-.modalClose { border: none; background: none; font-size: 22px; cursor: pointer; color: #8c8c9a; }
-.modalBody { padding: 20px; }
+.taskCards { display: grid; gap: 12px; }
+.taskCard { border: 1px solid #f0f0f3; border-radius: 12px; padding: 14px; background: #fafafc; }
+.taskCardHeader { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.taskEarning { font-size: 15px; font-weight: 600; color: #3aaf7d; margin-bottom: 10px; }
+.taskAddress { display: grid; grid-template-columns: 36px 1fr; gap: 8px; font-size: 13px; margin-bottom: 6px; }
+.taskAddress span { color: #8c8c9a; }
+.taskMeta { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: #8c8c9a; margin: 8px 0; }
+.taskCardActions { display: flex; gap: 8px; flex-wrap: wrap; }
+.cardActionBtn { min-height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid #e8e8ec; background: #fff; color: #5c5c66; font-size: 13px; cursor: pointer; }
+.cardActionBtn.primary { border-color: #5c5c9e; color: #5c5c9e; }
+.cardActionBtn:disabled { opacity: 0.45; cursor: not-allowed; }
+.modalOverlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 16px; }
+.modal { width: min(520px, 100%); background: #fff; border-radius: 12px; overflow: hidden; }
+.modal.mobileSheet { align-self: flex-end; width: 100%; border-radius: 16px 16px 0 0; }
+.modalHeader { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid #f0f0f3; }
+.modalTitle { font-size: 16px; font-weight: 600; margin: 0; }
+.modalClose { border: none; background: none; font-size: 22px; color: #8c8c9a; cursor: pointer; }
+.modalBody { padding: 20px; max-height: 70vh; overflow: auto; }
 .modalFooter { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 20px; border-top: 1px solid #f0f0f3; }
-.detailHead { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }
-.orderNo { font-weight: 600; font-size: 16px; }
-.infoList { list-style: none; }
-.infoList li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid #f7f7f9; font-size: 13px; }
-.infoList span { color: #8c8c9a; flex-shrink: 0; }
-.infoList strong { text-align: right; color: #1f1f2e; font-weight: 500; word-break: break-all; }
-.field { margin-bottom: 14px; }
+.detailHead { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.orderNo { font-family: ui-monospace, monospace; font-size: 13px; }
+.infoList { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.infoList li { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
+.infoList span { color: #8c8c9a; }
+.infoList strong { font-weight: 500; text-align: right; }
+.hint { font-size: 13px; color: #5c5c66; margin: 0 0 12px; }
+.field { margin-bottom: 12px; }
 .label { display: block; font-size: 13px; color: #8c8c9a; margin-bottom: 6px; }
-.input, .textarea { width: 100%; padding: 10px 12px; border: 1px solid #e8e8ec; border-radius: 8px; box-sizing: border-box; font-size: 14px; }
-.textarea { resize: vertical; font-family: inherit; }
-.hint { font-size: 13px; color: #5c5c66; margin-bottom: 12px; }
-.btnPrimary { padding: 10px 18px; border-radius: 8px; background: #5c5c9e; color: #fff; border: none; cursor: pointer; }
-.btnPrimary:hover { background: #52529a; }
-.btnGhost { padding: 10px 18px; border-radius: 8px; border: 1px solid #e8e8ec; background: #fff; color: #5c5c66; font-size: 14px; cursor: pointer; }
-.btnGhost:hover { border-color: #5c5c9e; color: #5c5c9e; }
+.input, .textarea { width: 100%; box-sizing: border-box; padding: 8px 12px; border: 1px solid #e8e8ec; border-radius: 8px; font-size: 14px; }
+.textarea { resize: vertical; }
+.btnPrimary { padding: 8px 16px; border-radius: 8px; background: #5c5c9e; color: #fff; border: none; cursor: pointer; }
+.btnPrimary:disabled { opacity: 0.55; cursor: not-allowed; }
+.btnGhost { padding: 8px 14px; border-radius: 8px; border: 1px solid #e8e8ec; background: #fff; color: #5c5c66; cursor: pointer; }
 @media (max-width: 768px) {
-  .header { align-items: center; gap: 12px; margin-bottom: 18px; }
-  .title { font-size: 22px; margin-bottom: 4px; }
-  .btnGhost { min-width: 72px; min-height: 44px; padding: 0 14px; }
-  .toolbar { margin-bottom: 12px; }
-  .select { width: 100%; min-height: 44px; }
-  .panel { padding: 14px; overflow: visible; }
-  .taskCards { display: grid; gap: 12px; }
-  .taskCard { padding: 16px; border: 1px solid #e8e8ec; border-radius: 12px; background: #fafafc; }
-  .taskCardHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-  .taskCardHeader .mono { min-width: 0; overflow-wrap: anywhere; }
-  .taskEarning { margin: 12px 0; color: #3aaf7d; font-size: 16px; font-weight: 600; }
-  .taskAddress { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 8px; padding: 7px 0; font-size: 13px; line-height: 1.5; }
-  .taskAddress > span { color: #8c8c9a; }
-  .taskAddress strong { color: #1f1f2e; font-weight: 500; overflow-wrap: anywhere; }
-  .taskMeta { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 10px; color: #8c8c9a; font-size: 12px; line-height: 1.5; }
-  .taskCard .sub { margin-top: 8px; }
-  .taskCardActions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
-  .cardActionBtn { min-height: 44px; padding: 0 12px; border: 1px solid #5c5c9e; border-radius: 9px; color: #5c5c9e; background: #fff; font-size: 14px; cursor: pointer; }
-  .cardActionBtn.primary { border-color: #5c5c9e; color: #fff; background: #5c5c9e; }
-  .cardActionBtn:disabled { opacity: .6; cursor: not-allowed; }
-  .pagination { margin-top: 18px; }
-  .pageBtn { min-width: 44px; min-height: 44px; padding: 0; }
-  .modalOverlay { align-items: flex-end; padding: 0; }
-  .modal { max-height: min(88vh, 760px); display: flex; flex-direction: column; }
-  .mobileSheet { width: 100%; max-width: 100%; margin-top: auto; border-radius: 18px 18px 0 0; }
-  .modalHeader { padding: 18px 18px 14px; }
-  .modalBody { padding: 18px; overflow-y: auto; }
-  .modalFooter { padding: 14px 18px 18px; flex-direction: column-reverse; }
-  .modalFooter .btnGhost, .modalFooter .btnPrimary { width: 100%; min-height: 44px; }
-  .infoList li { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 10px; }
-  .infoList strong { text-align: left; }
+  .mobilePage .header { flex-direction: column; gap: 12px; }
+  .panel { padding: 16px; }
 }
 </style>

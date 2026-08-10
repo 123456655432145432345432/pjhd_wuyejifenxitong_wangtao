@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>分账逻辑说明 · 物业积分系统</title>
+  <style>
+    :root {
+      --bg: #f7f6f2;
+      --paper: #ffffff;
+      --ink: #1c1b19;
+      --muted: #5c5954;
+      --line: #e4e0d8;
+      --accent: #0f6b5c;
+      --accent-soft: #e6f3ef;
+      --warn: #8a5a00;
+      --warn-soft: #fff4e0;
+      --danger: #8b2e2e;
+      --danger-soft: #f8ecec;
+      --code: #2a2926;
+      --shadow: 0 1px 2px rgba(28, 27, 25, 0.04), 0 8px 24px rgba(28, 27, 25, 0.06);
+      --radius: 12px;
+      --max: 880px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      font-family: "Source Han Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(1200px 500px at 10% -10%, #e8f2ef 0%, transparent 55%),
+        radial-gradient(900px 400px at 100% 0%, #f0ebe3 0%, transparent 50%),
+        var(--bg);
+      line-height: 1.7;
+      font-size: 16px;
+    }
+
+    .wrap {
+      max-width: var(--max);
+      margin: 0 auto;
+      padding: 48px 24px 80px;
+    }
+
+    header.doc-hero {
+      margin-bottom: 36px;
+      padding-bottom: 28px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    header.doc-hero .eyebrow {
+      display: inline-block;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: clamp(1.75rem, 3vw, 2.25rem);
+      line-height: 1.25;
+      letter-spacing: -0.02em;
+      font-weight: 700;
+    }
+
+    .lead {
+      margin: 0;
+      color: var(--muted);
+      font-size: 1.05rem;
+      max-width: 42em;
+    }
+
+    .meta {
+      margin-top: 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    nav.toc {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 20px 24px;
+      margin-bottom: 36px;
+    }
+
+    nav.toc h2 {
+      margin: 0 0 12px;
+      font-size: 0.95rem;
+      color: var(--muted);
+      font-weight: 600;
+      letter-spacing: 0.04em;
+    }
+
+    nav.toc ol {
+      margin: 0;
+      padding-left: 1.25rem;
+      columns: 1;
+    }
+
+    @media (min-width: 640px) {
+      nav.toc ol { columns: 2; column-gap: 28px; }
+    }
+
+    nav.toc li {
+      break-inside: avoid;
+      margin: 0.35rem 0;
+    }
+
+    nav.toc a {
+      color: var(--ink);
+      text-decoration: none;
+      border-bottom: 1px solid transparent;
+    }
+
+    nav.toc a:hover {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    section {
+      margin-bottom: 40px;
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      font-size: 1.35rem;
+      letter-spacing: -0.01em;
+      padding-top: 8px;
+      border-top: 1px solid transparent;
+      scroll-margin-top: 24px;
+    }
+
+    h2::before {
+      content: "";
+      display: block;
+      width: 36px;
+      height: 3px;
+      background: var(--accent);
+      border-radius: 2px;
+      margin-bottom: 12px;
+    }
+
+    h3 {
+      margin: 28px 0 10px;
+      font-size: 1.1rem;
+      scroll-margin-top: 24px;
+    }
+
+    h4 {
+      margin: 18px 0 8px;
+      font-size: 0.98rem;
+      color: var(--muted);
+    }
+
+    p { margin: 0 0 12px; }
+
+    ul, ol { margin: 0 0 14px; padding-left: 1.35rem; }
+    li { margin: 0.3rem 0; }
+
+    a { color: var(--accent); }
+
+    .card {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 20px 22px;
+      margin: 16px 0;
+    }
+
+    .card.tight { padding: 16px 18px; }
+
+    .callout {
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      margin: 16px 0;
+      border: 1px solid var(--line);
+      background: var(--accent-soft);
+      border-left: 4px solid var(--accent);
+    }
+
+    .callout.warn {
+      background: var(--warn-soft);
+      border-left-color: var(--warn);
+    }
+
+    .callout.danger {
+      background: var(--danger-soft);
+      border-left-color: var(--danger);
+    }
+
+    .callout strong { display: inline; }
+
+    .grid-2 {
+      display: grid;
+      gap: 14px;
+      margin: 16px 0;
+    }
+
+    @media (min-width: 700px) {
+      .grid-2 { grid-template-columns: 1fr 1fr; }
+    }
+
+    .pair-card {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 18px;
+    }
+
+    .pair-card .tag {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+
+    .pair-card h3 {
+      margin: 0 0 8px;
+      font-size: 1.05rem;
+    }
+
+    .pair-card p:last-child { margin-bottom: 0; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+      margin: 14px 0 18px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+
+    th, td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+
+    th {
+      background: #f3f1ec;
+      font-weight: 600;
+      font-size: 0.85rem;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    tr:last-child td { border-bottom: none; }
+
+    code, .mono {
+      font-family: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+      font-size: 0.86em;
+      background: #f0eee9;
+      padding: 0.1em 0.35em;
+      border-radius: 4px;
+      color: var(--code);
+    }
+
+    pre.flow {
+      margin: 14px 0;
+      padding: 16px 18px;
+      background: #1f2a28;
+      color: #e8f0ee;
+      border-radius: var(--radius);
+      overflow-x: auto;
+      font-family: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+      font-size: 0.82rem;
+      line-height: 1.55;
+      box-shadow: var(--shadow);
+    }
+
+    pre.flow .dim { color: #8aa39c; }
+    pre.flow .hl { color: #7dceb8; font-weight: 600; }
+
+    .steps {
+      counter-reset: step;
+      list-style: none;
+      padding: 0;
+      margin: 16px 0;
+    }
+
+    .steps li {
+      position: relative;
+      padding: 14px 16px 14px 56px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      margin: 0 0 10px;
+      box-shadow: var(--shadow);
+    }
+
+    .steps li::before {
+      counter-increment: step;
+      content: counter(step);
+      position: absolute;
+      left: 14px;
+      top: 14px;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 28px;
+      text-align: center;
+    }
+
+    .steps li strong { display: block; margin-bottom: 4px; }
+
+    .compare {
+      display: grid;
+      gap: 0;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin: 16px 0;
+      background: var(--paper);
+      box-shadow: var(--shadow);
+    }
+
+    .compare .row {
+      display: grid;
+      grid-template-columns: 120px 1fr 1fr;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .compare .row:last-child { border-bottom: none; }
+
+    .compare .row > div {
+      padding: 10px 12px;
+      font-size: 0.9rem;
+    }
+
+    .compare .head {
+      background: #f3f1ec;
+      font-weight: 600;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    .compare .label {
+      font-weight: 600;
+      background: #faf9f6;
+    }
+
+    @media (max-width: 640px) {
+      .compare .row {
+        grid-template-columns: 1fr;
+      }
+      .compare .label {
+        border-bottom: 1px dashed var(--line);
+      }
+    }
+
+    .formula {
+      font-family: "JetBrains Mono", Consolas, monospace;
+      background: var(--paper);
+      border: 1px dashed var(--accent);
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin: 12px 0;
+      font-size: 0.88rem;
+      color: var(--accent);
+    }
+
+    footer {
+      margin-top: 48px;
+      padding-top: 20px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    .kbd {
+      font-family: inherit;
+      font-size: 0.85em;
+      padding: 1px 6px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: #faf9f6;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="doc-hero">
+      <div class="eyebrow">业务说明文档</div>
+      <h1>分账逻辑说明</h1>
+      <p class="lead">
+        本文说明物业积分系统中的分账规则：哪些钱怎么分、积分怎么返、配置在哪里改、结果在哪里看。
+        系统里存在两套互不混用的逻辑——<strong>现金分账</strong>与<strong>积分分成（消费返积分）</strong>。
+      </p>
+      <div class="meta">
+        <span class="chip">适用：管理端 / 统筹体系 / 平台</span>
+        <span class="chip">对照：参数配置 · 平台分成配置 · 分成记录</span>
+        <span class="chip">更新日期：2026-08-06</span>
+      </div>
+    </header>
+
+    <nav class="toc" aria-label="目录">
+      <h2>目录</h2>
+      <ol>
+        <li><a href="#overview">一、先分清两套逻辑</a></li>
+        <li><a href="#org">二、组织层级（分润落在谁身上）</a></li>
+        <li><a href="#cash">三、现金分账（订单分成）</a></li>
+        <li><a href="#platform">四、平台三条收益链路</a></li>
+        <li><a href="#merchant">五、商家分成比例</a></li>
+        <li><a href="#points">六、积分分成（消费返积分）</a></li>
+        <li><a href="#order-flow">七、一笔订单完整走法</a></li>
+        <li><a href="#config">八、配置入口与权限</a></li>
+        <li><a href="#view">九、结果查看入口</a></li>
+        <li><a href="#faq">十、常见误解与验收建议</a></li>
+        <li><a href="#fields">十一、关键字段速查</a></li>
+      </ol>
+    </nav>
+
+    <!-- 1 -->
+    <section id="overview">
+      <h2>一、先分清两套逻辑</h2>
+      <p>日常说的「分账 / 分成」在本系统里对应两套独立机制，配置页也是分开的，验收时不要混用。</p>
+
+      <div class="grid-2">
+        <div class="pair-card">
+          <div class="tag">套件 A · 现金</div>
+          <h3>现金分账（订单分成）</h3>
+          <p>
+            第三方商家订单有可分配现金时，按比例切给平台、物业、统筹、板块负责人、个体负责人等。
+            对应参数页的<strong>「分账设置区」</strong>，以及平台的<strong>「平台分成配置」</strong>。
+          </p>
+          <p>结果落在：分成记录 <code>/distribution/records</code>、平台收益等。</p>
+        </div>
+        <div class="pair-card">
+          <div class="tag">套件 B · 积分</div>
+          <h3>积分分成（消费返积分）</h3>
+          <p>
+            按消费金额（或可分部分）的一定比例，把积分返到业主、商家、物业币、小区建设（共享）积分池。
+            对应参数页的<strong>「积分分成比例」</strong>。
+          </p>
+          <p>结果落在：住户积分余额、商家侧积分、建设积分流水等。</p>
+        </div>
+      </div>
+
+      <div class="callout warn">
+        <strong>不要混淆：</strong>「用积分付款」是在<strong>花掉</strong>积分余额；「积分分成」是消费后<strong>返还</strong>积分。
+        全额积分支付通常没有可分现金，现金分成记录可能为空——这是预期行为，不是分成坏了。
+      </div>
+    </section>
+
+    <!-- 2 -->
+    <section id="org">
+      <h2>二、组织层级（分润落在谁身上）</h2>
+      <p>现金分账的主链路与统筹体系一致：</p>
+
+      <pre class="flow"><span class="dim">物业公司</span>
+  └─ <span class="hl">统筹</span>（可管多个小区）
+       └─ <span class="hl">板块负责人</span>（如保洁 / 维修等板块）
+            └─ <span class="hl">个体负责人</span>（管辖具体商家）</pre>
+
+      <p>此外，系统还存在一套并行的<strong>区域负责人 → 项目负责人</strong>结构（管理端可维护 <code>shareRate</code>），与「个体负责人」并存。主分成记录展示目前仍以「物业 / 统筹 / 板块 / 个体 / 平台」为主。</p>
+
+      <div class="callout">
+        <strong>产品含义：</strong>每一层拿的是「订单可分配金额」里属于自己的那一截现金收益，再通过各自门户提现（提现能力按角色开放，与分成入账是两件事）。
+      </div>
+    </section>
+
+    <!-- 3 -->
+    <section id="cash">
+      <h2>三、现金分账（订单分成）</h2>
+
+      <h3>3.1 触发条件</h3>
+      <ul>
+        <li>第三方商户订单产生<strong>可分配金额</strong>（一般需有现金支付部分，且订单进入可结算状态，如完成后生成分成记录）。</li>
+        <li>比例适用于「接入社区的第三方商户订单结算」（参数页分账区说明）。</li>
+      </ul>
+
+      <h3>3.2 计算顺序（核心）</h3>
+      <ol class="steps">
+        <li>
+          <strong>确定可分配金额</strong>
+          记为 <code>distributableAmount</code>（分成记录里的「可分配金额」列）。
+        </li>
+        <li>
+          <strong>先抽平台订单分成</strong>
+          按 <code>platformShareRate</code> 从可分配金额中抽取平台收益。
+        </li>
+        <li>
+          <strong>剩余按四级权重分配</strong>
+          物业、统筹、板块负责人、个体负责人按各自配置比例（或相对权重）瓜分剩余部分。
+        </li>
+        <li>
+          <strong>落账并生成分成记录</strong>
+          各角色金额写入分成明细，可在统筹/管理端查看。
+        </li>
+      </ol>
+
+      <pre class="flow">可分配金额 distributableAmount
+  │
+  ├─ 平台订单分成 = 可分配金额 × platformShareRate
+  │
+  └─ 剩余 = 可分配金额 × (1 − platformShareRate)
+       ├─ 物业       propertyShareRate（相对权重）
+       ├─ 统筹       coordinatorShareRate
+       ├─ 板块负责人 sectorLeaderRate
+       └─ 个体负责人 individualLeaderRate</pre>
+
+      <h3>3.3 平台比例提高时会发生什么</h3>
+      <p>
+        在「平台分成配置」中提高<strong>订单分成比例</strong>后，物业 → 统筹 → 板块 → 个体四级的<strong>实际占比</strong>
+        会按原有权重<strong>等比压缩</strong>（页面有「按当前输入值估算的四级实际占比」预览）。
+      </p>
+
+      <div class="formula">
+        剩余可分比例 = 1 − 平台订单分成比例<br />
+        某级实际占比 ≈ 该级原比例 × (剩余可分比例 / 四级原比例合计)
+      </div>
+
+      <h3>3.4 四级比例配置项</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>界面名称</th>
+            <th>典型字段</th>
+            <th>含义</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>物业分成</td>
+            <td><code>propertyShareRate</code></td>
+            <td>物业公司从订单分润中获得的比例/权重</td>
+          </tr>
+          <tr>
+            <td>统筹分成</td>
+            <td><code>coordinatorShareRate</code></td>
+            <td>统筹角色分润</td>
+          </tr>
+          <tr>
+            <td>板块负责人</td>
+            <td><code>sectorLeaderRate</code></td>
+            <td>板块负责人分润</td>
+          </tr>
+          <tr>
+            <td>个体负责人</td>
+            <td><code>individualLeaderRate</code></td>
+            <td>个体负责人分润</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout warn">
+        <strong>权限注意：</strong>产品要求「分成比例由平台统一管理」，但当前参数页「分账设置区」物业端仍可能可编辑四级比例；
+        平台三项（订单 / 配送 / 提现手续费）在参数页为只读，须到「平台分成配置」修改。若做权限收口，应以平台可写、物业只读为准。
+      </div>
+    </section>
+
+    <!-- 4 -->
+    <section id="platform">
+      <h2>四、平台三条收益链路</h2>
+      <p>平台管理员不只抽「订单分成」，还有配送费与提现手续费两条独立链路。三者互不替代。</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>链路</th>
+            <th>配置项</th>
+            <th>基数</th>
+            <th>说明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>订单分成</td>
+            <td><code>platformShareRate</code></td>
+            <td>订单可分配金额</td>
+            <td>默认可为 0%；提高后会压缩下级四级占比</td>
+          </tr>
+          <tr>
+            <td>配送费分成</td>
+            <td><code>platformDeliveryShareRate</code></td>
+            <td>配送费</td>
+            <td>从配送费中抽取；与订单商品分润分开</td>
+          </tr>
+          <tr>
+            <td>提现手续费分成</td>
+            <td><code>platformWithdrawalFeeShareRate</code></td>
+            <td>提现手续费</td>
+            <td>从提现手续费中抽取；默认常见为 100%</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p>配置入口：侧边栏 <strong>平台分成配置</strong>（仅平台管理员可改）。参数配置页对平台管理员仅作只读展示。</p>
+      <p>查看入口：<strong>平台收益</strong>页（统计 + 明细记录）。</p>
+    </section>
+
+    <!-- 5 -->
+    <section id="merchant">
+      <h2>五、商家分成比例</h2>
+      <p>
+        商家详情/列表中的 <code>commissionRate</code>（商家分成比例）是<strong>商家与上级（板块 / 个体等）协商</strong>的比例，
+        与参数页「四级现金分账」不是同一组字段。
+      </p>
+      <ul>
+        <li>设置入口：板块负责人 / 个体负责人的商家管理页「设置分成」。</li>
+        <li>变更通常走价格审批，类型为 <code>merchant_distribution</code>（商家分成），审批通过后才生效。</li>
+        <li>商家营收/利润空间展示中，也会按物业、统筹、板块、个体、平台等维度做收益拆分展示（展示用 breakdown）。</li>
+      </ul>
+      <div class="callout">
+        <strong>记忆法：</strong>
+        <code>commissionRate</code> = 这家店怎么跟上级分；
+        参数页四级比例 = 整盘订单结算时各角色怎么分。
+      </div>
+    </section>
+
+    <!-- 6 -->
+    <section id="points">
+      <h2>六、积分分成（消费返积分）</h2>
+
+      <h3>6.1 它是什么</h3>
+      <p>
+        物业在参数配置中设定：消费产生积分时，按多大比例分别进入四个去向。
+        四项合计不得超过 <strong>30%</strong>（单项也受 ≤30% 约束）。
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>界面名称</th>
+            <th>字段</th>
+            <th>积分去向</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>业主积分分成</td>
+            <td><code>residentPointShareRate</code></td>
+            <td>住户个人积分</td>
+          </tr>
+          <tr>
+            <td>商家积分分成</td>
+            <td><code>merchantPointShareRate</code></td>
+            <td>商家侧积分</td>
+          </tr>
+          <tr>
+            <td>物业币积分分成</td>
+            <td><code>coinPointShareRate</code></td>
+            <td>物业币相关部分</td>
+          </tr>
+          <tr>
+            <td>共享积分分成</td>
+            <td><code>sharedPointShareRate</code></td>
+            <td>小区建设（共享）积分池</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>6.2 它不是什么</h3>
+      <ul>
+        <li>不是「用积分支付订单时再分一次账」。</li>
+        <li>不是参数页「分账设置区」的现金分润。</li>
+        <li>不是「积分抵扣物业费」比率（那是另一套配置）。</li>
+      </ul>
+
+      <h3>6.3 修改与生效</h3>
+      <ul>
+        <li>前端表单用百分比录入，提交时转为 <code>0 ~ 0.30</code> 小数（例如 10% → <code>0.1</code>）。</li>
+        <li>禁止直接长期绕过审批乱改：变更须通过价格审批，<code>itemType = resident_share_rate</code>；物业领导或平台管理员审批通过后落库。</li>
+        <li>后端校验：四项合计 &gt; 0.30 应返回参数非法；前端也会拦截超限提交。</li>
+      </ul>
+
+      <div class="callout warn">
+        <strong>默认值提醒：</strong>新建物业公司时四个比例常默认为 <code>0</code>。
+        若不先改成非 0 并审批生效，订单完成也不会看到「返积分」效果。
+      </div>
+    </section>
+
+    <!-- 7 -->
+    <section id="order-flow">
+      <h2>七、一笔订单完整走法</h2>
+
+      <pre class="flow">用户下单并完成履约/确认
+│
+├─ <span class="hl">有可分现金？</span>
+│    是 → 生成现金分成记录
+│         （平台 / 物业 / 统筹 / 板块 / 个体 …）
+│    否 → 现金分成明细为空或无可分配金额（如全额积分支付）
+│
+└─ <span class="hl">现金消费且积分返比 &gt; 0？</span>
+     是 → 按四项比例返积分
+          （业主 / 商家 / 物业币 / 建设积分池）
+     否 → 无返积分（比例为 0，或非现金消费场景不触发）</pre>
+
+      <h3>建议联调用例</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>操作</th>
+            <th>期望</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td>微信/现金下单 → 完成 → 看统筹「分成明细」</td>
+            <td>出现可分配金额与各级金额</td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td>提高平台订单分成 → 再下一单</td>
+            <td>平台金额变大，四级按权重压缩</td>
+          </tr>
+          <tr>
+            <td>3</td>
+            <td>参数里把积分四项设为非 0 并审批通过 → 现金消费完成</td>
+            <td>住户积分 / 建设积分流水有入账</td>
+          </tr>
+          <tr>
+            <td>4</td>
+            <td>全额积分支付完成一单</td>
+            <td>一般<strong>不应</strong>指望现金分成记录；也不应把「花积分」当成「积分分成」</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 8 -->
+    <section id="config">
+      <h2>八、配置入口与权限</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>配置内容</th>
+            <th>页面</th>
+            <th>谁可改</th>
+            <th>备注</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>物业 / 统筹 / 板块 / 个体现金分成</td>
+            <td>参数配置 → 分账设置区</td>
+            <td>仅 <code>platform_admin</code> 可改；物业只读</td>
+            <td>适用于第三方商户订单结算；板块为兼容项建议 0%</td>
+          </tr>
+          <tr>
+            <td>我们公司 / 配送 / 提现手续费分成</td>
+            <td>平台分成配置</td>
+            <td>仅 <code>platform_admin</code></td>
+            <td>我们公司落库 <code>platformShareRate</code>，目标建议 7%</td>
+          </tr>
+          <tr>
+            <td>业主 / 商家 / 物业币 / 共享积分比例</td>
+            <td>参数配置 → 积分分成比例</td>
+            <td>物业负责人等；变更走价格审批</td>
+            <td>合计 ≤ 30%</td>
+          </tr>
+          <tr>
+            <td>商家分成 <code>commissionRate</code></td>
+            <td>板块 / 个体「商家管理」</td>
+            <td>对应上级角色</td>
+            <td>走 <code>merchant_distribution</code> 审批</td>
+          </tr>
+          <tr>
+            <td>区域 / 项目负责人分成</td>
+            <td>管理端区域 / 项目负责人</td>
+            <td>管理端维护</td>
+            <td>字段 <code>shareRate</code>（0~1）</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 9 -->
+    <section id="view">
+      <h2>九、结果查看入口</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>想看什么</th>
+            <th>去哪看</th>
+            <th>接口/数据（便于联调）</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>某笔订单现金怎么分的</td>
+            <td>统筹「分成明细」等</td>
+            <td><code>GET /distribution/records</code></td>
+          </tr>
+          <tr>
+            <td>区间分成汇总</td>
+            <td>统筹 / 板块统计页</td>
+            <td><code>GET /distribution/stats</code></td>
+          </tr>
+          <tr>
+            <td>平台抽了多少</td>
+            <td>平台收益</td>
+            <td><code>/admin/platform-earnings/stats</code>、<code>.../records</code></td>
+          </tr>
+          <tr>
+            <td>住户被返了多少积分</td>
+            <td>住户积分余额 / 积分流水</td>
+            <td>积分相关查询接口</td>
+          </tr>
+          <tr>
+            <td>建设（共享）积分入池</td>
+            <td>管理端「建设积分」</td>
+            <td>小区积分池与流水</td>
+          </tr>
+          <tr>
+            <td>商家营收与各级占比展示</td>
+            <td>商家利润空间等展示</td>
+            <td>含 <code>breakdown</code>（物业/统筹/板块/个体/平台）</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="card tight">
+        <h4>分成记录表常见列</h4>
+        <p style="margin:0">
+          时间 · 订单号 · 商家 · <strong>可分配金额</strong> · 平台 · 物业 · 统筹 · 板块 · 个体
+        </p>
+      </div>
+    </section>
+
+    <!-- 10 -->
+    <section id="faq">
+      <h2>十、常见误解与验收建议</h2>
+
+      <div class="compare">
+        <div class="row head">
+          <div>维度</div>
+          <div>容易误以为</div>
+          <div>实际含义</div>
+        </div>
+        <div class="row">
+          <div class="label">积分付款</div>
+          <div>付款完成就会「积分分成」</div>
+          <div>只是扣积分余额；返积分看「积分分成比例」且通常基于现金消费</div>
+        </div>
+        <div class="row">
+          <div class="label">共享积分</div>
+          <div>分享到朋友圈之类</div>
+          <div>进入小区建设积分池的返比（<code>sharedPointShareRate</code>）</div>
+        </div>
+        <div class="row">
+          <div class="label">分账设置区</div>
+          <div>和积分四项是一套</div>
+          <div>只管现金分润；积分四项是另一张卡片</div>
+        </div>
+        <div class="row">
+          <div class="label">商家分成</div>
+          <div>等于参数页四级比例</div>
+          <div><code>commissionRate</code> 是商家级协商比例，另走审批</div>
+        </div>
+        <div class="row">
+          <div class="label">比例为 0</div>
+          <div>系统坏了没分</div>
+          <div>配置默认 0 时结果就是 0；先改比例再验</div>
+        </div>
+      </div>
+
+      <div class="callout danger">
+        <strong>验收坑：</strong>用「积分付款订单」去验证现金分成或积分返比——场景本身对不上。
+        验现金分成请用现金/微信支付单；验返积分请先把四项比例设为非 0 并审批生效。
+      </div>
+    </section>
+
+    <!-- 11 -->
+    <section id="fields">
+      <h2>十一、关键字段速查</h2>
+
+      <h3>老板口径 A 与现网字段映射</h3>
+      <div class="callout">
+        <p style="margin:0 0 8px"><strong>老板目标：</strong>可分配金额 → 物业 30% + 平台盘 70%；平台盘内我们公司占 10%（总约 7%），统筹/个体待定，周总兜底。</p>
+        <p style="margin:0 0 8px"><strong>现网落库：</strong>先抽 <code>platformShareRate</code>（管理端文案「我们公司」，建议 7%），剩余再按物业 / 统筹池；板块从统筹池抽（兼容项，建议 0%）；统筹实得展示为「统筹/周总」。</p>
+        <p style="margin:0"><strong>注意：</strong>「先抽 7% 再对剩余 30/70」与「先 30/70 再从盘内抽 10%」不完全等价；精确对齐需后端改算法。现金四级比例仅平台管理员可改（参数页收口）。</p>
+      </div>
+
+      <h3>现金 / 平台</h3>
+      <table>
+        <thead>
+          <tr><th>字段</th><th>说明</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>distributableAmount</code></td><td>订单可分配金额</td></tr>
+          <tr><td><code>platformShareRate</code></td><td>我们公司（占可分配总比例）；老板目标建议 7%</td></tr>
+          <tr><td><code>platformDeliveryShareRate</code></td><td>平台配送费分成比例</td></tr>
+          <tr><td><code>platformWithdrawalFeeShareRate</code></td><td>平台提现手续费分成比例</td></tr>
+          <tr><td><code>propertyShareRate</code></td><td>物业分成（默认 30%）</td></tr>
+          <tr><td><code>coordinatorShareRate</code></td><td>统筹池 / 平台盘（默认 70%）</td></tr>
+          <tr><td><code>sectorLeaderRate</code></td><td>板块负责人（兼容；建议 0%）</td></tr>
+          <tr><td><code>individualLeaderRate</code></td><td>个体负责人（从板块额抽）</td></tr>
+          <tr><td><code>regionalLeaderRate</code> / <code>projectLeaderRate</code></td><td>物业级区域/项目参考比例（不进主分成链）</td></tr>
+          <tr><td><code>commissionRate</code></td><td>商家级分成（另线审批）</td></tr>
+          <tr><td><code>shareRate</code></td><td>区域 / 项目负责人个人分成</td></tr>
+        </tbody>
+      </table>
+
+      <h3>积分返比</h3>
+      <table>
+        <thead>
+          <tr><th>字段</th><th>说明</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>residentPointShareRate</code></td><td>业主积分分成</td></tr>
+          <tr><td><code>merchantPointShareRate</code></td><td>商家积分分成</td></tr>
+          <tr><td><code>coinPointShareRate</code></td><td>物业币积分分成</td></tr>
+          <tr><td><code>sharedPointShareRate</code></td><td>共享 / 建设积分分成</td></tr>
+        </tbody>
+      </table>
+
+      <h3>审批类型（与分账相关）</h3>
+      <table>
+        <thead>
+          <tr><th>itemType</th><th>用途</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>resident_share_rate</code></td><td>积分分成四项比例变更</td></tr>
+          <tr><td><code>merchant_distribution</code></td><td>商家分成比例变更</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <footer>
+      <p>
+        本文依据当前管理端实现（参数配置、平台分成配置、分成记录展示）与业务约定整理，便于产品、前端、联调对照。
+        订单完成后的自动落账细则以服务端分润引擎为准；若接口字段或审批流有版本变更，请同步修订本文。
+      </p>
+      <p>文件位置：<span class="kbd">docs/分账逻辑说明.html</span></p>
+    </footer>
+  </div>
+</body>
+</html>

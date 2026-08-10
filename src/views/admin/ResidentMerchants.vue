@@ -34,6 +34,7 @@
             <th>小区</th>
             <th>保证金</th>
             <th>状态</th>
+            <th>对外展示</th>
             <th>申请时间</th>
             <th>操作</th>
           </tr>
@@ -44,6 +45,11 @@
             <td>{{ item.communityName || item.communityId || '—' }}</td>
             <td>{{ item.depositAmount ?? '—' }}（{{ item.depositStatus || '—' }}）</td>
             <td>{{ item.status || item.statusCode || '—' }}</td>
+            <td>
+              <span class="visibilityTag" :class="item.visibility || 'private'">
+                {{ visibilityLabel(item.visibility) }}
+              </span>
+            </td>
             <td>{{ item.createdAt || '—' }}</td>
             <td class="actions">
               <button type="button" class="linkBtn" @click="auditApp(item.id, AUDIT_RESULT.APPROVED)">
@@ -346,6 +352,7 @@ import {
   BILLING_CYCLE,
   BILLING_CYCLE_LABEL,
   BILLING_CYCLE_OPTIONS,
+  RESIDENT_SHOP_VISIBILITY_LABEL,
   USER_ROLE,
   getEnumLabel
 } from '../../constants/enums'
@@ -353,6 +360,10 @@ import { useAuthStore } from '../../stores/auth'
 
 const auth = useAuthStore()
 const isPlatformAdmin = computed(() => auth.profile?.role === USER_ROLE.PLATFORM_ADMIN)
+
+function visibilityLabel(value?: string) {
+  return getEnumLabel(RESIDENT_SHOP_VISIBILITY_LABEL, value, '不对外')
+}
 
 const tabs = [
   { key: 'applications', label: '申请审核' },
@@ -652,6 +663,15 @@ onMounted(async () => {
 .actions { display: flex; gap: 12px; flex-wrap: wrap; }
 .linkBtn { border: none; background: none; color: #5c5c9e; cursor: pointer; padding: 0; font-size: 14px; }
 .linkBtn.danger { color: #e05c5c; }
+.visibilityTag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.visibilityTag.public { background: #eaf7ee; color: #15803d; }
+.visibilityTag.private { background: #f1f5f9; color: #64748b; }
 .btnPrimary { padding: 10px 18px; border-radius: 8px; border: none; background: #5c5c9e; color: #ffffff; font-size: 14px; cursor: pointer; transition: background 0.2s; }
 .btnPrimary:hover { background: #52529a; }
 .btnPrimary:disabled { opacity: 0.6; cursor: not-allowed; }

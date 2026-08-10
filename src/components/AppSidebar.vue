@@ -2,13 +2,10 @@
   <aside class="appSidebar" :class="{ appSidebarMobile: mobile }">
     <div class="appSidebarHeader">
       <div class="appSidebarLogo">
-        <svg viewBox="0 0 40 40" fill="none">
-          <rect width="40" height="40" rx="8" fill="#5c5c9e" />
-          <path d="M12 28V14l8-5 8 5v14h-6v-7h-4v7H12z" fill="white" />
-        </svg>
+        <img src="/favicon.png" alt="邻里商城服务管理端" />
       </div>
       <div class="appSidebarTitle">
-        <div class="appSidebarBrand">万达物业</div>
+        <div class="appSidebarBrand">邻里商城服务<wbr /><span class="appSidebarBrandTail">管理端</span></div>
         <div class="appSidebarSub">{{ portalSubtitle }}</div>
       </div>
     </div>
@@ -132,24 +129,39 @@ watch(
 }
 
 .appSidebarHeader {
-  height: 60px;
+  min-height: 60px;
   display: flex;
   align-items: center;
-  padding: 0 20px;
+  padding: 10px 20px;
   border-bottom: 1px solid #e8e8ec;
+  box-sizing: border-box;
 }
 
 .appSidebarLogo {
   width: 40px;
   height: 40px;
   margin-right: 12px;
+  flex-shrink: 0;
+}
+
+.appSidebarLogo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+  display: block;
 }
 
 .appSidebarBrand {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   color: #1f1f2e;
   line-height: 22px;
+  word-break: keep-all;
+}
+
+.appSidebarBrandTail {
+  white-space: nowrap;
 }
 
 .appSidebarSub {

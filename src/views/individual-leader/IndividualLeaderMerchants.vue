@@ -3,7 +3,7 @@
     <div class="header">
       <div>
         <h1 class="title">商家管理</h1>
-        <p class="desc">设置管辖商家的分成比例与满额免配送门槛（分成变更需模块负责人审批）</p>
+        <p class="desc">设置管辖商家的平台抽佣比例与满额免配送门槛（抽佣变更需模块负责人审批）</p>
       </div>
     </div>
 
@@ -22,7 +22,7 @@
           <tr>
             <th>商家名称</th>
             <th>分类</th>
-            <th>分成比例</th>
+            <th>抽佣比例</th>
             <th>满额免配送</th>
             <th>状态</th>
             <th>操作</th>
@@ -36,7 +36,7 @@
             <td>{{ formatThreshold(item.freeDeliveryThreshold) }}</td>
             <td>{{ getEnumLabel(MERCHANT_STATUS_LABEL, item.status) }}</td>
             <td class="actions">
-              <button class="linkBtn" @click="openDistribution(item)">设置分成</button>
+              <button class="linkBtn" @click="openDistribution(item)">设置抽佣</button>
               <button class="linkBtn" @click="openDeliveryFee(item)">满额配送</button>
             </td>
           </tr>
@@ -50,11 +50,11 @@
           </div>
           <div class="cardMeta">
             <span>分类：{{ item.category || '—' }}</span>
-            <span>分成：{{ formatRate(item.commissionRate) }}</span>
+            <span>抽佣：{{ formatRate(item.commissionRate) }}</span>
             <span>满额免配送：{{ formatThreshold(item.freeDeliveryThreshold) }}</span>
           </div>
           <div class="cardActions">
-            <button class="linkBtn" @click="openDistribution(item)">设置分成</button>
+            <button class="linkBtn" @click="openDistribution(item)">设置抽佣</button>
             <button class="linkBtn" @click="openDeliveryFee(item)">满额配送</button>
           </div>
         </article>
@@ -71,13 +71,15 @@
       <div v-if="distributionTarget" class="modalOverlay" @click.self="closeDistribution">
         <div class="modal">
           <div class="modalHeader">
-            <h3 class="modalTitle">设置商家分成 - {{ distributionTarget.name }}</h3>
+            <h3 class="modalTitle">设置商家抽佣 - {{ distributionTarget.name }}</h3>
             <button class="modalClose" @click="closeDistribution">&times;</button>
           </div>
           <div class="modalBody">
-            <p class="note">提交后生成价格审批单（merchant_distribution），需模块负责人通过后才生效</p>
+            <p class="note">
+              抽佣比例 = 平台盘占比（如 0.10 表示商家直分 90%、平台盘 10%）。提交后生成价格审批单（merchant_distribution），通过后生效。
+            </p>
             <div class="field">
-              <label class="label">分成比例 (0~1)</label>
+              <label class="label">平台抽佣比例 (0~1)</label>
               <input v-model.number="distributionRate" type="number" min="0" max="1" step="0.01" class="input" />
             </div>
             <div class="field">
@@ -207,7 +209,7 @@ function closeDistribution() {
 async function submitDistribution() {
   if (!distributionTarget.value) return
   if (distributionRate.value == null || distributionRate.value < 0 || distributionRate.value > 1) {
-    distributionError.value = '请填写 0~1 之间的分成比例'
+    distributionError.value = '请填写 0~1 之间的平台抽佣比例'
     return
   }
   distributionSaving.value = true
@@ -220,7 +222,7 @@ async function submitDistribution() {
     })
     closeDistribution()
     // 分成走审批，列表比例不会立刻变
-    successMsg.value = '已提交审批。商家分成需模块负责人通过后才会生效，当前列表比例暂不更新。'
+    successMsg.value = '已提交审批。商家抽佣需模块负责人通过后才会生效，当前列表比例暂不更新。'
     window.setTimeout(() => {
       if (successMsg.value.startsWith('已提交审批')) successMsg.value = ''
     }, 5000)

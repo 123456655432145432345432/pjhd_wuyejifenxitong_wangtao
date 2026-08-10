@@ -3,12 +3,25 @@
     <div class="header">
       <div>
         <h1 class="title">价格审批</h1>
-        <p class="desc">审核配送费、商品价格、商家分成等价格变更申请</p>
+        <p class="desc">
+          改价须先提交申请；仅物业领导可审批。平台管理员可跨物业提交与查看，无审批权限。
+        </p>
       </div>
-      <button class="btnPrimary" @click="openCreate">发起审批</button>
+      <button v-if="canCreate" class="btnPrimary" @click="openCreate">发起申请</button>
     </div>
 
     <div class="toolbar">
+      <select
+        v-if="showCompanyFilter"
+        v-model="filterPropertyCompanyId"
+        class="input"
+        @change="reload"
+      >
+        <option value="">全部物业公司</option>
+        <option v-for="c in propertyCompanies" :key="c.id" :value="c.id">
+          {{ c.name || c.id }}
+        </option>
+      </select>
       <select v-model="filterStatus" class="input" @change="reload">
         <option v-for="opt in PRICE_APPROVAL_STATUS_OPTIONS" :key="opt.value || 'all'" :value="opt.value">
           {{ opt.label }}
@@ -23,9 +36,14 @@
       <table v-else-if="list.length" class="table" :class="{ mobileCards: isMobile }">
         <thead>
           <tr>
+            <th>审批单号</th>
+            <th v-if="showCompanyFilter">物业公司</th>
             <th>类型</th>
-            <th>申请人</th>
+            <th>对象</th>
+            <th>原值</th>
+            <th>新值</th>
             <th>原因</th>
+            <th>申请人</th>
             <th>状态</th>
             <th>申请时间</th>
             <th>操作</th>
@@ -33,23 +51,46 @@
         </thead>
         <tbody>
           <tr v-for="item in list" :key="item.id">
-            <td>{{ getEnumLabel(PRICE_APPROVAL_ITEM_TYPE_LABEL, item.itemType) }}</td>
-            <td>{{ item.applicantName || item.applicantId || '—' }}</td>
-            <td class="reasonCell">{{ item.reason || '—' }}</td>
-            <td>
+            <td class="monoCell" data-label="审批单号">
+              <MobileCellText variant="nowrap">{{ item.id }}</MobileCellText>
+            </td>
+            <td v-if="showCompanyFilter" data-label="物业公司">
+              <MobileCellText variant="primary">{{ companyLabel(item.propertyCompanyId) }}</MobileCellText>
+            </td>
+            <td data-label="类型">
+              <MobileCellText variant="nowrap">{{ getEnumLabel(PRICE_APPROVAL_ITEM_TYPE_LABEL, item.itemType) }}</MobileCellText>
+            </td>
+            <td class="monoCell" data-label="对象">
+              <MobileCellText variant="nowrap">{{ item.itemId || '—' }}</MobileCellText>
+            </td>
+            <td class="diffCell mono mCellStack" data-label="原值">
+              <MobileCellText>{{ summarizeValue(item.oldValue) }}</MobileCellText>
+            </td>
+            <td class="diffCell mono mCellStack" data-label="新值">
+              <MobileCellText>{{ summarizeValue(item.newValue) }}</MobileCellText>
+            </td>
+            <td class="reasonCell mCellStack" data-label="原因">
+              <MobileCellText>{{ item.reason || '—' }}</MobileCellText>
+            </td>
+            <td data-label="申请人">
+              <MobileCellText variant="primary">{{ applicantLabel(item) }}</MobileCellText>
+            </td>
+            <td data-label="状态">
               <span :class="['statusBadge', item.status]">
                 {{ getEnumLabel(PRICE_APPROVAL_STATUS_LABEL, item.status) }}
               </span>
             </td>
-            <td>{{ item.createdAt || '—' }}</td>
-            <td>
-              <button
-                v-if="item.status === PRICE_APPROVAL_STATUS.PENDING"
-                class="linkBtn"
-                @click="openAudit(item)"
-              >
-                审批
-              </button>
+            <td data-label="申请时间">
+              <MobileCellText variant="nowrap">{{ item.createdAt || '—' }}</MobileCellText>
+            </td>
+            <td data-label="操作">
+              <template v-if="canShowAudit(item)">
+                <button class="linkBtn" @click="openAudit(item, true)">通过</button>
+                <button class="linkBtn danger" @click="openAudit(item, false)">拒绝</button>
+              </template>
+              <span v-else-if="item.status === PRICE_APPROVAL_STATUS.PENDING" class="doneLabel">
+                待领导审批
+              </span>
               <span v-else class="doneLabel">已处理</span>
             </td>
           </tr>
@@ -67,13 +108,14 @@
       <div v-if="auditModalOpen" class="modalOverlay" @click.self="closeAudit">
         <div class="modal modalWide" :class="{ mobileSheet: isMobile }">
           <div class="modalHeader">
-            <h3 class="modalTitle">价格变更审批</h3>
+            <h3 class="modalTitle">{{ auditApproved ? '通过审批' : '拒绝审批' }}</h3>
             <button class="modalClose" @click="closeAudit">&times;</button>
           </div>
           <div class="modalBody">
             <div class="auditInfo">
+              <div class="infoRow"><span>单号</span><strong class="mono">{{ auditTarget?.id }}</strong></div>
               <div class="infoRow"><span>类型</span><strong>{{ getEnumLabel(PRICE_APPROVAL_ITEM_TYPE_LABEL, auditTarget?.itemType) }}</strong></div>
-              <div class="infoRow"><span>申请人</span><strong>{{ auditTarget?.applicantName || '—' }}</strong></div>
+              <div class="infoRow"><span>对象</span><strong class="mono">{{ auditTarget?.itemId || '—' }}</strong></div>
               <div class="infoRow diffRow">
                 <span>变更内容</span>
                 <div v-if="auditDiff.length" class="diffTable">
@@ -93,25 +135,14 @@
               <div class="infoRow"><span>原因</span><strong>{{ auditTarget?.reason || '—' }}</strong></div>
             </div>
             <div class="field">
-              <label class="label">审批结果</label>
-              <div class="radioGroup">
-                <label class="radioItem">
-                  <input v-model="auditApproved" type="radio" :value="true" /> 通过
-                </label>
-                <label class="radioItem">
-                  <input v-model="auditApproved" type="radio" :value="false" /> 拒绝
-                </label>
-              </div>
-            </div>
-            <div class="field">
-              <label class="label">备注</label>
+              <label class="label">备注{{ auditApproved ? '' : '（拒绝建议填写）' }}</label>
               <textarea v-model="auditRemark" class="textarea" rows="3" maxlength="200" />
             </div>
             <p v-if="formError" class="error">{{ formError }}</p>
             <div class="modalFooter">
               <button class="btnSecondary" @click="closeAudit">取消</button>
               <button class="btnPrimary" :disabled="submitting" @click="submitAudit">
-                {{ submitting ? '提交中...' : '确认审批' }}
+                {{ submitting ? '提交中...' : (auditApproved ? '确认通过' : '确认拒绝') }}
               </button>
             </div>
           </div>
@@ -125,25 +156,53 @@
             <button class="modalClose" @click="closeCreate">&times;</button>
           </div>
           <div class="modalBody">
-            <div class="field">
-              <label class="label">审批类型</label>
-              <select v-model="createForm.itemType" class="input fullInput">
-                <option :value="PRICE_APPROVAL_ITEM_TYPE.DELIVERY_FEE">配送费</option>
-                <option :value="PRICE_APPROVAL_ITEM_TYPE.MERCHANT_DISTRIBUTION">商家分成</option>
+            <div v-if="showCompanyFilter" class="field">
+              <label class="label">物业公司 <em class="required">*</em></label>
+              <select v-model="createForm.propertyCompanyId" class="input fullInput">
+                <option value="">请选择物业公司</option>
+                <option v-for="c in propertyCompanies" :key="c.id" :value="c.id">
+                  {{ c.name || c.id }}
+                </option>
               </select>
             </div>
             <div class="field">
-              <label class="label">关联对象 ID</label>
-              <input v-model.trim="createForm.itemId" class="input fullInput" placeholder="请输入商家或规则 ID" />
+              <label class="label">审批类型</label>
+              <select v-model="createForm.itemType" class="input fullInput" @change="onCreateTypeChange">
+                <option :value="PRICE_APPROVAL_ITEM_TYPE.PRODUCT_PRICE">商品价格</option>
+                <option :value="PRICE_APPROVAL_ITEM_TYPE.MERCHANT_AD">商家广告</option>
+                <option :value="PRICE_APPROVAL_ITEM_TYPE.MERCHANT_DISTRIBUTION">商家分成</option>
+                <option :value="PRICE_APPROVAL_ITEM_TYPE.PROPERTY_FEE_PRICE">物业费价格</option>
+                <option :value="PRICE_APPROVAL_ITEM_TYPE.RESIDENT_SHARE_RATE">积分分成比例</option>
+                <option :value="PRICE_APPROVAL_ITEM_TYPE.DELIVERY_FEE">配送费</option>
+              </select>
             </div>
             <div class="field">
-              <label class="label">变更前（JSON）</label>
-              <textarea v-model="createForm.oldValue" class="textarea mono" rows="3" placeholder='例如：{"amount": 5}' />
+              <label class="label">{{ itemIdLabel }}</label>
+              <input v-model.trim="createForm.itemId" class="input fullInput" :placeholder="itemIdPlaceholder" />
             </div>
-            <div class="field">
-              <label class="label">变更后（JSON）</label>
-              <textarea v-model="createForm.newValue" class="textarea mono" rows="3" placeholder='例如：{"amount": 8}' />
+            <div class="fieldRow">
+              <div class="field">
+                <label class="label">变更前 · {{ valueFieldLabel }}</label>
+                <input
+                  v-model="createForm.oldAmount"
+                  type="number"
+                  step="any"
+                  class="input fullInput"
+                  :placeholder="valuePlaceholder"
+                />
+              </div>
+              <div class="field">
+                <label class="label">变更后 · {{ valueFieldLabel }} <em class="required">*</em></label>
+                <input
+                  v-model="createForm.newAmount"
+                  type="number"
+                  step="any"
+                  class="input fullInput"
+                  :placeholder="valuePlaceholder"
+                />
+              </div>
             </div>
+            <p class="formHint">将按类型自动生成 JSON 提交；比例类请填 0~1（如 0.1 表示 10%）或百分数（如 10）。</p>
             <div class="field">
               <label class="label">申请原因</label>
               <textarea v-model="createForm.reason" class="textarea" rows="3" maxlength="200" />
@@ -152,7 +211,7 @@
             <div class="modalFooter">
               <button class="btnSecondary" @click="closeCreate">取消</button>
               <button class="btnPrimary" :disabled="creating" @click="submitCreate">
-                {{ creating ? '提交中...' : '提交审批' }}
+                {{ creating ? '提交中...' : '提交申请' }}
               </button>
             </div>
           </div>
@@ -164,8 +223,9 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { priceApprovalApi } from '../../api/services'
-import type { PriceApprovalItem } from '../../api/types'
+import MobileCellText from '../../components/MobileCellText.vue'
+import { priceApprovalApi, propertyCompanyApi } from '../../api/services'
+import type { PriceApprovalItem, PropertyCompanyItem } from '../../api/types'
 import { ApiError } from '../../api/request'
 import {
   getEnumLabel,
@@ -173,17 +233,32 @@ import {
   PRICE_APPROVAL_ITEM_TYPE_LABEL,
   PRICE_APPROVAL_STATUS,
   PRICE_APPROVAL_STATUS_LABEL,
-  PRICE_APPROVAL_STATUS_OPTIONS
+  PRICE_APPROVAL_STATUS_OPTIONS,
+  ROLE_LABEL
 } from '../../constants/enums'
+import {
+  canAuditPriceApproval,
+  canCreatePriceApproval,
+  isPlatformAdmin as checkPlatformAdmin
+} from '../../constants/roles'
+import { useAuthStore } from '../../stores/auth'
 import { useIsMobile } from '../../composables/useIsMobile'
 
+const auth = useAuthStore()
 const { isMobile } = useIsMobile()
+const isPlatformAdmin = computed(() => checkPlatformAdmin(auth.profile))
+const canAudit = computed(() => canAuditPriceApproval(auth.profile))
+const canCreate = computed(() => canCreatePriceApproval(auth.profile))
+const showCompanyFilter = computed(() => isPlatformAdmin.value)
+
 const loading = ref(false)
 const error = ref('')
 const list = ref<PriceApprovalItem[]>([])
 const page = ref(1)
 const totalPages = ref(1)
 const filterStatus = ref('')
+const filterPropertyCompanyId = ref('')
+const propertyCompanies = ref<PropertyCompanyItem[]>([])
 
 const auditModalOpen = ref(false)
 const auditTarget = ref<PriceApprovalItem | null>(null)
@@ -195,12 +270,77 @@ const createModalOpen = ref(false)
 const creating = ref(false)
 const createError = ref('')
 const createForm = reactive({
-  itemType: PRICE_APPROVAL_ITEM_TYPE.DELIVERY_FEE as string,
+  propertyCompanyId: '',
+  itemType: PRICE_APPROVAL_ITEM_TYPE.PRODUCT_PRICE as string,
   itemId: '',
-  oldValue: '',
-  newValue: '',
+  oldAmount: '' as string | number,
+  newAmount: '' as string | number,
   reason: ''
 })
+
+const isRateType = computed(() =>
+  createForm.itemType === PRICE_APPROVAL_ITEM_TYPE.MERCHANT_DISTRIBUTION ||
+  createForm.itemType === PRICE_APPROVAL_ITEM_TYPE.RESIDENT_SHARE_RATE
+)
+
+const valueFieldLabel = computed(() => (isRateType.value ? '比例' : '金额'))
+const valuePlaceholder = computed(() => (isRateType.value ? '如 0.1 或 10' : '如 8'))
+const itemIdLabel = computed(() => {
+  switch (createForm.itemType) {
+    case PRICE_APPROVAL_ITEM_TYPE.PRODUCT_PRICE:
+      return '商品 ID'
+    case PRICE_APPROVAL_ITEM_TYPE.PROPERTY_FEE_PRICE:
+      return '住户 / 物业费规则 ID'
+    case PRICE_APPROVAL_ITEM_TYPE.RESIDENT_SHARE_RATE:
+      return '物业公司 ID'
+    default:
+      return '商家 / 规则 ID'
+  }
+})
+const itemIdPlaceholder = computed(() => `请输入${itemIdLabel.value}`)
+
+function canShowAudit(item: PriceApprovalItem) {
+  return canAudit.value && item.status === PRICE_APPROVAL_STATUS.PENDING
+}
+
+function companyLabel(id?: string) {
+  if (!id) return '—'
+  const hit = propertyCompanies.value.find((c) => c.id === id)
+  return hit?.name || id
+}
+
+function applicantLabel(item: PriceApprovalItem) {
+  const roleText = item.applicantRole
+    ? getEnumLabel(ROLE_LABEL, item.applicantRole, item.applicantRole)
+    : ''
+  const name = item.applicantName || item.applicantId || '—'
+  return roleText ? `${name}（${roleText}）` : name
+}
+
+function normalizeRate(raw: number) {
+  if (Number.isNaN(raw)) return NaN
+  return raw > 1 ? raw / 100 : raw
+}
+
+function buildValueJson(raw: string | number) {
+  if (raw === '' || raw === null || raw === undefined) return null
+  const num = typeof raw === 'number' ? raw : Number(raw)
+  if (Number.isNaN(num)) return null
+  if (isRateType.value) {
+    const rate = normalizeRate(num)
+    if (Number.isNaN(rate) || rate < 0 || rate > 1) return null
+    return JSON.stringify({ rate })
+  }
+  if (createForm.itemType === PRICE_APPROVAL_ITEM_TYPE.PRODUCT_PRICE) {
+    return JSON.stringify({ price: num })
+  }
+  return JSON.stringify({ amount: num })
+}
+
+function onCreateTypeChange() {
+  createForm.oldAmount = ''
+  createForm.newAmount = ''
+}
 
 function parseJsonObject(value?: string): Record<string, unknown> | null {
   if (!value) return null
@@ -214,10 +354,49 @@ function parseJsonObject(value?: string): Record<string, unknown> | null {
   }
 }
 
-function displayValue(value: unknown) {
+const SHARE_RATE_FIELD_LABEL: Record<string, string> = {
+  rate: '分成比例',
+  residentPointShareRate: '业主分成',
+  merchantPointShareRate: '商家分成',
+  coinPointShareRate: '物业币分成',
+  sharedPointShareRate: '共享分成',
+  price: '价格',
+  memberPrice: '会员价',
+  amount: '金额'
+}
+
+function displayValue(value: unknown, key?: string) {
   if (value === undefined) return '—'
   if (value === null) return 'null'
+  const isRateKey =
+    !key ||
+    key === 'rate' ||
+    key.endsWith('ShareRate') ||
+    key === '分成比例' ||
+    key.includes('分成')
+  if (isRateKey && typeof value === 'number' && value >= 0 && value <= 1) {
+    return `${(value * 100).toFixed(1)}%`
+  }
   return typeof value === 'object' ? JSON.stringify(value) : String(value)
+}
+
+function displayFieldKey(key: string) {
+  return SHARE_RATE_FIELD_LABEL[key] || key
+}
+
+function summarizeValue(raw?: string) {
+  if (!raw) return '—'
+  const obj = parseJsonObject(raw)
+  if (!obj) return raw.length > 48 ? `${raw.slice(0, 48)}…` : raw
+  const keys = Object.keys(obj)
+  if (keys.length === 1) {
+    const key = keys[0]
+    return `${displayFieldKey(key)} ${displayValue(obj[key], key)}`
+  }
+  return keys
+    .slice(0, 2)
+    .map((key) => `${displayFieldKey(key)} ${displayValue(obj[key], key)}`)
+    .join('；') + (keys.length > 2 ? '…' : '')
 }
 
 const auditDiff = computed(() => {
@@ -226,11 +405,21 @@ const auditDiff = computed(() => {
   if (!oldObject || !newObject) return []
   const keys = [...new Set([...Object.keys(oldObject), ...Object.keys(newObject)])]
   return keys.map((key) => ({
-    key,
-    oldValue: displayValue(oldObject[key]),
-    newValue: displayValue(newObject[key])
+    key: displayFieldKey(key),
+    oldValue: displayValue(oldObject[key], key),
+    newValue: displayValue(newObject[key], key)
   }))
 })
+
+async function loadPropertyCompanies() {
+  if (!isPlatformAdmin.value) return
+  try {
+    const res = await propertyCompanyApi.list({ page: 1, pageSize: 100 })
+    propertyCompanies.value = res.list || []
+  } catch (e) {
+    console.error(e)
+  }
+}
 
 async function load(pageNo = 1) {
   loading.value = true
@@ -239,13 +428,23 @@ async function load(pageNo = 1) {
     const res = await priceApprovalApi.list({
       page: pageNo,
       pageSize: 20,
-      status: filterStatus.value || undefined
+      status: filterStatus.value || undefined,
+      // 领导勿传；平台仅在选中时传
+      propertyCompanyId:
+        isPlatformAdmin.value && filterPropertyCompanyId.value
+          ? filterPropertyCompanyId.value
+          : undefined
     })
     list.value = res.list || []
     page.value = res.pagination?.page ?? pageNo
     totalPages.value = res.pagination?.totalPages ?? 1
   } catch (e) {
-    error.value = e instanceof ApiError ? e.message : '加载失败'
+    list.value = []
+    if (e instanceof ApiError && (e.code === 20004 || e.code === 403)) {
+      error.value = '无权限查看价格审批'
+    } else {
+      error.value = e instanceof ApiError ? e.message : '加载失败'
+    }
   } finally {
     loading.value = false
   }
@@ -254,9 +453,10 @@ async function load(pageNo = 1) {
 function reload() { load(1) }
 function changePage(p: number) { load(p) }
 
-function openAudit(item: PriceApprovalItem) {
+function openAudit(item: PriceApprovalItem, approved: boolean) {
+  if (!canShowAudit(item)) return
   auditTarget.value = item
-  auditApproved.value = true
+  auditApproved.value = approved
   auditRemark.value = ''
   formError.value = ''
   auditModalOpen.value = true
@@ -268,10 +468,12 @@ function closeAudit() {
 }
 
 function openCreate() {
-  createForm.itemType = PRICE_APPROVAL_ITEM_TYPE.DELIVERY_FEE
+  createForm.propertyCompanyId =
+    filterPropertyCompanyId.value || auth.propertyCompanyId || auth.profile?.propertyCompanyId || ''
+  createForm.itemType = PRICE_APPROVAL_ITEM_TYPE.PRODUCT_PRICE
   createForm.itemId = ''
-  createForm.oldValue = ''
-  createForm.newValue = ''
+  createForm.oldAmount = ''
+  createForm.newAmount = ''
   createForm.reason = ''
   createError.value = ''
   createModalOpen.value = true
@@ -282,28 +484,45 @@ function closeCreate() {
 }
 
 async function submitCreate() {
-  if (!createForm.itemId || !createForm.oldValue.trim() || !createForm.newValue.trim()) {
-    createError.value = '请填写关联对象 ID、变更前和变更后内容'
+  if (isPlatformAdmin.value && !createForm.propertyCompanyId) {
+    createError.value = '请选择物业公司'
     return
   }
-  if (!parseJsonObject(createForm.oldValue) || !parseJsonObject(createForm.newValue)) {
-    createError.value = '变更前和变更后须为有效的 JSON 对象'
+  const newValue = buildValueJson(createForm.newAmount)
+  if (!newValue) {
+    createError.value = isRateType.value
+      ? '请填写有效的变更后比例（0~1 或百分数，如 10）'
+      : '请填写有效的变更后数值'
+    return
+  }
+  const oldValue =
+    createForm.oldAmount === '' || createForm.oldAmount === null
+      ? undefined
+      : buildValueJson(createForm.oldAmount) || undefined
+  if (createForm.oldAmount !== '' && createForm.oldAmount != null && !oldValue) {
+    createError.value = '变更前数值无效'
     return
   }
   creating.value = true
   createError.value = ''
   try {
+    // 领导：不要塞 propertyCompanyId
     await priceApprovalApi.create({
+      ...(isPlatformAdmin.value ? { propertyCompanyId: createForm.propertyCompanyId } : {}),
       itemType: createForm.itemType,
-      itemId: createForm.itemId,
-      oldValue: createForm.oldValue.trim(),
-      newValue: createForm.newValue.trim(),
+      itemId: createForm.itemId || undefined,
+      oldValue,
+      newValue,
       reason: createForm.reason.trim() || undefined
     })
     closeCreate()
     await load(1)
   } catch (e) {
-    createError.value = e instanceof ApiError ? e.message : '发起审批失败'
+    if (e instanceof ApiError && (e.code === 10001 || e.code === 97001)) {
+      createError.value = e.message || '请检查物业公司与必填项'
+    } else {
+      createError.value = e instanceof ApiError ? e.message : '发起申请失败'
+    }
   } finally {
     creating.value = false
   }
@@ -311,6 +530,14 @@ async function submitCreate() {
 
 async function submitAudit() {
   if (!auditTarget.value) return
+  if (!canAudit.value) {
+    formError.value = '仅物业领导可审批'
+    return
+  }
+  if (!auditApproved.value && !auditRemark.value.trim()) {
+    formError.value = '拒绝时请填写备注'
+    return
+  }
   submitting.value = true
   formError.value = ''
   try {
@@ -321,32 +548,47 @@ async function submitAudit() {
     closeAudit()
     await load(page.value)
   } catch (e) {
-    formError.value = e instanceof ApiError ? e.message : '审批失败'
+    if (e instanceof ApiError && (e.code === 20004 || e.code === 403)) {
+      formError.value = '无审批权限（仅物业领导可审批）'
+    } else if (e instanceof ApiError && e.code === 60003) {
+      formError.value = '该申请已审批过'
+      await load(page.value)
+    } else if (e instanceof ApiError && e.code === 10002) {
+      formError.value = e.message || '通过时落库校验失败，申请仍为待审批'
+    } else {
+      formError.value = e instanceof ApiError ? e.message : '审批失败'
+    }
   } finally {
     submitting.value = false
   }
 }
 
-onMounted(() => load(1))
+onMounted(async () => {
+  await loadPropertyCompanies()
+  await load(1)
+})
 </script>
 
 <style scoped>
-.page { max-width: 1200px; }
+.page { max-width: 1280px; }
 .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 24px; }
 .title { font-size: 24px; font-weight: 600; color: #1f1f2e; margin-bottom: 8px; }
 .desc { font-size: 14px; color: #8c8c9a; }
-.toolbar { display: flex; gap: 12px; margin-bottom: 16px; }
+.toolbar { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
 .input { padding: 10px 14px; border: 1px solid #e8e8ec; border-radius: 8px; font-size: 14px; }
-.panel { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
-.table { width: 100%; border-collapse: collapse; font-size: 14px; }
-.table th, .table td { padding: 12px 16px; text-align: left; border-bottom: 1px solid #f0f0f3; }
-.table th { color: #8c8c9a; font-weight: 500; background: #fafafc; }
-.reasonCell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.table th, .table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #f0f0f3; vertical-align: top; }
+.table th { color: #8c8c9a; font-weight: 500; background: #fafafc; white-space: nowrap; }
+.reasonCell { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.diffCell { max-width: 160px; font-size: 12px; word-break: break-all; }
+.monoCell, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; word-break: break-all; }
 .statusBadge { display: inline-block; padding: 4px 10px; border-radius: 12px; font-size: 12px; }
 .statusBadge.pending { background: #fff7e6; color: #d48806; }
 .statusBadge.approved { background: #e6f7ee; color: #389e0d; }
 .statusBadge.rejected { background: #fff1f0; color: #cf1322; }
-.linkBtn { border: none; background: none; color: #5c5c9e; cursor: pointer; font-size: 14px; }
+.linkBtn { border: none; background: none; color: #5c5c9e; cursor: pointer; font-size: 13px; margin-right: 8px; }
+.linkBtn.danger { color: #cf1322; }
 .doneLabel { font-size: 12px; color: #8c8c9a; }
 .btnPrimary { padding: 10px 18px; border-radius: 8px; background: #5c5c9e; color: #fff; border: none; cursor: pointer; }
 .btnSecondary { padding: 10px 18px; border-radius: 8px; border: 1px solid #e8e8ec; background: #fff; cursor: pointer; }
@@ -364,7 +606,7 @@ onMounted(() => load(1))
 .auditInfo { background: #fafafc; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; }
 .infoRow { display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px; gap: 12px; }
 .infoRow span { color: #8c8c9a; flex-shrink: 0; }
-.mono { font-family: monospace; font-size: 12px; word-break: break-all; text-align: right; }
+.required { color: #cf1322; font-style: normal; }
 .diffRow { align-items: flex-start; }
 .diffTable { flex: 1; min-width: 0; }
 .diffHead, .diffLine { display: grid; grid-template-columns: minmax(80px, 1fr) repeat(2, minmax(100px, 1fr)); gap: 8px; padding: 6px 0; text-align: left; }
@@ -373,9 +615,9 @@ onMounted(() => load(1))
 .rawDiff { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
 .fullInput { width: 100%; box-sizing: border-box; }
 .field { margin-bottom: 16px; }
+.fieldRow { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.formHint { margin: -8px 0 16px; font-size: 12px; color: #8c8c9a; line-height: 1.5; }
 .label { display: block; font-size: 13px; color: #5c5c66; margin-bottom: 8px; }
-.radioGroup { display: flex; gap: 20px; }
-.radioItem { display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; }
 .textarea { width: 100%; padding: 10px 12px; border: 1px solid #e8e8ec; border-radius: 8px; font-size: 14px; box-sizing: border-box; resize: vertical; font-family: inherit; }
 .modalFooter { display: flex; justify-content: flex-end; gap: 12px; margin-top: 8px; }
 @media (max-width: 768px) {
@@ -383,7 +625,8 @@ onMounted(() => load(1))
   .header { flex-direction: column; margin-bottom: 16px; }
   .title { font-size: 21px; }
   .header .btnPrimary { width: 100%; }
-  .toolbar { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+  .toolbar { display: grid; grid-template-columns: 1fr; gap: 8px; }
+  .toolbar .btnPrimary { width: 100%; }
   .toolbar .input { width: 100%; min-width: 0; box-sizing: border-box; }
   .panel { padding: 12px; border-radius: 14px; }
   .mobileCards thead { display: none; }
@@ -393,16 +636,14 @@ onMounted(() => load(1))
     display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
     padding: 6px 0; text-align: right; border-bottom: none;
   }
-  .mobileCards td::before { color: #8c8c9a; text-align: left; flex-shrink: 0; }
-  .mobileCards td:nth-child(1)::before { content: '类型'; }
-  .mobileCards td:nth-child(2)::before { content: '申请人'; }
-  .mobileCards td:nth-child(3)::before { content: '原因'; }
-  .mobileCards td:nth-child(4)::before { content: '状态'; }
-  .mobileCards td:nth-child(5)::before { content: '申请时间'; }
-  .mobileCards td:nth-child(6)::before { content: '操作'; }
-  .mobileCards .reasonCell {
+  .mobileCards td::before {
+    content: attr(data-label);
+    color: #8c8c9a; text-align: left; flex-shrink: 0;
+  }
+  .mobileCards .reasonCell,
+  .mobileCards .diffCell {
     max-width: none; overflow: visible; text-overflow: unset;
-    white-space: normal; word-break: break-word;
+    white-space: normal;
   }
   .pager { justify-content: center; }
   .modalOverlay { padding: 0; align-items: flex-end; }
@@ -410,5 +651,6 @@ onMounted(() => load(1))
   .infoRow { flex-direction: column; align-items: flex-start; }
   .diffHead, .diffLine { grid-template-columns: 1fr; }
   .rawDiff { flex-wrap: wrap; justify-content: flex-start; }
+  .fieldRow { grid-template-columns: 1fr; }
 }
 </style>

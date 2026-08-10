@@ -25,6 +25,11 @@ export interface LoginResult {
   expiresIn: number
   tokenType: string
   resident?: UserProfile
+  /** 部分环境可能用 user / profile 承载登录用户 */
+  user?: UserProfile
+  profile?: UserProfile
+  propertySubRole?: string
+  property_sub_role?: string
 }
 
 export interface UserProfile {
@@ -69,16 +74,32 @@ export interface ResidentItem {
   communityId?: string
   communityName?: string
   building?: string
+  /** v4.8 楼层 */
+  floor?: string
   unit?: string
   room?: string
   familyId?: string
+  /** 个人积分余额 */
   pointBalance?: number
+  /** v4.8 家庭积分余额（无家庭为 null） */
+  familyPointBalance?: number | null
   coinBalance?: number
   coinFrozen?: boolean
   coinHidden?: boolean
+  withdrawalBlocked?: boolean
   wechatBound?: boolean
   totalConsumption?: number
   totalOrders?: number
+  /** v3.9 是否有欠费 */
+  hasArrears?: boolean
+  /** v3.9 欠费笔数 */
+  arrearsCount?: number
+  /** v3.9 欠费金额合计 */
+  arrearsAmount?: number
+  /** v4.8 欠费最早账期起始日 */
+  arrearsPeriodStart?: string
+  /** v4.8 欠费最晚账期结束日 */
+  arrearsPeriodEnd?: string
   status?: string
   createdAt?: string
   updatedAt?: string
@@ -97,6 +118,7 @@ export interface ResidentCreatePayload {
   maritalStatus?: string
   hasChildren?: boolean
   building?: string
+  floor?: string
   unit?: string
   room?: string
 }
@@ -109,6 +131,7 @@ export interface ResidentUpdatePayload {
   maritalStatus?: string
   hasChildren?: boolean
   building?: string
+  floor?: string
   unit?: string
   room?: string
 }
@@ -116,6 +139,20 @@ export interface ResidentUpdatePayload {
 export interface ResidentStatusPayload {
   status: string
   reason?: string
+}
+
+/** GET /families/{id}/members */
+export interface FamilyMemberItem {
+  id: string
+  name?: string
+  phone?: string
+  avatarUrl?: string
+  relation?: string
+  isOwner?: boolean
+  pointBalance?: number
+  coinBalance?: number
+  status?: string
+  joinedAt?: string
 }
 
 export interface CoinFreezePayload {
@@ -148,6 +185,30 @@ export interface CoinUnfreezeResult {
   operatorId: string
 }
 
+/** POST /property-coins/earn — 管理员发放物业币 */
+export interface PropertyCoinEarnPayload {
+  residentId: string
+  coinAmount: number
+  source: string
+  description?: string
+}
+
+export interface PropertyCoinEarnResult {
+  residentId?: string
+  coinAmount?: number
+  newBalance?: number
+  balance?: number
+}
+
+/** POST /admin/merchants/{id}/coin/earn — 给商家关联居民账户发放物业币 */
+export interface MerchantCoinEarnPayload {
+  coinAmount: number
+  /** 默认 manual */
+  source?: string
+  description?: string
+  sourceId?: string
+}
+
 export interface CoinFreezeRecordItem {
   id: string
   residentId: string
@@ -170,11 +231,14 @@ export interface MerchantItem {
   description?: string
   category?: string
   commissionRate?: number
+  /** 商家挂接配置兑换比：1元=X积分（订单支付/返积分以此为准，默认100） */
   pointExchangeRate?: number
   coinRebateRate?: number
   memberDiscountPrice?: number | string | null
   auditStatus?: string
   status?: string
+  /** 商家来源：platform / group_leader / technician（v4.1） */
+  merchantSource?: string
   coinRebateEnabled?: boolean
   merchantLevel?: string
   levelWeight?: number
@@ -191,6 +255,13 @@ export interface MerchantItem {
   updatedAt?: string
   totalOrders?: number
   totalRevenue?: number
+  withdrawableAmount?: number
+  totalWithdrawn?: number
+  withdrawalBlocked?: boolean
+  deliveryScope?: string
+  distanceType?: string
+  isOfficialRecommended?: boolean
+  recommendedSort?: number
 }
 
 export interface MerchantUpdatePayload {
@@ -203,6 +274,10 @@ export interface MerchantUpdatePayload {
   address?: string
   deliveryFee?: number | string
   freeDeliveryThreshold?: number | string
+  /** 配送范围：in_community / out_community / both（§76） */
+  deliveryScope?: string
+  /** 商家配送距离：any / radius / district / city */
+  distanceType?: string
   rankOrder?: number
   merchantLevel?: string
 }
@@ -490,6 +565,31 @@ export interface DeliveryRule {
   perKgFee?: number
   courierPerOrder?: number
   propertyCompanyId?: string
+  /** 默认 both（§76.2） */
+  deliveryScope?: string
+  distanceType?: string
+}
+
+/** GET /delivery-rules/scope-options（§76.1） */
+export interface DeliveryScopeCodeOption {
+  code: string
+  description: string
+}
+
+export interface DeliveryScopeOptions {
+  deliveryScopes: DeliveryScopeCodeOption[]
+  distanceTypes: DeliveryScopeCodeOption[]
+}
+
+export interface DeliveryRuleUpsertPayload {
+  name?: string
+  baseFee?: number
+  perKgFee?: number
+  courierPerOrder?: number
+  propertyCompanyId?: string
+  /** 默认 both */
+  deliveryScope?: string
+  distanceType?: string
 }
 
 export interface PropertyCompanyCommunity {
@@ -520,6 +620,41 @@ export interface PropertyCompanyDetail {
   config?: PropertyCompanyConfig
   communities?: PropertyCompanyCommunity[]
   admins?: PropertyCompanyAdmin[]
+  /** v3.9 详情回显补全 */
+  deliveryPerKgFee?: number
+  /** 物业级参考兑换比（默认100）；订单支付请用商家详情/挂接配置的 pointExchangeRate */
+  pointExchangeRate?: number
+  platformShareRate?: number
+  platformDeliveryShareRate?: number
+  platformWithdrawalFeeShareRate?: number
+  regionalLeaderRate?: number
+  projectLeaderRate?: number
+  autoWithdrawalEnabled?: boolean
+  autoWithdrawalPeriodDays?: number
+  coinUseCondition?: string | null
+  coinPointThreshold?: number
+  companyAccountBalance?: number
+  /** v3.9 积分分成比例（合计 ≤ 0.30） */
+  residentPointShareRate?: number
+  merchantPointShareRate?: number
+  coinPointShareRate?: number
+  sharedPointShareRate?: number
+  createdAt?: string
+  updatedAt?: string
+}
+
+/** PUT /property-companies/{id} / PUT /admin/property-companies/{id} */
+export interface PropertyCompanyUpdatePayload {
+  name?: string
+  logoUrl?: string
+  contactPhone?: string
+  address?: string
+  deliveryPerKgFee?: number
+  pointExchangeRate?: number
+  residentPointShareRate?: number
+  merchantPointShareRate?: number
+  coinPointShareRate?: number
+  sharedPointShareRate?: number
 }
 
 export interface PropertyCompanyItem {
@@ -542,6 +677,10 @@ export interface PropertyCompanyConfig {
   platformShareRate?: number
   platformDeliveryShareRate?: number
   platformWithdrawalFeeShareRate?: number
+  /** 物业级区域负责人参考比例（主分成链外，个人 shareRate 仍走区域负责人页） */
+  regionalLeaderRate?: number
+  /** 物业级项目负责人参考比例 */
+  projectLeaderRate?: number
   coinDisplayEnabled?: boolean
   coinIssueMode?: string
   coinExpiryDays?: number
@@ -556,7 +695,7 @@ export interface PropertyCompanyConfig {
   pointToFeeRate?: number
   twoYearClearEnabled?: boolean
   neighborDailyContactLimit?: number
-  /** GET 响应可能包含 */
+  /** 物业级积分兑换比（参考展示，默认100；订单支付以商家挂接配置为准） */
   pointExchangeRate?: number
   deliveryPerKgFee?: number
   perKgFee?: number
@@ -570,6 +709,23 @@ export interface PointPool {
   totalOut?: number
   equivalentAmount?: number
   updatedAt?: string
+}
+
+export interface PointPoolRecordItem {
+  id: string
+  recordType?: string
+  poolType?: string
+  amount?: number
+  balance?: number
+  balanceBefore?: number
+  balanceAfter?: number
+  source?: string
+  sourceId?: string
+  description?: string
+  remark?: string
+  operatorId?: string
+  createdAt?: string
+  propertyCompanyId?: string
 }
 
 export interface DashboardOverview {
@@ -743,6 +899,10 @@ export interface OrderItem {
   pointUsed?: number
   coinUsed?: number
   cashAmount?: number
+  /** 确认收货/订单完成时获得的积分 */
+  pointEarned?: number
+  /** 确认收货/订单完成时获得的物业币 */
+  coinEarned?: number
   deliveryAddress?: string
   contactPhone?: string
   remark?: string
@@ -754,6 +914,15 @@ export interface OrderItem {
   cancelledAt?: string | null
   orderStatus?: string
   status?: string
+}
+
+/** 居民确认收货 POST /orders/{id}/confirm */
+export interface OrderConfirmResult {
+  orderId: string
+  orderStatus: string
+  completedAt?: string
+  pointEarned?: number
+  coinEarned?: number
 }
 
 export interface MyMerchantDetail {
@@ -770,10 +939,24 @@ export interface MyMerchantDetail {
   address?: string
   deliveryFee?: number
   freeDeliveryThreshold?: number
+  /** 配送范围：in_community / out_community / both（§76） */
+  deliveryScope?: string
+  /** 商家配送距离：any / radius / district / city */
+  distanceType?: string
   auditStatus?: string
   status?: string
+  /** 商家来源：platform / group_leader / technician（v4.1） */
+  merchantSource?: string
   totalOrders?: number
   totalRevenue?: number
+  /** 可提现余额（§A1） */
+  withdrawableAmount?: number
+  /** 累计已提现成功 */
+  totalWithdrawn?: number
+  /** 是否被阻止提现 */
+  withdrawalBlocked?: boolean
+  /** 处理中占用金额（若后端提供） */
+  pendingWithdrawalAmount?: number
   products?: ProductItem[]
   createdAt?: string
   updatedAt?: string
@@ -834,8 +1017,8 @@ export interface MerchantPointPurchaseItem {
 }
 
 export interface MerchantPointPurchasePayload {
+  /** 购买积分数；支付金额由后端按商家兑换比计算，勿传 payAmount */
   pointAmount: number
-  payAmount: number
 }
 
 export interface MerchantPointGrantPayload {
@@ -865,6 +1048,8 @@ export interface AdminMerchantPointPurchaseItem {
   pointAmount: number
   payAmount: number
   status: string
+  /** 部分接口用 auditStatus，与 status 同义待审家族 */
+  auditStatus?: string
   createdAt: string
   auditRemark?: string
   auditedAt?: string
@@ -902,6 +1087,8 @@ export interface AdminMerchantWithdrawalItem {
   feeAmount: number
   actualAmount: number
   status: string
+  /** 部分接口兼容字段，与 status 同义 */
+  auditStatus?: string
   createdAt: string
   auditRemark?: string
   auditedAt?: string
@@ -963,20 +1150,56 @@ export interface DeliveryCompletePayload {
   remark?: string
 }
 
+/** 分账记录（字段名兼容交付 *Share 与旧 *Amount） */
 export interface DistributionRecordItem {
   id: string
   orderId?: string
   orderNo?: string
   merchantId?: string
   merchantName?: string
+  residentId?: string
+  residentName?: string
+  propertyCompanyId?: string
+  /** 订单实付 = 商品价 + 配送费 */
   totalAmount?: number
+  /** 商品价（B 方案平台盘计提基数） */
+  productAmount?: number
+  /** 配送费（B 方案单独分给我们公司 / 配送员） */
+  deliveryFee?: number
+  /** 抽佣比例（如 0.20 = 商品价中平台盘 20%） */
+  commissionRate?: number
+  pointCost?: number
+  coinCost?: number
+  /**
+   * 可分配/平台盘金额（以后端返回为准，前端不重算）
+   * B 方案：≈ 商品价 × commissionRate − 积分/币成本；不含配送费
+   */
   distributableAmount?: number
-  platformAmount?: number
+  merchantShare?: number
+  /** 兼容旧字段名 */
+  merchantAmount?: number
+  /** 平台盘内「我们公司」服务费 */
   platformShare?: number
+  platformAmount?: number
+  propertyShare?: number
   propertyAmount?: number
+  /** 配送费中我们公司抽成（与平台盘 platformShare 不同链路） */
+  platformDeliveryShare?: number
+  /** B 方案：配送费余额归配送员（无保底）；与 courierEarning 合轨 */
+  courierShare?: number
+  courierAmount?: number
+  coordinatorShare?: number
   coordinatorAmount?: number
+  sectorLeaderShare?: number
   sectorLeaderAmount?: number
+  individualLeaderShare?: number
   individualLeaderAmount?: number
+  coordinatorId?: string
+  coordinatorName?: string
+  sectorLeaderId?: string
+  sectorLeaderName?: string
+  individualLeaderId?: string
+  individualLeaderName?: string
   status?: string
   createdAt?: string
 }
@@ -984,7 +1207,12 @@ export interface DistributionRecordItem {
 export interface DistributionStats {
   summary?: {
     totalDistributableAmount?: number
+    /** 商家实得合计 = Σ 订单额 × (1 − 抽佣率)（v4.10） */
+    merchantAmount?: number
+    /** 总订单额合计 = Σ 订单额（v4.10） */
+    totalOrderAmount?: number
     platformAmount?: number
+    courierAmount?: number
     propertyAmount?: number
     coordinatorAmount?: number
     sectorLeaderAmount?: number
@@ -992,13 +1220,54 @@ export interface DistributionStats {
   }
   byProperty?: Array<{ propertyCompanyId?: string; propertyName?: string; amount?: number }>
   byCoordinator?: Array<{ coordinatorId?: string; name?: string; amount?: number }>
-  bySector?: Array<{ sector?: string; sectorName?: string; amount?: number }>
+  bySector?: Array<{
+    sector?: string
+    sectorId?: string
+    sectorLeaderId?: string
+    sectorName?: string
+    amount?: number
+  }>
+}
+
+/** GET /distribution/calculate 试算（无订单 id） */
+export interface DistributionCalculateResult {
+  totalAmount?: number
+  /** 商品价；缺省时可按 totalAmount − deliveryFee 理解 */
+  productAmount?: number
+  deliveryFee?: number
+  commissionRate?: number
+  pointCost?: number
+  coinCost?: number
+  /**
+   * 抽佣基础额 ≈ 商品价 × 抽佣率（尚未扣积分/币成本）
+   * 实际可分配平台盘 = commissionBaseAmount − pointCost − coinCost = distributableAmount
+   */
+  commissionBaseAmount?: number
+  distributableAmount?: number
+  merchantShare?: number
+  platformShare?: number
+  propertyShare?: number
+  /** 配送费中我们公司抽成 */
+  platformDeliveryShare?: number
+  /** B 方案：配送费 − 平台配送抽成 */
+  courierShare?: number
+  coordinatorShare?: number
+  sectorLeaderShare?: number
+  individualLeaderShare?: number
+}
+
+/** 物业分成账户余额（与公司账户 /admin/company-account 不同） */
+export interface PropertySettlementBalance {
+  propertyCompanyId?: string
+  settlementBalance?: number
 }
 
 /** 平台分成比例配置 */
 export interface PlatformShareRates {
   propertyCompanyId?: string
+  /** 平台盘内「我们公司」占比（B：与物业/管理三档之和约 100%） */
   platformShareRate?: number
+  /** 配送费中我们公司抽成比例（B：默认 0.1；余额归配送员） */
   platformDeliveryShareRate?: number
   platformWithdrawalFeeShareRate?: number
   propertyShareRate?: number
@@ -1041,7 +1310,16 @@ export interface PlatformEarningRecordItem {
   createdAt?: string
 }
 
-/** 快递负责人 */
+/** 平台收益可提现余额（仅 platform_admin；三条链路汇总钱包） */
+export interface PlatformEarningsBalance {
+  withdrawableAmount?: number
+  totalWithdrawn?: number
+  pendingWithdrawalAmount?: number
+  totalEarning?: number
+  withdrawalBlocked?: boolean
+}
+
+/** GET /courier-managers/my：负责人汇总或普通配送员本人钱包（§A1） */
 export interface CourierManagerItem {
   id: string
   residentId?: string
@@ -1053,6 +1331,10 @@ export interface CourierManagerItem {
   deliveryTimeConfig?: string
   courierCount?: number
   status?: string
+  withdrawableAmount?: number
+  totalWithdrawn?: number
+  withdrawalBlocked?: boolean
+  pendingWithdrawalAmount?: number
   createdAt?: string
   updatedAt?: string
 }
@@ -1089,6 +1371,8 @@ export interface DeliveryPriceRangeItem {
   maxPrice?: number
   propertyCompanyId?: string
   status?: string
+  distanceType?: string
+  deliveryScope?: string
   createdAt?: string
 }
 
@@ -1096,19 +1380,31 @@ export interface DeliveryPriceRangePayload {
   minPrice: number
   maxPrice: number
   propertyCompanyId?: string
+  /** 默认 any（§76.3） */
+  distanceType?: string
+  /** 默认 both（§76.3） */
+  deliveryScope?: string
+  status?: string
 }
 
 /** 价格审批 */
 export interface PriceApprovalItem {
   id: string
+  propertyCompanyId?: string
+  applicantId?: string
+  applicantName?: string
+  applicantRole?: string
   itemType?: string
   itemId?: string
   oldValue?: string
   newValue?: string
   reason?: string
   status?: string
-  applicantId?: string
-  applicantName?: string
+  /** 后端字段：审批人 */
+  approverId?: string
+  approverRemark?: string
+  approvedAt?: string
+  /** 兼容旧字段名 */
   auditorId?: string
   auditorName?: string
   remark?: string
@@ -1117,9 +1413,11 @@ export interface PriceApprovalItem {
 }
 
 export interface PriceApprovalCreatePayload {
+  /** 平台管理员提交时必填；物业领导勿传（后端取绑定公司） */
+  propertyCompanyId?: string
   itemType: string
-  itemId: string
-  oldValue: string
+  itemId?: string
+  oldValue?: string
   newValue: string
   reason?: string
 }
@@ -1146,8 +1444,13 @@ export interface RoleWithdrawalItem {
   actualAmount?: number
   status?: string
   withdrawalType?: string
+  applicantId?: string
+  residentId?: string
+  propertyCompanyId?: string
+  auditedAt?: string
   createdAt?: string
   completedAt?: string
+  remark?: string
 }
 
 export interface RoleWithdrawalPayload {
@@ -1185,6 +1488,13 @@ export interface SectorLeaderMerchantAuditPayload {
   merchantId: string
   approved: boolean
   reason?: string
+}
+
+/** PUT /coordinators/{id}/merchant-audit */
+export interface CoordinatorMerchantAuditPayload {
+  merchantId: string
+  approved: boolean
+  rejectReason?: string
 }
 
 export interface SectorLeaderMerchantCreatePayload {
@@ -1263,6 +1573,10 @@ export interface MerchantTargetedAdCreatePayload {
   targetBuildings?: string[]
   targetGender?: string
   targetAgeBrackets?: string[]
+  /** 展示天数 1~30，必填 */
+  durationDays: number
+  /** free / coin / point / wechat / mock，必填 */
+  paymentMethod: string
 }
 
 /** 分销商品收费周期 */
@@ -1347,6 +1661,8 @@ export interface SectorLeaderDetail {
   merchantCount?: number
   activeSpecialOfferCount?: number
   totalEarnings?: number
+  /** v4.8 可提现余额 */
+  withdrawableAmount?: number
   status?: string
   createdAt?: string
   updatedAt?: string
@@ -1388,9 +1704,156 @@ export interface CoordinatorDetail {
   activeSpecialOfferCount?: number
   commissionRate?: number
   totalEarnings?: number
+  /** v4.8 可提现余额 */
+  withdrawableAmount?: number
   status?: string
   createdAt?: string
   updatedAt?: string
+}
+
+/** GET /admin/merchant-withdrawals/summary */
+export interface MerchantWithdrawalSummary {
+  pendingCount?: number
+  pendingAmount?: number
+  todayProcessedCount?: number
+  todayProcessedAmount?: number
+  approvedCount?: number
+  approvedAmount?: number
+}
+
+/** GET /admin/coin-withdrawals/summary */
+export interface CoinWithdrawalSummary {
+  pendingCount?: number
+  pendingAmount?: number
+  /** 今日完成（按 completedAt）；兼容 todayProcessed* */
+  todayCompletedCount?: number
+  todayCompletedAmount?: number
+  todayProcessedCount?: number
+  todayProcessedAmount?: number
+  approvedCount?: number
+  approvedAmount?: number
+}
+
+/** GET /admin/coin-withdrawals 列表项（物业币兑换/提现审批） */
+export interface AdminCoinWithdrawalItem {
+  id: string
+  /** 申请主体可能是住户或商家（§24 申请角色为 merchant） */
+  residentId?: string
+  residentName?: string
+  residentPhone?: string
+  merchantId?: string
+  merchantName?: string
+  applicantId?: string
+  applicantName?: string
+  phone?: string
+  contactPhone?: string
+  communityName?: string
+  community?: string
+  propertyCompanyName?: string
+  coinAmount?: number
+  exchangeAmount?: number
+  amount?: number
+  status?: string
+  auditStatus?: string
+  createdAt?: string
+  auditedAt?: string
+  completedAt?: string
+  auditRemark?: string
+  remark?: string
+  operatorId?: string
+}
+
+/**
+ * 审核 body：与商家提现/积分购买一致用 auditResult。
+ * 文档 §33.2 曾写 auditStatus，实测易触发「参数校验失败」。
+ */
+export interface AdminCoinWithdrawalAuditPayload {
+  auditResult: string
+  rejectReason?: string
+  remark?: string
+}
+
+/** GET/POST /admin/property-contact */
+export interface PropertyContactConfig {
+  id?: string
+  propertyName?: string
+  contactPhone?: string
+  contactMobile?: string
+  address?: string
+  serviceHours?: string
+  email?: string
+  /** 仅管理端可见，不下发公开接口 */
+  remark?: string
+  enabled?: boolean
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface PropertyContactPayload {
+  propertyName: string
+  contactPhone: string
+  contactMobile?: string
+  address?: string
+  serviceHours?: string
+  email?: string
+  remark?: string
+  enabled?: boolean
+}
+
+/* ---------- 社区论坛（管理端 §C.10–C.14，居民端接口不在本仓实现） ---------- */
+
+export interface CommunityPostItem {
+  id: string
+  authorId?: string
+  authorName?: string
+  authorRole?: string
+  content?: string
+  imageUrls?: string[]
+  status?: string
+  likeCount?: number
+  commentCount?: number
+  likedByMe?: boolean
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface CommunityCommentItem {
+  id: string
+  postId?: string
+  authorId?: string
+  authorName?: string
+  authorRole?: string
+  content?: string
+  parentId?: string | null
+  replyToUserId?: string | null
+  replyToUserName?: string | null
+  status?: string
+  createdAt?: string
+}
+
+export interface ContentReportItem {
+  id: string
+  reporterId?: string
+  reporterName?: string
+  targetType?: string
+  targetId?: string
+  reasonType?: string
+  reasonDetail?: string
+  status?: string
+  communityId?: string
+  propertyCompanyId?: string
+  handlerId?: string | null
+  handlerName?: string | null
+  handleRemark?: string | null
+  handledAt?: string | null
+  createdAt?: string
+  targetContent?: string
+  targetAuthorName?: string
+}
+
+export interface ContentReportHandlePayload {
+  action: string
+  handleRemark?: string
 }
 
 export interface ActivityGroupItem {
@@ -1398,6 +1861,9 @@ export interface ActivityGroupItem {
   name: string
   description?: string
   coverUrl?: string
+  /** v3.8+ 多封面 */
+  coverUrls?: string[] | string
+  activityType?: string
   leaderId?: string
   leaderName?: string
   communityId?: string
@@ -1406,6 +1872,8 @@ export interface ActivityGroupItem {
   subscriberCount?: number
   monthlyFee?: number
   yearlyFee?: number
+  hasActiveSubscription?: boolean
+  subscribedAmount?: number
   status?: string
   createdAt?: string
   updatedAt?: string
@@ -1415,6 +1883,8 @@ export interface ActivityGroupCreatePayload {
   name: string
   description?: string
   coverUrl?: string
+  coverUrls?: string[] | string
+  activityType?: string
   monthlyFee?: number
   yearlyFee?: number
 }
@@ -1423,6 +1893,8 @@ export interface ActivityGroupUpdatePayload {
   name?: string
   description?: string
   coverUrl?: string
+  coverUrls?: string[] | string
+  activityType?: string
   monthlyFee?: number
   yearlyFee?: number
 }
@@ -1435,6 +1907,31 @@ export interface ActivityGroupMemberItem {
   isLeader?: boolean
   joinedAt?: string
   status?: string
+}
+
+/** §73 活动组课时价格档 */
+export interface ActivityPricingTier {
+  id?: string
+  tierName: string
+  tierCode: string
+  price: number
+  period?: string
+  sortOrder?: number
+  status?: string
+}
+
+export interface ActivityPricingTierPayload {
+  tierName: string
+  tierCode: string
+  price: number
+  period?: string
+  sortOrder?: number
+  status?: string
+}
+
+export interface ActivityPricingTiersResult {
+  activityGroupId: string
+  list: ActivityPricingTier[]
 }
 
 export interface SpecialOfferItem {
@@ -1539,12 +2036,43 @@ export interface DirectedMessageRecipientItem {
   id: string
   residentId?: string
   residentName?: string
+  /** 后端实际字段：住户 id */
+  recipientId?: string
+  /** 后端实际字段：住户姓名 */
+  recipientName?: string
   buildingNo?: string
-  gender?: string
+  /** male/female，或后端偶发返回住户数字编码 1/2 */
+  gender?: string | number
   age?: number
   readStatus?: string
   readStatusCode?: string
   readAt?: string
+  createdAt?: string
+  /** 后端偶发嵌套住户对象 / 别名字段，展示前由前端归一化 */
+  name?: string
+  building?: string
+  userId?: string
+  recipient?: {
+    id?: string
+    name?: string
+    building?: string
+    buildingNo?: string
+    gender?: string | number
+  }
+  resident?: {
+    id?: string
+    name?: string
+    building?: string
+    buildingNo?: string
+    gender?: string | number
+  }
+  user?: {
+    id?: string
+    name?: string
+    building?: string
+    buildingNo?: string
+    gender?: string | number
+  }
 }
 
 export interface DirectedMessageSendResult {
@@ -1691,7 +2219,25 @@ export interface MerchantAdQuota {
   freeQuota?: number
   purchasedQuota?: number
   usedCount?: number
+  /** 本周免费额度已用条数（付费广告不占用） */
+  freeUsedCount?: number
   remainingCount?: number
+  freeQuotaRemaining?: number
+  freeQuotaEnabled?: boolean
+}
+
+export interface MerchantAdQuote {
+  durationDays: number
+  dayPrice: number
+  payAmount: number
+  freeQuotaRemaining?: number
+  freeQuotaEnabled?: boolean
+}
+
+export interface MerchantAdSettings {
+  dayPrice?: number
+  freeQuotaEnabled?: boolean
+  freeQuotaPerWeek?: number
 }
 
 export interface MerchantAdItem {
@@ -1702,6 +2248,12 @@ export interface MerchantAdItem {
   productId?: string
   status?: string
   createdAt?: string
+  durationDays?: number
+  startDate?: string
+  endDate?: string
+  payAmount?: number
+  paymentMethod?: string
+  recipientCount?: number
 }
 
 export interface MerchantAdCreatePayload {
@@ -1709,6 +2261,10 @@ export interface MerchantAdCreatePayload {
   content: string
   imageUrls?: string[]
   productId?: string
+  /** 展示天数 1~30，必填 */
+  durationDays: number
+  /** free / coin / point / wechat / mock，必填 */
+  paymentMethod: string
 }
 
 export interface MerchantAdPackageItem {
@@ -1782,8 +2338,52 @@ export interface ResidentMerchantApplicationItem {
   depositStatus?: string
   status?: string
   statusCode?: string
+  /** public=对外 / private=不对外 */
+  visibility?: string
   createdAt?: string
   auditedAt?: string
+}
+
+export interface ResidentMerchantMyDetail {
+  applicationId?: string
+  status?: string
+  statusCode?: string
+  visibility?: string
+  depositStatus?: string
+  depositAmount?: number
+  listingCount?: number
+  residentId?: string
+  residentName?: string
+  propertyCompanyId?: string
+}
+
+export interface ResidentMerchantPublicItem {
+  residentId: string
+  residentName?: string
+  propertyCompanyId?: string
+  visibility?: string
+  status?: string
+  depositAmount?: number
+  listingCount?: number
+}
+
+export interface ResidentMerchantPublicListing {
+  id: string
+  productName?: string
+  coverUrl?: string
+  retailPrice?: number
+  shareCount?: number
+}
+
+export interface ResidentMerchantPublicDetail extends ResidentMerchantPublicItem {
+  listings?: ResidentMerchantPublicListing[]
+}
+
+export interface ResidentMerchantShareResult {
+  shareUrl?: string
+  posterImageUrl?: string
+  qrcodeUrl?: string
+  visibility?: string
 }
 
 export interface ResidentMerchantDepositItem {
@@ -1843,4 +2443,367 @@ export interface DevicePushTokenResult {
   provider: string
   platform: string
   userId?: string
+}
+
+/* ---------- 技工门户 ---------- */
+
+export interface TechnicianDetail {
+  id: string
+  name?: string
+  phone?: string
+  specialty?: string
+  status?: string
+  propertyCompanyId?: string
+  propertyName?: string
+  taskCount?: number
+  completedCount?: number
+}
+
+export interface TechnicianTaskItem {
+  id: string
+  title?: string
+  description?: string
+  address?: string
+  contactPhone?: string
+  contactName?: string
+  status?: string
+  statusCode?: string
+  preferredTime?: string
+  createdAt?: string
+  updatedAt?: string
+  completedAt?: string
+}
+
+export interface TechnicianTaskStatusPayload {
+  status: string
+  remark?: string
+}
+
+/* ---------- v3.8 管理端扩展 ---------- */
+
+export interface CoinUseCondition {
+  condition?: string
+  pointThreshold?: number
+  satisfied?: boolean
+  eligible?: boolean
+}
+
+export interface CoinUseConditionPayload {
+  condition: string
+  pointThreshold?: number
+}
+
+export interface CoinWithdrawalSettings {
+  autoEnabled?: boolean
+  periodDays?: number
+  feeRate?: number
+}
+
+export interface WithdrawalBlockPayload {
+  blocked: boolean
+  reason?: string
+}
+
+export interface ProfileRewardItem {
+  id: string
+  scope?: string
+  scopeId?: string
+  fieldName?: string
+  rewardPoints?: number
+  oncePerUser?: boolean
+  status?: string
+  createdAt?: string
+}
+
+export interface ProfileRewardPayload {
+  scope: string
+  scopeId: string
+  fieldName: string
+  rewardPoints: number
+  oncePerUser?: boolean
+}
+
+export interface CompanyAccountBalance {
+  propertyCompanyId?: string
+  balance?: number
+  lastUpdatedAt?: string
+}
+
+export interface CompanyAccountRecord {
+  id?: string
+  amount?: number
+  remark?: string
+  createdAt?: string
+  operatorName?: string
+}
+
+export interface CommunityPointPool {
+  communityId?: string
+  balance?: number
+  totalIn?: number
+  totalOut?: number
+}
+
+export interface CommunityPointRecord {
+  id?: string
+  amount?: number
+  source?: string
+  remark?: string
+  createdAt?: string
+}
+
+export interface CommunityPointAdjustPayload {
+  communityId: string
+  amount: number
+  remark?: string
+}
+
+export interface ArrearsReportItem {
+  residentId?: string
+  residentName?: string
+  phone?: string
+  building?: string
+  unit?: string
+  room?: string
+  feeType?: string
+  period?: string
+  /** v4.8 账期起始日 */
+  periodStart?: string
+  /** v4.8 账期结束日 */
+  periodEnd?: string
+  amount?: number
+  paidAmount?: number
+  dueDate?: string
+  daysOverdue?: number
+}
+
+export interface ArrearsReport {
+  totalArrearsAmount?: number
+  totalCount?: number
+  items?: ArrearsReportItem[]
+  groupByBuilding?: Array<{ building?: string; totalAmount?: number; count?: number }>
+}
+
+/** POST /admin/property-fees/arrears-reminder */
+export interface ArrearsReminderPayload {
+  propertyCompanyId?: string
+  title: string
+  content: string
+}
+
+export interface ArrearsReminderResult {
+  notifiedCount: number
+  skippedCount: number
+}
+
+/** §88 物业住户聊天 */
+export interface AdminConversationItem {
+  peerId: string
+  peerName?: string
+  peerAvatarUrl?: string
+  conversationType?: string
+  officialSenderType?: string
+  lastMessage?: string
+  lastMessageTime?: string
+  lastMessageFromMe?: boolean
+  unreadCount?: number
+}
+
+export interface AdminChatMessageItem {
+  id: string
+  fromId?: string
+  toId?: string
+  content?: string
+  messageType?: string
+  chatType?: string
+  readStatus?: string
+  createdAt?: string
+  fromMe?: boolean
+}
+
+export interface RoomStructureRoom {
+  room?: string
+  isOccupied?: boolean
+  residentName?: string | null
+}
+
+export interface RoomStructureFloor {
+  floor?: string
+  rooms?: RoomStructureRoom[]
+}
+
+export interface RoomStructureUnit {
+  unit?: string
+  floors?: RoomStructureFloor[]
+}
+
+export interface RoomStructure {
+  building?: string
+  units?: RoomStructureUnit[]
+}
+
+export interface AvailableRoomItem {
+  building?: string
+  unit?: string
+  floor?: string
+  room?: string
+  isOccupied?: boolean
+}
+
+export interface AvailableRoomsResult {
+  communityId?: string
+  totalAvailable?: number
+  items?: AvailableRoomItem[]
+}
+
+export interface PointsTrendDay {
+  date?: string
+  earned?: number
+  spent?: number
+}
+
+export interface PointsTrend {
+  month?: string
+  totalEarned?: number
+  totalSpent?: number
+  daily?: PointsTrendDay[]
+}
+
+export interface PointsConsumptionItem {
+  source?: string
+  amount?: number
+  percentage?: number
+}
+
+export interface PointsConsumptionStructure {
+  month?: string
+  totalSpent?: number
+  items?: PointsConsumptionItem[]
+}
+
+export interface RegionalLeaderItem {
+  id: string
+  residentId?: string
+  sectorLeaderId?: string
+  name?: string
+  phone?: string
+  regionName?: string
+  shareRate?: number
+  status?: string
+  createdAt?: string
+}
+
+export interface RegionalLeaderPayload {
+  residentId: string
+  sectorLeaderId: string
+  name: string
+  phone: string
+  regionName: string
+  shareRate?: number
+}
+
+export interface ProjectLeaderItem {
+  id: string
+  residentId?: string
+  regionalLeaderId?: string
+  name?: string
+  phone?: string
+  projectName?: string
+  shareRate?: number
+  status?: string
+  createdAt?: string
+}
+
+export interface ProjectLeaderPayload {
+  residentId: string
+  regionalLeaderId: string
+  name: string
+  phone: string
+  projectName: string
+  shareRate?: number
+}
+
+export interface MerchantRecommendPayload {
+  isRecommended: boolean
+  recommendedSort?: number
+}
+
+/* ---------- §77 商家关键词 ---------- */
+
+export interface MerchantKeywordItem {
+  id: string
+  keyword: string
+  weight?: number
+}
+
+export interface MerchantKeywordsResult {
+  merchantId?: string
+  merchantName?: string
+  keywords?: MerchantKeywordItem[]
+}
+
+export interface MerchantKeywordCreatePayload {
+  keyword: string
+  weight?: number
+}
+
+export interface MerchantKeywordBatchPayload {
+  keywords: string[]
+}
+
+export interface MerchantKeywordUpdatePayload {
+  weight: number
+}
+
+/* ---------- §87 商家动态 ---------- */
+
+export interface MerchantPostItem {
+  id: string
+  merchantId?: string
+  merchantName?: string
+  title?: string
+  content?: string
+  /** 后端可能返回 JSON 字符串或数组 */
+  imageUrls?: string[] | string
+  videoUrl?: string | null
+  status?: string
+  viewCount?: number
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface MerchantPostPayload {
+  title: string
+  content: string
+  imageUrls?: string[] | string
+  videoUrl?: string
+  status?: string
+}
+
+/* ---------- 文件模块 /files ---------- */
+
+export interface UploadFileResponse {
+  fileId: string
+  originalName?: string
+  storedName?: string
+  url: string
+  thumbnailUrl?: string
+  size?: number
+  mimeType?: string
+  category?: string
+}
+
+export interface BatchUploadFileItemResponse extends UploadFileResponse {
+  order?: number
+}
+
+export interface FileDetailResponse extends UploadFileResponse {
+  uploaderId?: string
+  propertyCompanyId?: string
+  createdAt?: string
+}
+
+export interface DeleteFileResponse {
+  fileId: string
+  deleted: boolean
 }

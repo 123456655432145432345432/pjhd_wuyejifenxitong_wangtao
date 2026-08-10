@@ -12,11 +12,13 @@
         <form class="search" @submit.prevent="submitSearch">
           <IconSvg name="search" />
           <input
-            v-model="searchMerchantId"
+            v-model="searchKeyword"
             type="search"
-            placeholder="搜索商家ID..."
+            placeholder="搜索商家名称或ID"
+            enterkeyhint="search"
             @input="onSearchInput"
           />
+          <button type="submit" class="searchBtn">搜索</button>
         </form>
         <select v-model="filterStatus" class="filterSelect" @change="applyFilters">
           <option v-for="opt in POINT_PURCHASE_AUDIT_STATUS_OPTIONS" :key="opt.value || 'all'" :value="opt.value">
@@ -54,22 +56,23 @@
             <td>{{ item.pointAmount }}</td>
             <td>¥{{ formatMoney(item.payAmount) }}</td>
             <td>
-              <span :class="['statusBadge', item.status]">
-                {{ POINT_PURCHASE_AUDIT_STATUS_LABEL[item.status] || item.status }}
+              <span :class="['statusBadge', resolvePurchaseStatus(item) || 'unknown']">
+                {{ purchaseStatusLabel(item) }}
               </span>
             </td>
             <td>{{ item.createdAt }}</td>
             <td>
               <div class="actions">
                 <button
-                  v-if="item.status === POINT_PURCHASE_AUDIT_STATUS.PENDING"
+                  v-if="isPendingPurchase(item)"
                   class="actionBtn approve"
                   title="审核"
                   @click="openAuditModal(item)"
                 >
                   <IconSvg name="edit" />
                 </button>
-                <span v-else class="doneLabel">已处理</span>
+                <span v-else-if="isTerminalPurchase(item)" class="doneLabel">已处理</span>
+                <span v-else class="doneLabel warn">待确认</span>
               </div>
             </td>
           </tr>
@@ -139,10 +142,20 @@ import { ApiError } from '../../api/request'
 import {
   POINT_PURCHASE_AUDIT_STATUS,
   POINT_PURCHASE_AUDIT_STATUS_LABEL,
-  POINT_PURCHASE_AUDIT_STATUS_OPTIONS
+  POINT_PURCHASE_AUDIT_STATUS_OPTIONS,
+  isAuditPendingStatus
 } from '../../constants/enums'
 
+import {
+  buildMerchantSearchParams,
+  filterByMerchantKeyword,
+  isLikelyMerchantId
+} from '../../utils/merchantSearch'
+
 const PAGE_SIZE = 20
+/** 名称搜索时拉取分页上限（后端 pageSize 上限通常为 100） */
+const NAME_SEARCH_PAGE_SIZE = 100
+const NAME_SEARCH_MAX_PAGES = 10
 
 const loading = ref(true)
 const list = ref<AdminMerchantPointPurchaseItem[]>([])
@@ -150,8 +163,8 @@ const currentPage = ref(1)
 const total = ref(0)
 const totalPages = ref(1)
 
-const searchMerchantId = ref('')
-const appliedMerchantId = ref('')
+const searchKeyword = ref('')
+const appliedKeyword = ref('')
 const filterStatus = ref('')
 const startDate = ref('')
 const endDate = ref('')
@@ -179,19 +192,71 @@ function formatMoney(val: number | string | undefined): string {
   return Number(val).toFixed(2)
 }
 
+/** 兼容 status / auditStatus（后端积分购买列表常只回 auditStatus） */
+function resolvePurchaseStatus(item: AdminMerchantPointPurchaseItem | null | undefined): string {
+  if (!item) return ''
+  const raw = item as AdminMerchantPointPurchaseItem & { auditStatus?: string }
+  return String(raw.status || raw.auditStatus || '').trim()
+}
+
+function purchaseStatusLabel(item: AdminMerchantPointPurchaseItem) {
+  const status = resolvePurchaseStatus(item)
+  return POINT_PURCHASE_AUDIT_STATUS_LABEL[status] || status || '—'
+}
+
+function isPendingPurchase(item: AdminMerchantPointPurchaseItem) {
+  return isAuditPendingStatus(resolvePurchaseStatus(item))
+}
+
+function isTerminalPurchase(item: AdminMerchantPointPurchaseItem) {
+  const status = resolvePurchaseStatus(item)
+  return (
+    status === POINT_PURCHASE_AUDIT_STATUS.APPROVED ||
+    status === POINT_PURCHASE_AUDIT_STATUS.REJECTED
+  )
+}
+
 async function loadData(page = currentPage.value) {
   loading.value = true
   try {
-    const params: Record<string, string | number | undefined> = {
-      page,
-      pageSize: PAGE_SIZE,
+    const term = appliedKeyword.value.trim()
+    const isNameSearch = Boolean(term && !isLikelyMerchantId(term))
+    const baseParams = {
       auditStatus: filterStatus.value || undefined,
-      merchantId: appliedMerchantId.value || undefined,
       startDate: startDate.value || undefined,
       endDate: endDate.value || undefined,
-      sort: '-createdAt'
+      sort: '-createdAt' as const,
+      ...buildMerchantSearchParams(term)
     }
-    const res = await adminMerchantPointPurchaseApi.list(params)
+
+    if (isNameSearch) {
+      const collected: AdminMerchantPointPurchaseItem[] = []
+      let fetchPage = 1
+      let fetchTotalPages = 1
+      do {
+        const res = await adminMerchantPointPurchaseApi.list({
+          ...baseParams,
+          page: fetchPage,
+          pageSize: NAME_SEARCH_PAGE_SIZE
+        })
+        collected.push(...(res.list || []))
+        fetchTotalPages = res.pagination?.totalPages ?? 1
+        fetchPage += 1
+      } while (fetchPage <= fetchTotalPages && fetchPage <= NAME_SEARCH_MAX_PAGES)
+
+      const items = filterByMerchantKeyword(collected, term)
+      list.value = items
+      total.value = items.length
+      currentPage.value = 1
+      totalPages.value = 1
+      return
+    }
+
+    const res = await adminMerchantPointPurchaseApi.list({
+      ...baseParams,
+      page,
+      pageSize: PAGE_SIZE
+    })
     list.value = res.list || []
     total.value = res.pagination?.total ?? 0
     currentPage.value = res.pagination?.page ?? page
@@ -213,7 +278,7 @@ function applyFilters() {
 
 function submitSearch() {
   clearTimeout(searchTimer)
-  appliedMerchantId.value = searchMerchantId.value.trim()
+  appliedKeyword.value = searchKeyword.value.trim()
   currentPage.value = 1
   loadData(1)
 }
@@ -283,7 +348,8 @@ onMounted(() => {
 .toolbar { display: flex; align-items: center; gap: 12px; padding: 16px 24px; border-bottom: 1px solid #f0f0f3; flex-wrap: wrap; }
 .search { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 200px; padding: 10px 14px; border: 1px solid #e8e8ec; border-radius: 8px; background: #fafafc; }
 .search svg { width: 18px; height: 18px; color: #8c8c9a; }
-.search input { flex: 1; border: none; background: transparent; font-size: 14px; color: #1f1f2e; outline: none; }
+.search input { flex: 1; border: none; background: transparent; font-size: 14px; color: #1f1f2e; outline: none; min-width: 0; }
+.searchBtn { flex-shrink: 0; padding: 6px 12px; border-radius: 6px; background: #5c5c9e; color: #ffffff; font-size: 13px; }
 .filterSelect { padding: 10px 14px; border: 1px solid #e8e8ec; border-radius: 8px; background: #ffffff; color: #5c5c66; font-size: 14px; cursor: pointer; outline: none; min-width: 120px; }
 .filterSelect:focus { border-color: #5c5c9e; }
 .dateRange { display: flex; align-items: center; gap: 8px; }
@@ -300,16 +366,19 @@ onMounted(() => {
 .dataRow:hover { background: #fafafc; }
 
 .statusBadge { display: inline-block; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 500; }
-.statusBadge.pending_audit { background: #fff7e6; color: #d48806; }
+.statusBadge.pending_audit,
+.statusBadge.pending { background: #fff7e6; color: #d48806; }
 .statusBadge.approved { background: #e6f7ee; color: #389e0d; }
 .statusBadge.rejected { background: #fff1f0; color: #cf1322; }
 .statusBadge.completed { background: #e6f0ff; color: #1d39c4; }
+.statusBadge.unknown { background: #f4f5f7; color: #8c8c9a; }
 
 .actions { display: flex; align-items: center; gap: 8px; }
 .actionBtn { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; border: 1px solid; background: transparent; cursor: pointer; }
 .actionBtn svg { width: 14px; height: 14px; }
 .actionBtn.approve { border-color: #5c5c9e; color: #5c5c9e; }
 .doneLabel { font-size: 12px; color: #8c8c9a; }
+.doneLabel.warn { color: #d48806; }
 
 .footer { display: flex; align-items: center; justify-content: space-between; padding: 14px 24px; border-top: 1px solid #f0f0f3; }
 .total { font-size: 13px; color: #8c8c9a; }

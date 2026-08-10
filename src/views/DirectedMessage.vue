@@ -62,8 +62,13 @@
             />
           </div>
           <div class="field">
-            <label class="label">图片 URL（可选，每行一个，最多 9 张）</label>
-            <textarea v-model="form.imageUrlsText" class="textarea" rows="2" placeholder="https://..." />
+            <label class="label">图片（可选，最多 9 张）</label>
+            <MediaUploader
+              v-model="form.imageUrls"
+              category="announcement"
+              accept="image"
+              :max="9"
+            />
           </div>
           <div class="field">
             <label class="label">性别</label>
@@ -127,7 +132,7 @@
               <th>时间</th>
               <th>标题</th>
               <th>身份</th>
-              <th>收件/已读</th>
+              <th>已读/收件</th>
               <th>已读率</th>
               <th>操作</th>
             </tr>
@@ -153,7 +158,7 @@
             </div>
             <h3>{{ item.title }}</h3>
             <div class="mobileTaskStats">
-              <span>收件/已读：{{ item.readCount ?? 0 }} / {{ item.recipientCount ?? 0 }}</span>
+              <span>已读/收件：{{ item.readCount ?? 0 }} / {{ item.recipientCount ?? 0 }}</span>
               <span>已读率：{{ formatRate(item.readRate) }}</span>
             </div>
             <button type="button" class="linkBtn" @click="openDetail(item.id)">查看详情</button>
@@ -188,18 +193,18 @@
                 </div>
                 <div>
                   <span class="label">已读/未读</span>
-                  <strong>{{ detail.readCount ?? 0 }} / {{ detail.unreadCount ?? 0 }}</strong>
+                  <strong>{{ detailReadCount }} / {{ detailUnreadCount }}</strong>
                 </div>
                 <div>
-                  <span class="label">已读率</span><strong>{{ formatRate(detail.readRate) }}</strong>
+                  <span class="label">已读率</span><strong>{{ formatRate(detailReadRate) }}</strong>
                 </div>
               </div>
               <p v-if="detail.content" class="contentBlock">{{ detail.content }}</p>
               <div class="filtersRow">
                 <select v-model="recipientFilter.readStatus" class="input sm" @change="loadRecipients(1)">
                   <option value="">全部状态</option>
-                  <option value="read">已读</option>
-                  <option value="unread">未读</option>
+                  <option :value="READ_STATUS.READ">已读</option>
+                  <option :value="READ_STATUS.UNREAD">未读</option>
                 </select>
                 <input
                   v-model="recipientFilter.buildingNo"
@@ -220,20 +225,20 @@
                 </thead>
                 <tbody>
                   <tr v-for="r in recipients" :key="r.id">
-                    <td>{{ r.residentName || r.residentId || '—' }}</td>
+                    <td>{{ displayResidentName(r) }}</td>
                     <td>{{ r.buildingNo || '—' }}</td>
-                    <td>{{ getEnumLabel(FILTER_GENDER_LABEL, r.gender, '—') }}</td>
-                    <td>{{ r.readStatus || r.readStatusCode || '—' }}</td>
+                    <td>{{ displayGender(r.gender) }}</td>
+                    <td>{{ displayReadStatus(r) }}</td>
                     <td>{{ r.readAt || '—' }}</td>
                   </tr>
                 </tbody>
               </table>
               <div v-else-if="recipients.length" class="mobileRecipientList">
                 <article v-for="r in recipients" :key="r.id" class="mobileRecipientCard">
-                  <strong>{{ r.residentName || r.residentId || '—' }}</strong>
+                  <strong>{{ displayResidentName(r) }}</strong>
                   <div><span>楼栋</span><span>{{ r.buildingNo || '—' }}</span></div>
-                  <div><span>性别</span><span>{{ getEnumLabel(FILTER_GENDER_LABEL, r.gender, '—') }}</span></div>
-                  <div><span>状态</span><span>{{ r.readStatus || r.readStatusCode || '—' }}</span></div>
+                  <div><span>性别</span><span>{{ displayGender(r.gender) }}</span></div>
+                  <div><span>状态</span><span>{{ displayReadStatus(r) }}</span></div>
                   <div><span>已读时间</span><span>{{ r.readAt || '—' }}</span></div>
                 </article>
               </div>
@@ -248,7 +253,8 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import MediaUploader from '../components/MediaUploader.vue'
 import { directedMessageApi, residentApi } from '../api/services'
 import { ApiError } from '../api/request'
 import { useIsMobile } from '../composables/useIsMobile'
@@ -265,20 +271,26 @@ import {
   FILTER_GENDER_OPTIONS,
   getEnumLabel,
   getPhase2ErrorMessage,
+  normalizeFilterGender,
   OFFICIAL_SENDER_TYPE,
   OFFICIAL_SENDER_TYPE_LABEL,
   OFFICIAL_SENDER_TYPE_OPTIONS,
+  READ_STATUS,
+  READ_STATUS_LABEL,
   USER_ROLE
 } from '../constants/enums'
 
 const auth = useAuthStore()
 const { isMobile } = useIsMobile()
 const PAGE_SIZE = 20
+/** 后端 pageSize 上限通常为 100，超出会 400「参数值超出范围」 */
+const RESIDENT_LIST_PAGE_SIZE = 100
+const BUILDING_OPTIONS_MAX_PAGES = 10
 
 const form = ref({
   title: '',
   content: '',
-  imageUrlsText: '',
+  imageUrls: [] as string[],
   officialSenderType: defaultSenderType(),
   filterGender: FILTER_GENDER.ALL,
   filterBuildings: [] as string[],
@@ -287,6 +299,7 @@ const form = ref({
 })
 const selectAllBuildings = ref(true)
 const buildingOptions = ref<string[]>([])
+const residentLookup = ref<Map<string, ResidentItem>>(new Map())
 const submitting = ref(false)
 const formError = ref('')
 const formSuccess = ref('')
@@ -309,6 +322,30 @@ const detail = ref<DirectedMessageTaskItem | null>(null)
 const recipients = ref<DirectedMessageRecipientItem[]>([])
 const recipientFilter = ref({ readStatus: '', buildingNo: '' })
 const currentTaskId = ref('')
+/** 当前页收件人汇总，用于详情汇总字段缺失时兜底 */
+const recipientPageStats = ref<{ readCount: number; unreadCount: number; total: number } | null>(null)
+
+const detailReadCount = computed(() => {
+  const api = detail.value?.readCount
+  const page = recipientPageStats.value?.readCount
+  const unfiltered =
+    !recipientFilter.value.readStatus && !recipientFilter.value.buildingNo.trim()
+  if (unfiltered && api != null && page != null) return Math.max(api, page)
+  if (api != null) return api
+  return page ?? 0
+})
+const detailUnreadCount = computed(() => {
+  const total = detail.value?.recipientCount ?? recipientPageStats.value?.total
+  if (total != null) return Math.max(0, total - detailReadCount.value)
+  if (detail.value?.unreadCount != null) return detail.value.unreadCount
+  return recipientPageStats.value?.unreadCount ?? 0
+})
+const detailReadRate = computed(() => {
+  const total = detail.value?.recipientCount ?? recipientPageStats.value?.total
+  if (total) return detailReadCount.value / total
+  if (detail.value?.readRate != null) return detail.value.readRate
+  return 0
+})
 
 function defaultSenderType() {
   if (auth.profile?.role === USER_ROLE.COORDINATOR) return OFFICIAL_SENDER_TYPE.COORDINATOR
@@ -327,6 +364,211 @@ function resolveError(e: unknown) {
   return '操作失败，请稍后重试'
 }
 
+function pickStr(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim()
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  }
+  return undefined
+}
+
+/** 收件人记录 id（dmr_*）不是住户 id，勿请求 /residents/{id} */
+function isLikelyResidentId(id: string) {
+  return Boolean(id) && !id.startsWith('dmr_')
+}
+
+function asPersonObject(value: unknown): Record<string, unknown> | undefined {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>
+  }
+  return undefined
+}
+
+function pickResidentId(...values: unknown[]) {
+  for (const value of values) {
+    const id = pickStr(value)
+    if (id && isLikelyResidentId(id)) return id
+  }
+  return undefined
+}
+
+function isReadStatus(status?: string) {
+  return status === READ_STATUS.READ || status === '已读'
+}
+
+function displayResidentName(r: DirectedMessageRecipientItem) {
+  return (
+    r.residentName ||
+    r.name ||
+    (r.residentId && isLikelyResidentId(r.residentId) ? r.residentId : undefined) ||
+    '—'
+  )
+}
+
+function displayGender(gender?: string | number) {
+  const normalized = normalizeFilterGender(gender)
+  return getEnumLabel(FILTER_GENDER_LABEL, normalized, '—')
+}
+
+function displayReadStatus(r: DirectedMessageRecipientItem) {
+  const status = r.readStatus || r.readStatusCode
+  return getEnumLabel(READ_STATUS_LABEL, status, status || '—')
+}
+
+/** 兼容 camelCase / snake_case / 嵌套住户对象的收件人字段 */
+function normalizeRecipient(raw: DirectedMessageRecipientItem): DirectedMessageRecipientItem {
+  const record = raw as DirectedMessageRecipientItem & Record<string, unknown>
+  const nested =
+    asPersonObject(record.resident) ||
+    asPersonObject(record.user) ||
+    asPersonObject(record.recipient) ||
+    asPersonObject(record.residentInfo) ||
+    asPersonObject(record.resident_info) ||
+    asPersonObject(record.profile) ||
+    {}
+  const nestedBuilding = pickStr(
+    nested.buildingNo,
+    nested.building_no,
+    nested.building,
+    nested.buildingName,
+    nested.building_name
+  )
+  const readStatus = pickStr(
+    record.readStatus,
+    record.readStatusCode,
+    record.read_status,
+    record.status
+  )
+  // id = 收件记录（dmr_*）；recipientId = 住户 id（res_*）
+  const recordId = pickStr(record.id) || ''
+  const residentId = pickResidentId(
+    record.residentId,
+    record.resident_id,
+    record.recipientId,
+    record.recipient_id,
+    record.userId,
+    record.user_id,
+    record.targetId,
+    record.target_id,
+    record.memberId,
+    record.member_id,
+    record.uid,
+    nested.id,
+    nested.residentId,
+    nested.resident_id,
+    nested.userId,
+    nested.user_id,
+    typeof record.resident === 'string' ? record.resident : undefined,
+    typeof record.user === 'string' ? record.user : undefined,
+    recordId
+  )
+  return {
+    id: recordId,
+    residentId,
+    residentName: pickStr(
+      record.residentName,
+      record.resident_name,
+      // 后端实际返回：recipientName
+      record.recipientName,
+      record.recipient_name,
+      record.realName,
+      record.real_name,
+      record.displayName,
+      record.display_name,
+      record.name,
+      record.userName,
+      record.user_name,
+      record.nickname,
+      record.nickName,
+      nested.name,
+      nested.residentName,
+      nested.resident_name,
+      nested.realName,
+      nested.real_name,
+      nested.userName,
+      nested.nickname
+    ),
+    buildingNo: pickStr(
+      record.buildingNo,
+      record.building_no,
+      record.building,
+      record.buildingName,
+      record.building_name,
+      nestedBuilding
+    ),
+    gender: normalizeFilterGender(
+      (record.gender as string | number | undefined) ??
+        (nested.gender as string | number | undefined)
+    ),
+    age:
+      typeof record.age === 'number'
+        ? record.age
+        : typeof nested.age === 'number'
+          ? nested.age
+          : undefined,
+    readStatus,
+    readStatusCode: pickStr(record.readStatusCode, record.read_status_code, readStatus),
+    readAt: pickStr(record.readAt, record.read_at, record.readTime, record.read_time)
+  }
+}
+
+function mergeResidentProfile(
+  item: DirectedMessageRecipientItem,
+  resident?: ResidentItem
+): DirectedMessageRecipientItem {
+  if (!resident) return item
+  return {
+    ...item,
+    residentId: item.residentId || resident.id,
+    residentName: item.residentName || resident.name,
+    buildingNo: item.buildingNo || resident.building,
+    gender: item.gender || normalizeFilterGender(resident.gender)
+  }
+}
+
+function enrichRecipients(list: DirectedMessageRecipientItem[]) {
+  const map = residentLookup.value
+  return list.map((item) => {
+    const byResidentId = item.residentId ? map.get(item.residentId) : undefined
+    const byId =
+      item.id && isLikelyResidentId(item.id) ? map.get(item.id) : undefined
+    return mergeResidentProfile(item, byResidentId || byId)
+  })
+}
+
+function updateRecipientPageStats(list: DirectedMessageRecipientItem[]) {
+  const readCount = list.filter((r) => isReadStatus(r.readStatus || r.readStatusCode)).length
+  recipientPageStats.value = {
+    readCount,
+    unreadCount: Math.max(0, list.length - readCount),
+    total: list.length
+  }
+}
+
+/** 详情汇总若未聚合已读，用当前页收件人状态回填（无筛选时更准） */
+function syncDetailStatsFromRecipients(list: DirectedMessageRecipientItem[]) {
+  if (!detail.value || recipientFilter.value.readStatus || recipientFilter.value.buildingNo.trim()) {
+    return
+  }
+  const readCount = list.filter((r) => isReadStatus(r.readStatus || r.readStatusCode)).length
+  const total = detail.value.recipientCount ?? list.length
+  const unreadCount = Math.max(0, total - readCount)
+  const apiRead = detail.value.readCount ?? 0
+  if (apiRead === 0 && readCount > 0) {
+    detail.value = {
+      ...detail.value,
+      readCount,
+      unreadCount,
+      readRate: total ? readCount / total : 0
+    }
+  } else if (detail.value.unreadCount == null && detail.value.readCount != null) {
+    detail.value = {
+      ...detail.value,
+      unreadCount: Math.max(0, (detail.value.recipientCount ?? list.length) - detail.value.readCount)
+    }
+  }
+}
+
 function onSelectAllBuildings() {
   if (selectAllBuildings.value) form.value.filterBuildings = []
 }
@@ -341,20 +583,29 @@ watch(
 
 function collectBuildings(list: ResidentItem[]) {
   const set = new Set(buildingOptions.value)
+  const map = new Map(residentLookup.value)
   list.forEach((item) => {
     if (item.building) set.add(item.building)
+    if (item.id) map.set(item.id, item)
   })
   buildingOptions.value = Array.from(set).sort((a, b) => a.localeCompare(b, 'zh-CN'))
+  residentLookup.value = map
 }
 
 async function loadBuildingOptions() {
   try {
-    const res = await residentApi.list({
-      page: 1,
-      pageSize: 100,
-      propertyCompanyId: auth.propertyCompanyId || undefined
-    })
-    collectBuildings(res.list || [])
+    let fetchPage = 1
+    let fetchTotalPages = 1
+    do {
+      const res = await residentApi.list({
+        page: fetchPage,
+        pageSize: RESIDENT_LIST_PAGE_SIZE,
+        propertyCompanyId: auth.propertyCompanyId || undefined
+      })
+      collectBuildings(res.list || [])
+      fetchTotalPages = res.pagination?.totalPages ?? 1
+      fetchPage += 1
+    } while (fetchPage <= fetchTotalPages && fetchPage <= BUILDING_OPTIONS_MAX_PAGES)
   } catch (e) {
     console.error(e)
   }
@@ -420,11 +671,7 @@ async function submitSend() {
     formError.value = '请填写标题和正文'
     return
   }
-  const imageUrls = form.value.imageUrlsText
-    .split(/[\n,]/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .slice(0, 9)
+  const imageUrls = form.value.imageUrls.filter((s) => s.trim()).slice(0, 9)
   const merchantIds = form.value.merchantIdsText
     .split(/[\n,]/)
     .map((s) => s.trim())
@@ -451,7 +698,7 @@ async function submitSend() {
     formSuccess.value = `已发送，覆盖 ${result.recipientCount ?? 0} 人`
     form.value.title = ''
     form.value.content = ''
-    form.value.imageUrlsText = ''
+    form.value.imageUrls = []
     await loadTasks(1)
   } catch (e) {
     formError.value = resolveError(e)
@@ -466,6 +713,7 @@ async function openDetail(id: string) {
   detailError.value = ''
   detail.value = null
   recipients.value = []
+  recipientPageStats.value = null
   currentTaskId.value = id
   recipientFilter.value = { readStatus: '', buildingNo: '' }
   try {
@@ -478,6 +726,33 @@ async function openDetail(id: string) {
   }
 }
 
+async function ensureResidentLookup(ids: string[]) {
+  const missing = ids.filter(
+    (id) => isLikelyResidentId(id) && !residentLookup.value.has(id)
+  )
+  if (!missing.length) return
+  const map = new Map(residentLookup.value)
+  await Promise.all(
+    missing.slice(0, 50).map(async (id) => {
+      try {
+        const resident = await residentApi.get(id)
+        if (resident?.id) map.set(resident.id, resident)
+      } catch {
+        /* 个别住户不可见时忽略，保留原始字段 */
+      }
+    })
+  )
+  residentLookup.value = map
+}
+
+function extractRecipientList(res: unknown): DirectedMessageRecipientItem[] {
+  if (!res || typeof res !== 'object') return []
+  const data = res as Record<string, unknown>
+  const list =
+    data.list || data.items || data.records || data.recipients || data.rows
+  return Array.isArray(list) ? (list as DirectedMessageRecipientItem[]) : []
+}
+
 async function loadRecipients(p = 1) {
   if (!currentTaskId.value) return
   try {
@@ -487,7 +762,34 @@ async function loadRecipients(p = 1) {
       readStatus: recipientFilter.value.readStatus || undefined,
       buildingNo: recipientFilter.value.buildingNo.trim() || undefined
     })
-    recipients.value = res.list || []
+    const rawList = extractRecipientList(res)
+    const normalized = rawList.map((item) => normalizeRecipient(item))
+    const lookupIds = [
+      ...new Set(
+        normalized
+          .map((item) => item.residentId)
+          .filter((id): id is string => Boolean(id) && isLikelyResidentId(id))
+      )
+    ]
+    const needProfile = normalized.some((item) => !item.residentName || !item.buildingNo)
+    if (needProfile && lookupIds.length) {
+      await ensureResidentLookup(lookupIds)
+    }
+    const enriched = enrichRecipients(normalized)
+    if (
+      import.meta.env.DEV &&
+      enriched.some((item) => !item.residentName) &&
+      rawList[0]
+    ) {
+      console.warn(
+        '[DirectedMessage] 收件人缺少姓名，原始字段：',
+        Object.keys(rawList[0] as object),
+        rawList[0]
+      )
+    }
+    recipients.value = enriched
+    updateRecipientPageStats(enriched)
+    syncDetailStatsFromRecipients(enriched)
   } catch (e) {
     detailError.value = resolveError(e)
   }
@@ -495,6 +797,12 @@ async function loadRecipients(p = 1) {
 
 onMounted(async () => {
   await Promise.all([loadBuildingOptions(), loadAgeBrackets(), loadTasks(1)])
+})
+
+watch(detailOpen, (open, wasOpen) => {
+  if (wasOpen && !open) {
+    loadTasks(page.value)
+  }
 })
 </script>
 

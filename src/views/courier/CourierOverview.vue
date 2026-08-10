@@ -23,8 +23,12 @@
           <div class="value">{{ todayCompletedCount }}</div>
         </div>
         <div class="statCard">
-          <div class="label">今日收益</div>
+          <div class="label">今日预计收入</div>
           <div class="value small">¥{{ formatMoney(todayEarnings) }}</div>
+        </div>
+        <div class="statCard green">
+          <div class="label">可提现余额</div>
+          <div class="value small">¥{{ formatMoney(withdrawableAmount) }}</div>
         </div>
       </div>
 
@@ -38,6 +42,7 @@
           <ul class="tips">
             <li>在抢单大厅查看待配送订单并抢单</li>
             <li>接单后先「开始配送」，送达后上传凭证并完成配送</li>
+            <li>完成配送后预计收入立即计入可提现；可提现以钱包余额为准</li>
             <li>注意订单超时时间，及时完成配送</li>
           </ul>
         </div>
@@ -55,7 +60,7 @@
                 {{ item.merchantName || '—' }} → {{ item.deliveryAddress || '—' }}
               </div>
               <div class="taskMeta">
-                收益 ¥{{ formatMoney(item.courierEarning ?? item.fee) }}
+                预计收入 ¥{{ formatMoney(item.courierEarning ?? item.fee) }}
                 · {{ item.acceptedAt || item.createdAt || '—' }}
               </div>
             </li>
@@ -70,7 +75,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { courierPortalApi } from '../../api/services'
+import { courierManagerApi, courierPortalApi } from '../../api/services'
 import type { CourierDeliveryItem } from '../../api/types'
 import { ApiError } from '../../api/request'
 import { DELIVERY_STATUS, DELIVERY_STATUS_LABEL, getEnumLabel } from '../../constants/enums'
@@ -84,6 +89,7 @@ const pendingCount = ref(0)
 const activeCount = ref(0)
 const todayCompletedCount = ref(0)
 const todayEarnings = ref(0)
+const withdrawableAmount = ref(0)
 const recentTasks = ref<CourierDeliveryItem[]>([])
 
 const displayName = auth.username || auth.profile?.name || '快递员'
@@ -96,7 +102,7 @@ function formatMoney(value?: number) {
 function statusClass(status?: string) {
   if (status === DELIVERY_STATUS.ACCEPTED || status === DELIVERY_STATUS.GRABBED) return 'accepted'
   if (status === DELIVERY_STATUS.DELIVERING) return 'delivering'
-  if (status === DELIVERY_STATUS.COMPLETED) return 'completed'
+  if (status === DELIVERY_STATUS.DELIVERED || status === DELIVERY_STATUS.COMPLETED) return 'completed'
   return ''
 }
 
@@ -108,16 +114,17 @@ function isToday(value?: string) {
 async function loadStats() {
   loading.value = true
   try {
-    const [pendingRes, activeRes, completedRes, recentRes] = await Promise.all([
+    const [pendingRes, activeRes, completedRes, recentRes, profile] = await Promise.all([
       courierPortalApi.pending({ page: 1, pageSize: 1, sort: '-createdAt' }),
       courierPortalApi.my({ page: 1, pageSize: 100, sort: '-createdAt' }),
       courierPortalApi.my({
         page: 1,
         pageSize: 100,
-        status: DELIVERY_STATUS.COMPLETED,
+        status: DELIVERY_STATUS.DELIVERED,
         sort: '-createdAt'
       }),
-      courierPortalApi.my({ page: 1, pageSize: 5, sort: '-createdAt' })
+      courierPortalApi.my({ page: 1, pageSize: 5, sort: '-createdAt' }),
+      courierManagerApi.my().catch(() => null)
     ])
     pendingCount.value = pendingRes.pagination?.total ?? pendingRes.list?.length ?? 0
     const allTasks = activeRes.list || []
@@ -137,6 +144,7 @@ async function loadStats() {
       0
     )
     recentTasks.value = recentRes.list || []
+    withdrawableAmount.value = Number(profile?.withdrawableAmount ?? 0)
   } catch (e) {
     console.error(e instanceof ApiError ? e.message : e)
   } finally {
@@ -153,7 +161,7 @@ onMounted(loadStats)
 .title { font-size: 24px; font-weight: 600; color: #1f1f2e; margin-bottom: 8px; }
 .desc { font-size: 14px; color: #8c8c9a; }
 .loading { color: #8c8c9a; font-size: 14px; }
-.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+.stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-bottom: 20px; }
 .statCard { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
 .statCard.purple .value { color: #5c5c9e; }
 .statCard.green .value { color: #3aaf7d; }

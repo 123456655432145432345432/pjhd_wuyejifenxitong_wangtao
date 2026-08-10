@@ -50,25 +50,29 @@
                 @input="onSearchInput"
               />
             </form>
+            <button type="button" class="btnPrimary" @click="openEarnModal()">发放物业币</button>
           </div>
         </div>
-        <table v-if="!isMobile" class="table">
+        <div v-if="!isMobile" class="tableScroll">
+        <table class="table">
           <thead>
             <tr>
               <th>用户姓名</th>
               <th>房号</th>
-              <th>积分余额（紫色）</th>
+              <th>个人积分</th>
+              <th>家庭积分</th>
               <th>物业币余额（绿色）</th>
+              <th>物业币</th>
               <th>账户状态</th>
               <th>操作</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td colspan="6" style="text-align:center;padding:24px;color:#8c8c9a">加载中...</td>
+              <td colspan="8" style="text-align:center;padding:24px;color:#8c8c9a">加载中...</td>
             </tr>
             <tr v-else-if="!users.length">
-              <td colspan="6" style="text-align:center;padding:24px;color:#8c8c9a">暂无数据</td>
+              <td colspan="8" style="text-align:center;padding:24px;color:#8c8c9a">暂无数据</td>
             </tr>
             <template v-else>
             <tr v-for="user in users" :key="user.id">
@@ -80,7 +84,13 @@
               </td>
               <td>{{ user.room }}</td>
               <td><span class="badge purple">{{ user.points }}</span></td>
+              <td><span class="badge purple soft">{{ user.familyPoints }}</span></td>
               <td><span class="badge green">{{ user.pcoin }}</span></td>
+              <td>
+                <span class="status" :class="user.coinFrozen ? 'frozen' : 'normal'">
+                  {{ user.coinFrozen ? '币已冻结' : '正常' }}
+                </span>
+              </td>
               <td>
                 <span class="status" :class="user.status === 'normal' ? 'normal' : 'frozen'">
                   {{ user.status === 'normal' ? '正常' : '已冻结' }}
@@ -89,13 +99,22 @@
               <td>
                 <div class="actions">
                   <button type="button" class="detail" @click="openDetailModal(user)">详情</button>
+                  <button type="button" class="detail" @click="openEarnModal(user)">发放</button>
+                  <button
+                    type="button"
+                    class="toggle"
+                    :class="user.coinFrozen ? 'unfreeze' : 'freeze'"
+                    @click="openCoinModal(user, user.coinFrozen ? 'unfreeze' : 'freeze')"
+                  >
+                    {{ user.coinFrozen ? '解冻币' : '冻结币' }}
+                  </button>
                   <button
                     type="button"
                     class="toggle"
                     :class="user.status === 'normal' ? 'freeze' : 'unfreeze'"
                     @click="openStatusModal(user, user.status === 'normal' ? 'freeze' : 'unfreeze')"
                   >
-                    {{ user.status === 'normal' ? '冻结' : '解冻' }}
+                    {{ user.status === 'normal' ? '冻结账号' : '解冻账号' }}
                   </button>
                 </div>
               </td>
@@ -103,6 +122,7 @@
             </template>
           </tbody>
         </table>
+        </div>
         <div v-else class="assetCards">
           <div v-if="loading" class="emptyCardState">加载中...</div>
           <div v-else-if="!users.length" class="emptyCardState">暂无数据</div>
@@ -120,18 +140,28 @@
               </span>
             </div>
             <div class="assetBalances">
-              <span class="badge purple">积分 {{ user.points }}</span>
+              <span class="badge purple">个人 {{ user.points }}</span>
+              <span class="badge purple soft">家庭 {{ user.familyPoints }}</span>
               <span class="badge green">物业币 {{ user.pcoin }}</span>
             </div>
             <div class="assetCardActions">
               <button type="button" class="cardActionBtn detail" @click="openDetailModal(user)">详情</button>
+              <button type="button" class="cardActionBtn detail" @click="openEarnModal(user)">发放</button>
+              <button
+                type="button"
+                class="cardActionBtn toggle"
+                :class="user.coinFrozen ? 'unfreeze' : 'freeze'"
+                @click="openCoinModal(user, user.coinFrozen ? 'unfreeze' : 'freeze')"
+              >
+                {{ user.coinFrozen ? '解冻币' : '冻结币' }}
+              </button>
               <button
                 type="button"
                 class="cardActionBtn toggle"
                 :class="user.status === 'normal' ? 'freeze' : 'unfreeze'"
                 @click="openStatusModal(user, user.status === 'normal' ? 'freeze' : 'unfreeze')"
               >
-                {{ user.status === 'normal' ? '冻结' : '解冻' }}
+                {{ user.status === 'normal' ? '冻结账号' : '解冻账号' }}
               </button>
             </div>
           </article>
@@ -147,44 +177,109 @@
           </div>
         </div>
       </div>
+      <div class="poolRecords">
+        <div class="header">
+          <div class="titleWrap">
+            <h2 class="title">积分池流水</h2>
+            <p class="subHint">来自积分池差额注入、清零与手工调整等记录</p>
+          </div>
+          <div class="toolbar">
+            <select v-model="recordTypeFilter" class="filterSelect" @change="loadPoolRecords(1)">
+              <option
+                v-for="opt in POINT_POOL_RECORD_TYPE_OPTIONS"
+                :key="opt.value || 'all'"
+                :value="opt.value"
+              >
+                {{ opt.label }}
+              </option>
+            </select>
+            <button type="button" class="refreshBtn" :disabled="recordsLoading" @click="loadPoolRecords(recordsPage)">
+              {{ recordsLoading ? '加载中...' : '刷新' }}
+            </button>
+          </div>
+        </div>
+        <p v-if="recordsError" class="emptyChart">{{ recordsError }}</p>
+        <div v-else class="tableWrap">
+          <table class="table recordsTable">
+            <thead>
+              <tr>
+                <th>类型</th>
+                <th>金额</th>
+                <th>变动前</th>
+                <th>变动后</th>
+                <th>来源</th>
+                <th>时间</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="recordsLoading">
+                <td colspan="6" class="emptyCell">加载中...</td>
+              </tr>
+              <tr v-else-if="!poolRecords.length">
+                <td colspan="6" class="emptyCell">暂无流水</td>
+              </tr>
+              <tr v-for="row in poolRecords" v-else :key="row.id">
+                <td>
+                  <span class="typeBadge">{{ poolRecordTypeLabel(resolvePoolRecordType(row) || row.source) }}</span>
+                </td>
+                <td class="num">{{ formatMoney(row.amount) }}</td>
+                <td class="num">{{ formatMoney(row.balanceBefore) }}</td>
+                <td class="num">{{ formatMoney(row.balanceAfter ?? row.balance) }}</td>
+                <td class="source">{{ row.description || row.remark || row.source || '—' }}</td>
+                <td class="time">{{ row.createdAt || '—' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div v-if="!recordsError && recordsTotalPages > 1" class="footer">
+          <span class="total">第 {{ recordsPage }} / {{ recordsTotalPages }} 页</span>
+          <div class="pagination">
+            <button class="pageBtn" :disabled="recordsPage <= 1 || recordsLoading" @click="loadPoolRecords(recordsPage - 1)">&lt;</button>
+            <button class="pageBtn" :disabled="recordsPage >= recordsTotalPages || recordsLoading" @click="loadPoolRecords(recordsPage + 1)">&gt;</button>
+          </div>
+        </div>
+      </div>
       <div class="charts">
         <div class="trendChart">
           <div class="header">
             <h3 class="title">本月发行趋势</h3>
-            <button class="more"><IconSvg name="more" /></button>
+            <span class="chartMeta">{{ trendMonth || '—' }} · 发放 {{ trendTotalEarned }} / 消耗 {{ trendTotalSpent }}</span>
           </div>
-          <div class="body">
-            <div v-for="item in trendData" :key="item.week" class="item" :class="{ active: item.active }">
+          <div v-if="trendLoading" class="emptyChart">加载中...</div>
+          <div v-else-if="trendError" class="emptyChart">{{ trendError }}</div>
+          <div v-else-if="trendBars.length" class="body">
+            <div
+              v-for="(item, idx) in trendBars"
+              :key="item.date || idx"
+              class="item"
+              :class="{ active: idx === trendBars.length - 1 }"
+            >
               <div class="barWrap">
-                <div class="bar" :style="{ height: `${item.value}%` }">
-                  <div v-if="item.active && item.label" class="label">{{ item.label }}</div>
+                <div class="bar" :style="{ height: item.height + '%' }">
+                  <span v-if="item.value > 0" class="label">{{ item.value }}</span>
                 </div>
               </div>
-              <div class="week">{{ item.week }}</div>
+              <span class="week">{{ item.label }}</span>
             </div>
           </div>
+          <div v-else class="emptyChart">本月暂无趋势数据</div>
         </div>
         <div class="consumeChart">
           <h3 class="title">积分消耗结构</h3>
-          <div class="body">
-            <div class="donut">
-              <svg viewBox="0 0 120 120" class="svg">
-                <circle class="track" cx="60" cy="60" r="45" />
-                <circle v-for="segment in segments" :key="segment.name" class="segment" cx="60" cy="60" r="45" :stroke-dasharray="segment.dashArray" :stroke-dashoffset="segment.dashOffset" :stroke="segment.color" />
-              </svg>
-              <div class="center">
-                <div class="percent">70%</div>
-                <div class="label">缴费抵扣</div>
+          <div v-if="consumeLoading" class="emptyChart">加载中...</div>
+          <div v-else-if="consumeError" class="emptyChart">{{ consumeError }}</div>
+          <ul v-else-if="consumeItems.length" class="consumeList">
+            <li v-for="(item, idx) in consumeItems" :key="item.source || idx" class="consumeItem">
+              <div class="consumeHead">
+                <span>{{ item.source || '其他' }}</span>
+                <strong>{{ item.amount ?? 0 }}（{{ formatConsumePct(item) }}）</strong>
               </div>
-            </div>
-            <div class="legend">
-              <div v-for="item in consumeData" :key="item.name" class="legendItem">
-                <span class="dot" :style="{ background: item.color }" />
-                <span class="name">{{ item.name }}</span>
-                <span class="legendValue">（{{ item.value }}%）</span>
+              <div class="consumeBarTrack">
+                <div class="consumeBarFill" :style="{ width: formatConsumePct(item) }" />
               </div>
-            </div>
-          </div>
+            </li>
+          </ul>
+          <div v-else class="emptyChart">暂无消耗结构数据</div>
         </div>
       </div>
     </div>
@@ -247,32 +342,156 @@
         </div>
       </div>
     </Teleport>
+
+    <Teleport to="body">
+      <div v-if="coinModal" class="modalOverlay" @click.self="closeCoinModal">
+        <div class="modal" :class="{ mobileSheet: isMobile }">
+          <div class="modalHeader">
+            <h3 class="modalTitle">{{ coinModal === 'freeze' ? '冻结物业币' : '解冻物业币' }}</h3>
+            <button type="button" class="modalClose" @click="closeCoinModal">&times;</button>
+          </div>
+          <form class="modalBody" @submit.prevent="submitCoinModal">
+            <div class="field">
+              <label class="label">用户</label>
+              <div class="readonly">{{ coinTargetUser?.name }} · {{ coinTargetUser?.room }}</div>
+            </div>
+            <div v-if="coinModal === 'freeze'" class="field">
+              <label class="label">冻结金额 <span class="required">*</span></label>
+              <input
+                v-model.number="coinForm.amount"
+                type="number"
+                min="0.01"
+                step="0.01"
+                class="input"
+                :max="coinTargetUser?.coinBalance || undefined"
+                required
+              />
+              <p class="hint">可用余额：¥{{ formatMoney(coinTargetUser?.coinBalance) }}</p>
+            </div>
+            <div class="field">
+              <label class="label">操作原因</label>
+              <textarea
+                v-model="coinForm.reason"
+                class="textarea"
+                rows="3"
+                maxlength="200"
+                :placeholder="coinModal === 'freeze' ? '选填，如：违规使用' : '选填，如：核实无误'"
+              />
+            </div>
+            <p v-if="coinError" class="error">{{ coinError }}</p>
+            <p v-if="coinSuccess" class="success">{{ coinSuccess }}</p>
+            <div class="modalFooter">
+              <button type="button" class="btnSecondary" @click="closeCoinModal">取消</button>
+              <button type="submit" class="btnPrimary" :disabled="coinSubmitting">
+                {{ coinSubmitting ? '提交中...' : '确认' }}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div v-if="earnModalOpen" class="modalOverlay" @click.self="closeEarnModal">
+        <div class="modal" :class="{ mobileSheet: isMobile }">
+          <div class="modalHeader">
+            <h3 class="modalTitle">发放物业币</h3>
+            <button type="button" class="modalClose" @click="closeEarnModal">&times;</button>
+          </div>
+          <form class="modalBody" @submit.prevent="submitEarnModal">
+            <div class="field">
+              <label class="label">选择业主 <span class="required">*</span></label>
+              <div v-if="earnLockedUser" class="readonly">
+                {{ earnLockedUser.name }} · {{ earnLockedUser.room }}
+              </div>
+              <ResidentSearchSelect
+                v-else
+                :key="earnModalKey"
+                v-model="earnForm.residentId"
+                auto-open
+                @select="onEarnResidentSelect"
+              />
+            </div>
+            <div class="field">
+              <label class="label">发放金额 <span class="required">*</span></label>
+              <input
+                v-model.number="earnForm.coinAmount"
+                type="number"
+                min="0.01"
+                step="0.01"
+                class="input"
+                placeholder="最少 0.01"
+                required
+              />
+            </div>
+            <div class="field">
+              <label class="label">来源</label>
+              <div class="readonly">手动发放（manual）</div>
+            </div>
+            <div class="field">
+              <label class="label">描述（选填）</label>
+              <textarea
+                v-model="earnForm.description"
+                class="textarea"
+                rows="3"
+                maxlength="200"
+                placeholder="如：管理员充值、测试账号补充物业币"
+              />
+            </div>
+            <p v-if="earnError" class="error">{{ earnError }}</p>
+            <p v-if="earnSuccess" class="success">{{ earnSuccess }}</p>
+            <div class="modalFooter">
+              <button type="button" class="btnSecondary" @click="closeEarnModal">取消</button>
+              <button type="submit" class="btnPrimary" :disabled="earnSubmitting">
+                {{ earnSubmitting ? '提交中...' : '确认发放' }}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </Teleport>
 </template>
 
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import IconSvg from '../components/IconSvg.vue'
+import ResidentSearchSelect from '../components/ResidentSearchSelect.vue'
 import SegmentedControl from '../components/SegmentedControl.vue'
-import { dashboardApi, pointApi, residentApi } from '../api/services'
-import { formatMoney, mapPointPoolOverview, mapPointsOverview, mapPointsUsers } from '../api/mappers'
-import { getEnumLabel, RESIDENT_STATUS, RESIDENT_STATUS_LABEL } from '../constants/enums'
+import { dashboardApi, pointApi, propertyCoinApi, residentApi } from '../api/services'
+import { formatMoney, mapPointPoolOverview, mapPointsOverview, mapPointsUsers, sortResidentsByAddress } from '../api/mappers'
+import {
+  getEnumLabel,
+  POINT_POOL_RECORD_TYPE_ALIASES,
+  POINT_POOL_RECORD_TYPE_LABEL,
+  POINT_POOL_RECORD_TYPE_OPTIONS,
+  PROPERTY_COIN_SOURCE,
+  RESIDENT_STATUS,
+  RESIDENT_STATUS_LABEL
+} from '../constants/enums'
 import { ApiError } from '../api/request'
-import type { ResidentItem } from '../api/types'
+import type { PointPoolRecordItem, PointsConsumptionItem, ResidentItem } from '../api/types'
 import { useIsMobile } from '../composables/useIsMobile'
+import { useAuthStore } from '../stores/auth'
 
 const PAGE_SIZE = 20
 type PointsUser = ReturnType<typeof mapPointsUsers>[number]
 type StatusModalType = 'freeze' | 'unfreeze'
+type CoinModalType = 'freeze' | 'unfreeze'
 const { isMobile } = useIsMobile()
+const auth = useAuthStore()
 
 const loading = ref(true)
 const poolLoading = ref(true)
 const poolOverview = ref(mapPointPoolOverview())
 const overview = ref(mapPointsOverview())
 const formattedTotal = computed(() => overview.value.pcoinTotal.toLocaleString())
-const formattedConsumed = computed(() => overview.value.pcoinConsumed.toLocaleString())
-const formattedCirculating = computed(() => overview.value.pcoinCirculating.toLocaleString())
+const formattedConsumed = computed(() =>
+  overview.value.pcoinConsumed == null ? '—' : overview.value.pcoinConsumed.toLocaleString()
+)
+const formattedCirculating = computed(() =>
+  overview.value.pcoinCirculating == null ? '—' : overview.value.pcoinCirculating.toLocaleString()
+)
 
 const users = ref<ReturnType<typeof mapPointsUsers>>([])
 const totalRecords = ref(0)
@@ -300,16 +519,199 @@ const statusError = ref('')
 const statusSuccess = ref('')
 const statusForm = ref({ reason: '' })
 
+const coinModal = ref<CoinModalType | null>(null)
+const coinTargetUser = ref<PointsUser | null>(null)
+const coinSubmitting = ref(false)
+const coinError = ref('')
+const coinSuccess = ref('')
+const coinForm = ref({ amount: 0, reason: '' })
+
+const earnModalOpen = ref(false)
+const earnModalKey = ref(0)
+const earnLockedUser = ref<PointsUser | null>(null)
+const earnSelectedName = ref('')
+const earnSubmitting = ref(false)
+const earnError = ref('')
+const earnSuccess = ref('')
+const earnForm = ref({
+  residentId: '',
+  coinAmount: 0,
+  description: '管理员充值'
+})
+
+const trendLoading = ref(false)
+const trendError = ref('')
+const trendMonth = ref('')
+const trendTotalEarned = ref(0)
+const trendTotalSpent = ref(0)
+const trendBars = ref<{ date?: string; label: string; value: number; height: number }[]>([])
+
+const consumeLoading = ref(false)
+const consumeError = ref('')
+const consumeItems = ref<PointsConsumptionItem[]>([])
+
+const recordsLoading = ref(false)
+const recordsError = ref('')
+const poolRecords = ref<PointPoolRecordItem[]>([])
+const recordsPage = ref(1)
+const recordsTotalPages = ref(1)
+const recordTypeFilter = ref('')
+const RECORDS_PAGE_SIZE = 10
+/** 后端 pageSize 上限通常 ≤100，勿超过 */
+const RECORDS_FETCH_PAGE_SIZE = 50
+const RECORDS_FETCH_MAX_PAGES = 20
+
+function resolvePoolRecordType(row: PointPoolRecordItem): string {
+  if (row.recordType) return row.recordType
+  // 部分返回把类型码放在 source
+  if (row.source && POINT_POOL_RECORD_TYPE_LABEL[row.source]) return row.source
+  return ''
+}
+
+function poolRecordTypeLabel(type?: string) {
+  return getEnumLabel(POINT_POOL_RECORD_TYPE_LABEL, type, '—')
+}
+
+function matchPoolRecordType(row: PointPoolRecordItem, filter: string): boolean {
+  if (!filter) return true
+  const raw = resolvePoolRecordType(row)
+  const aliases = POINT_POOL_RECORD_TYPE_ALIASES[filter] || [filter]
+  if (raw && aliases.includes(raw)) return true
+  // 兜底：按展示文案匹配（兼容后端返回别名或仅有中文标签）
+  const filterLabel = POINT_POOL_RECORD_TYPE_LABEL[filter]
+  if (!filterLabel) return false
+  if (raw && poolRecordTypeLabel(raw) === filterLabel) return true
+  const display = poolRecordTypeLabel(row.recordType || row.source)
+  return display === filterLabel
+}
+
+async function fetchPoolRecordsForFilter(companyId?: string) {
+  const all: PointPoolRecordItem[] = []
+  let page = 1
+  let totalPages = 1
+  while (page <= totalPages && page <= RECORDS_FETCH_MAX_PAGES) {
+    const res = await pointApi.records({
+      page,
+      pageSize: RECORDS_FETCH_PAGE_SIZE,
+      propertyCompanyId: companyId,
+      sort: '-createdAt'
+    })
+    all.push(...(res.list || []))
+    totalPages = Math.max(1, res.pagination?.totalPages ?? 1)
+    if (!(res.list || []).length) break
+    page += 1
+  }
+  return all
+}
+
+async function loadPoolRecords(page = 1) {
+  recordsLoading.value = true
+  recordsError.value = ''
+  try {
+    const filter = recordTypeFilter.value
+    const companyId =
+      auth.propertyCompanyId || auth.profile?.propertyCompanyId || undefined
+    if (filter) {
+      // 后端暂不按类型过滤：合法 pageSize 分页拉取后前端筛选
+      const list = (await fetchPoolRecordsForFilter(companyId)).filter((row) =>
+        matchPoolRecordType(row, filter)
+      )
+      const totalPages = Math.max(1, Math.ceil(list.length / RECORDS_PAGE_SIZE) || 1)
+      const safePage = Math.min(Math.max(1, page), totalPages)
+      const start = (safePage - 1) * RECORDS_PAGE_SIZE
+      poolRecords.value = list.slice(start, start + RECORDS_PAGE_SIZE)
+      recordsPage.value = safePage
+      recordsTotalPages.value = list.length ? totalPages : 1
+    } else {
+      const res = await pointApi.records({
+        page,
+        pageSize: RECORDS_PAGE_SIZE,
+        propertyCompanyId: companyId,
+        sort: '-createdAt'
+      })
+      poolRecords.value = res.list || []
+      recordsPage.value = res.pagination?.page ?? page
+      recordsTotalPages.value = res.pagination?.totalPages ?? 1
+    }
+  } catch (e) {
+    poolRecords.value = []
+    const msg = e instanceof ApiError ? e.message : '积分池流水加载失败'
+    recordsError.value = msg.includes('NullPointer')
+      ? `${msg}（多为后端积分池流水映射空指针，请后端排查 GET /admin/point-pools/records）`
+      : msg
+  } finally {
+    recordsLoading.value = false
+  }
+}
+
+function currentMonthParam() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+function formatConsumePct(item: PointsConsumptionItem) {
+  if (item.percentage !== undefined && item.percentage !== null) {
+    const pct = item.percentage <= 1 ? item.percentage * 100 : item.percentage
+    return `${Math.round(pct)}%`
+  }
+  return '0%'
+}
+
+async function loadCharts() {
+  const month = currentMonthParam()
+  trendLoading.value = true
+  consumeLoading.value = true
+  trendError.value = ''
+  consumeError.value = ''
+  try {
+    const trend = await pointApi.trend({ month })
+    trendMonth.value = trend.month || month
+    trendTotalEarned.value = trend.totalEarned ?? 0
+    trendTotalSpent.value = trend.totalSpent ?? 0
+    const days = trend.daily || []
+    const maxVal = Math.max(1, ...days.map((d) => Number(d.earned || 0)))
+    trendBars.value = days.map((d) => {
+      const value = Number(d.earned || 0)
+      const date = d.date || ''
+      return {
+        date,
+        label: date.length >= 10 ? date.slice(8, 10) : date.slice(-2) || '—',
+        value,
+        height: Math.max(8, Math.round((value / maxVal) * 100))
+      }
+    })
+  } catch (e) {
+    trendBars.value = []
+    trendError.value = e instanceof ApiError ? e.message : '趋势加载失败'
+  } finally {
+    trendLoading.value = false
+  }
+  try {
+    const structure = await pointApi.consumptionStructure({ month })
+    consumeItems.value = structure.items || []
+  } catch (e) {
+    consumeItems.value = []
+    consumeError.value = e instanceof ApiError ? e.message : '消耗结构加载失败'
+  } finally {
+    consumeLoading.value = false
+  }
+}
+
 const detailRows = computed(() => {
   const d = detailData.value
   if (!d) return []
   return [
     { label: '姓名', value: d.name || '—' },
     { label: '手机号', value: d.phone || '—' },
-    { label: '房号', value: [d.building, d.unit, d.room].filter(Boolean).join(' ') || '—' },
+    { label: '房号', value: [d.building, d.unit, d.room].filter(Boolean).join('-') || '—' },
     { label: '账户状态', value: getEnumLabel(RESIDENT_STATUS_LABEL, d.status) },
     { label: '物业币状态', value: d.coinFrozen ? '已冻结' : '正常' },
-    { label: '积分余额', value: `${formatMoney(d.pointBalance)} pts` },
+    { label: '物业币显示', value: d.coinHidden ? '用户已隐藏' : '显示中' },
+    { label: '个人积分', value: `${formatMoney(d.pointBalance)} pts` },
+    {
+      label: '家庭积分',
+      value: d.familyPointBalance == null ? '—（无家庭）' : `${formatMoney(d.familyPointBalance)} pts`
+    },
     { label: '物业币余额', value: `${formatMoney(d.coinBalance)} PCoin` },
     { label: '累计消费', value: d.totalConsumption !== undefined ? `¥${formatMoney(d.totalConsumption)}` : '—' },
     { label: '累计订单', value: d.totalOrders !== undefined ? String(d.totalOrders) : '—' },
@@ -317,16 +719,6 @@ const detailRows = computed(() => {
     { label: '更新时间', value: d.updatedAt || '—' }
   ]
 })
-
-const trendData = ref<Array<{ week: string; value: number; label: string; active: boolean }>>([
-  { week: 'W1', value: 30, label: '', active: false }
-])
-
-const consumeData = ref([
-  { name: '物业费抵扣', value: 70, color: '#5c5c9e' },
-  { name: '周边商超兑换', value: 20, color: '#f5a623' },
-  { name: '礼品中心', value: 10, color: '#3aaf7d' }
-])
 
 const pageStart = computed(() => {
   if (!totalRecords.value) return 0
@@ -344,9 +736,10 @@ async function loadUsers(page = currentPage.value) {
       page,
       pageSize: PAGE_SIZE,
       keyword: appliedKeyword.value || undefined,
-      status: activeTab.value === 'all' ? undefined : activeTab.value
+      status: activeTab.value === 'all' ? undefined : activeTab.value,
+      sort: '+building,+floor,+unit,+room'
     })
-    users.value = mapPointsUsers(res.list || [])
+    users.value = sortResidentsByAddress(mapPointsUsers(res.list || []))
     totalRecords.value = res.pagination?.total ?? users.value.length
     currentPage.value = res.pagination?.page ?? page
     totalPages.value = res.pagination?.totalPages ?? 1
@@ -443,6 +836,142 @@ async function submitStatusModal() {
   }
 }
 
+function openCoinModal(user: PointsUser, type: CoinModalType) {
+  coinTargetUser.value = user
+  coinModal.value = type
+  coinForm.value = {
+    amount: type === 'freeze' ? Number(user.coinBalance) || 0 : 0,
+    reason: ''
+  }
+  coinError.value = ''
+  coinSuccess.value = ''
+}
+
+function closeCoinModal() {
+  coinModal.value = null
+  coinTargetUser.value = null
+  coinForm.value = { amount: 0, reason: '' }
+  coinError.value = ''
+  coinSuccess.value = ''
+}
+
+async function submitCoinModal() {
+  const user = coinTargetUser.value
+  if (!user || !coinModal.value) return
+
+  coinSubmitting.value = true
+  coinError.value = ''
+  coinSuccess.value = ''
+
+  try {
+    if (coinModal.value === 'freeze') {
+      const amount = Number(coinForm.value.amount)
+      if (!amount || amount <= 0) {
+        coinError.value = '请输入有效的冻结金额'
+        return
+      }
+      await residentApi.freezeCoin(user.id, {
+        amount,
+        reason: coinForm.value.reason.trim() || undefined
+      })
+      coinSuccess.value = '物业币已冻结'
+    } else {
+      await residentApi.unfreezeCoin(user.id, {
+        reason: coinForm.value.reason.trim() || undefined
+      })
+      coinSuccess.value = '物业币已解冻'
+    }
+    await loadUsers(currentPage.value)
+    setTimeout(closeCoinModal, 1500)
+  } catch (e) {
+    coinError.value = resolveErrorMessage(e)
+  } finally {
+    coinSubmitting.value = false
+  }
+}
+
+function resetEarnForm() {
+  earnForm.value = {
+    residentId: '',
+    coinAmount: 0,
+    description: '管理员充值'
+  }
+  earnSelectedName.value = ''
+  earnError.value = ''
+  earnSuccess.value = ''
+}
+
+function openEarnModal(user?: PointsUser) {
+  resetEarnForm()
+  earnLockedUser.value = user || null
+  if (user) {
+    earnForm.value.residentId = user.id
+    earnSelectedName.value = user.name
+  }
+  earnModalKey.value++
+  earnModalOpen.value = true
+}
+
+function closeEarnModal() {
+  earnModalOpen.value = false
+  earnLockedUser.value = null
+  resetEarnForm()
+}
+
+function onEarnResidentSelect(item: ResidentItem) {
+  earnSelectedName.value = item.name || item.phone || item.id
+}
+
+async function submitEarnModal() {
+  const residentId = earnLockedUser.value?.id || earnForm.value.residentId.trim()
+  const coinAmount = Number(earnForm.value.coinAmount)
+  const description = earnForm.value.description.trim()
+
+  if (!residentId) {
+    earnError.value = '请选择业主'
+    return
+  }
+  if (!coinAmount || coinAmount < 0.01) {
+    earnError.value = '发放金额须不少于 0.01'
+    return
+  }
+
+  earnSubmitting.value = true
+  earnError.value = ''
+  earnSuccess.value = ''
+
+  try {
+    const result = await propertyCoinApi.earn({
+      residentId,
+      coinAmount,
+      source: PROPERTY_COIN_SOURCE.MANUAL,
+      description: description || undefined
+    })
+    const name = earnLockedUser.value?.name || earnSelectedName.value || '该用户'
+    const balance = result.newBalance ?? result.balance
+    earnSuccess.value =
+      balance !== undefined
+        ? `已向 ${name} 发放 ${formatMoney(coinAmount)} 物业币，余额 ¥${formatMoney(balance)}`
+        : `已向 ${name} 发放 ${formatMoney(coinAmount)} 物业币`
+    await loadUsers(currentPage.value)
+    try {
+      const [pool, dashOverview] = await Promise.all([
+        pointApi.pool(),
+        dashboardApi.overview()
+      ])
+      poolOverview.value = mapPointPoolOverview(pool)
+      overview.value = mapPointsOverview(pool, dashOverview)
+    } catch {
+      /* 列表已刷新，总览失败不影响发放结果 */
+    }
+    setTimeout(closeEarnModal, 1500)
+  } catch (e) {
+    earnError.value = resolveErrorMessage(e)
+  } finally {
+    earnSubmitting.value = false
+  }
+}
+
 watch(activeTab, () => {
   currentPage.value = 1
   loadUsers(1)
@@ -460,18 +989,8 @@ onMounted(async () => {
     poolLoading.value = false
   }
   loadUsers(1)
-})
-const radius = 45
-const circumference = 2 * Math.PI * radius
-const segments = computed(() => {
-  let offset = 0
-  return consumeData.value.map(item => {
-    const length = (item.value / 100) * circumference
-    const dashArray = `${length} ${circumference - length}`
-    const dashOffset = -offset
-    offset += length
-    return { ...item, dashArray, dashOffset }
-  })
+  loadCharts()
+  loadPoolRecords(1)
 })
 </script>
 
@@ -479,6 +998,86 @@ const segments = computed(() => {
 <style scoped>
 .page { max-width: 1200px; }
 .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.poolRecords {
+  background: #fff;
+  border-radius: 12px;
+  margin-bottom: 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  overflow: hidden;
+}
+.poolRecords .header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 20px 24px;
+  border-bottom: 1px solid #f0f0f3;
+  flex-wrap: wrap;
+}
+.poolRecords .title { font-size: 18px; font-weight: 600; margin: 0 0 4px; color: #1f1f2e; }
+.poolRecords .subHint { margin: 0; font-size: 13px; color: #8c8c9a; }
+.poolRecords .toolbar { display: flex; gap: 10px; align-items: center; }
+.poolRecords .filterSelect {
+  padding: 8px 12px; border: 1px solid #e8e8ec; border-radius: 8px; font-size: 13px; background: #fafafc;
+}
+.poolRecords .refreshBtn {
+  padding: 8px 14px; border: 1px solid #e8e8ec; border-radius: 8px; background: #fff; cursor: pointer;
+}
+.poolRecords .emptyChart { padding: 24px; text-align: center; color: #8c8c9a; margin: 0; }
+.poolRecords .tableWrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.poolRecords .table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.poolRecords .table thead th {
+  text-align: left;
+  padding: 14px 24px;
+  color: #8c8c9a;
+  font-weight: 500;
+  background: #fafafc;
+  border-bottom: 1px solid #f0f0f3;
+  white-space: nowrap;
+}
+.poolRecords .table tbody td {
+  padding: 14px 24px;
+  color: #1f1f2e;
+  border-bottom: 1px solid #f0f0f3;
+  vertical-align: middle;
+}
+.poolRecords .table tbody tr:last-child td { border-bottom: none; }
+.poolRecords .table tbody tr:hover td { background: #fcfcfd; }
+.poolRecords .emptyCell { text-align: center; padding: 28px 24px; color: #8c8c9a; }
+.poolRecords .typeBadge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  background: #f0f0ff;
+  color: #5c5c9e;
+  white-space: nowrap;
+}
+.poolRecords .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.poolRecords .source { max-width: 280px; color: #5c5c66; }
+.poolRecords .time { color: #8c8c9a; white-space: nowrap; }
+.poolRecords .footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 24px;
+  border-top: 1px solid #f0f0f3;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.poolRecords .total { font-size: 13px; color: #8c8c9a; }
+.poolRecords .pagination { display: flex; align-items: center; gap: 8px; }
+.poolRecords .pageBtn {
+  width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+  border-radius: 6px; border: 1px solid #e8e8ec; background: #ffffff; color: #5c5c66; font-size: 14px; cursor: pointer;
+}
+.poolRecords .pageBtn:disabled { color: #c8c8d0; cursor: not-allowed; }
 
 .overview { display: grid; grid-template-columns: 1fr 2fr; gap: 20px; margin-bottom: 20px; }
 .overview .card { border-radius: 12px; padding: 24px; min-height: 168px; color: #ffffff; }
@@ -553,7 +1152,7 @@ const segments = computed(() => {
 .overview .card.green .stat .label { font-size: 12px; opacity: 0.8; margin-bottom: 8px; }
 .overview .card.green .statValue { font-size: 20px; font-weight: 600; }
 
-.assetTable { background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); margin-bottom: 20px; overflow: hidden; }
+.assetTable { background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); margin-bottom: 20px; overflow: hidden; min-width: 0; }
 .assetTable .header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px; border-bottom: 1px solid #f0f0f3; flex-wrap: wrap; gap: 16px; }
 .assetTable .titleWrap { display: flex; align-items: center; gap: 16px; }
 .assetTable .title { font-size: 18px; font-weight: 600; color: #1f1f2e; margin-bottom: 0; }
@@ -562,7 +1161,8 @@ const segments = computed(() => {
 .assetTable .search svg { width: 18px; height: 18px; color: #8c8c9a; }
 .assetTable .search input { border: none; background: transparent; font-size: 14px; color: #1f1f2e; outline: none; flex: 1; }
 .assetTable .search input::placeholder { color: #8c8c9a; }
-.assetTable .table { width: 100%; font-size: 14px; }
+.assetTable .tableScroll { width: 100%; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.assetTable .table { width: 100%; min-width: 860px; font-size: 14px; }
 .assetTable .table thead th { text-align: left; padding: 14px 24px; color: #8c8c9a; font-weight: 500; background: #fafafc; border-bottom: 1px solid #f0f0f3; }
 .assetTable .table tbody td { padding: 16px 24px; color: #1f1f2e; border-bottom: 1px solid #f0f0f3; vertical-align: middle; }
 .assetTable .table tbody tr:last-child td { border-bottom: none; }
@@ -571,6 +1171,7 @@ const segments = computed(() => {
 .assetTable .name { font-weight: 500; color: #1f1f2e; }
 .assetTable .badge { display: inline-block; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 500; }
 .assetTable .badge.purple { background: #f0f0ff; color: #5c5c9e; }
+.assetTable .badge.purple.soft { background: #f5f3ff; color: #7c6db5; font-weight: 500; }
 .assetTable .badge.green { background: #e8f8f0; color: #3aaf7d; }
 .assetTable .status { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
 .assetTable .status::before { content: ''; width: 6px; height: 6px; border-radius: 50%; }
@@ -605,10 +1206,26 @@ const segments = computed(() => {
 .cardActionBtn.toggle.freeze { border-color: #e05c5c; color: #e05c5c; }
 .cardActionBtn.toggle.unfreeze { border-color: #5c5c9e; color: #5c5c9e; }
 .emptyCardState { padding: 24px; text-align: center; color: #8c8c9a; }
+.emptyChart {
+  min-height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #8c8c9a;
+  font-size: 13px;
+  padding: 24px;
+}
 
 .trendChart { background: #ffffff; border-radius: 12px; padding: 20px 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
-.trendChart .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+.trendChart .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; gap: 12px; flex-wrap: wrap; }
 .trendChart .title { font-size: 15px; font-weight: 500; color: #1f1f2e; margin-bottom: 0; }
+.chartMeta { font-size: 12px; color: #8c8c9a; }
+.consumeList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.consumeItem { display: flex; flex-direction: column; gap: 6px; }
+.consumeHead { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; color: #5c5c66; }
+.consumeHead strong { color: #1f1f2e; font-weight: 600; }
+.consumeBarTrack { height: 8px; border-radius: 999px; background: #f0f0f3; overflow: hidden; }
+.consumeBarFill { height: 100%; background: #5c5c9e; border-radius: 999px; }
 .trendChart .more { color: #8c8c9a; background: transparent; border: none; }
 .trendChart .more svg { width: 20px; height: 20px; }
 .trendChart .body { display: flex; align-items: flex-end; justify-content: space-around; height: 180px; gap: 16px; }
@@ -709,6 +1326,7 @@ const segments = computed(() => {
 .field .textarea:focus { border-color: #5c5c9e; }
 .field .textarea { resize: vertical; min-height: 80px; font-family: inherit; }
 .field .hint { font-size: 12px; color: #8c8c9a; margin-top: 6px; }
+.required { color: #e05c5c; }
 .readonly {
   padding: 10px 12px;
   border-radius: 8px;
@@ -759,8 +1377,16 @@ const segments = computed(() => {
   .assetTable .titleWrap { width: 100%; gap: 12px; }
   .assetTable .toolbar,
   .assetTable .search { width: 100%; min-width: 0; box-sizing: border-box; }
+  .assetTable .toolbar .btnPrimary { width: 100%; min-height: 44px; }
   .assetTable .footer { flex-direction: column; align-items: flex-start; padding: 14px 16px; }
   .assetTable .pagination { width: 100%; justify-content: flex-end; }
+  .poolRecords .header { padding: 16px; }
+  .poolRecords .toolbar { width: 100%; }
+  .poolRecords .filterSelect { flex: 1; min-width: 0; }
+  .poolRecords .table thead th,
+  .poolRecords .table tbody td { padding: 12px 14px; }
+  .poolRecords .footer { flex-direction: column; align-items: flex-start; padding: 14px 16px; }
+  .poolRecords .pagination { width: 100%; justify-content: flex-end; }
   .detailGrid { grid-template-columns: 1fr; }
   .modalOverlay { align-items: flex-end; padding: 0; }
   .modalScroll { max-height: min(88vh, 760px); }

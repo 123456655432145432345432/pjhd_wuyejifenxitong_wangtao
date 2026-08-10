@@ -1,5 +1,8 @@
 import { buildQuery, request } from './request'
-import { MERCHANT_AUDIT_STATUS } from '../constants/enums'
+import { getAccessToken } from '../stores/tokenStore'
+import { normalizePageResult } from '../utils/pageResult'
+import { normalizeDistributionRecords } from '../utils/distribution'
+import { MERCHANT_AUDIT_STATUS, ORDER_STATUS } from '../constants/enums'
 import type {
   AgeBracketItem,
   AnnouncementCreatePayload,
@@ -22,6 +25,8 @@ import type {
   DeliveryHourlyData,
   DeliveryOverview,
   DeliveryRule,
+  DeliveryRuleUpsertPayload,
+  DeliveryScopeOptions,
   DeliveryTaskItem,
   DeliveryTodayStats,
   DevicePushTokenPayload,
@@ -38,6 +43,8 @@ import type {
   MerchantAdItem,
   MerchantAdPackageItem,
   MerchantAdQuota,
+  MerchantAdQuote,
+  MerchantAdSettings,
   MerchantItem,
   MerchantKickPayload,
   MerchantKickResult,
@@ -52,6 +59,7 @@ import type {
   PlatformMerchantItem,
   PlatformMerchantUpdatePayload,
   OperationLogItem,
+  OrderConfirmResult,
   OrderItem,
   PageResult,
   PermissionChangeLog,
@@ -63,6 +71,11 @@ import type {
   PropertyCompanyDetail,
   PropertyCompanyItem,
   PropertyCompanyCommunity,
+  PropertyCompanyUpdatePayload,
+  ArrearsReminderPayload,
+  ArrearsReminderResult,
+  AdminConversationItem,
+  AdminChatMessageItem,
   PropertyOperatorCreatePayload,
   PropertyOperatorItem,
   PropertyOperatorScopePayload,
@@ -70,10 +83,15 @@ import type {
   ResidentCreatePayload,
   ResidentUpdatePayload,
   ResidentStatusPayload,
+  FamilyMemberItem,
   ResidentMerchantApplicationItem,
   ResidentMerchantDepositItem,
+  ResidentMerchantMyDetail,
+  ResidentMerchantPublicDetail,
+  ResidentMerchantPublicItem,
   ResidentMerchantSettlementItem,
   ResidentMerchantSettings,
+  ResidentMerchantShareResult,
   RolePresetDto,
   CoinFreezePayload,
   CoinFreezeResult,
@@ -85,8 +103,10 @@ import type {
   CommunityServiceUpdatePayload,
   CourierDeliveryItem,
   DeliveryCompletePayload,
+  DistributionCalculateResult,
   DistributionRecordItem,
   DistributionStats,
+  PropertySettlementBalance,
   MerchantPointGrantPayload,
   MerchantPointPurchaseItem,
   MerchantPointPurchasePayload,
@@ -108,6 +128,9 @@ import type {
   ActivityGroupCreatePayload,
   ActivityGroupUpdatePayload,
   ActivityGroupMemberItem,
+  ActivityPricingTier,
+  ActivityPricingTierPayload,
+  ActivityPricingTiersResult,
   SpecialOfferCreatePayload,
   SpecialOfferItem,
   SpecialOfferUpdatePayload,
@@ -118,10 +141,20 @@ import type {
   AdminMerchantWithdrawalItem,
   AdminWithdrawalAuditPayload,
   AdminWithdrawalAuditResult,
+  MerchantWithdrawalSummary,
+  CoinWithdrawalSummary,
+  AdminCoinWithdrawalItem,
+  AdminCoinWithdrawalAuditPayload,
+  PropertyContactConfig,
+  PropertyContactPayload,
+  CommunityPostItem,
+  ContentReportItem,
+  ContentReportHandlePayload,
   PlatformShareRates,
   UpdatePlatformShareRatesPayload,
   PlatformEarningsStats,
   PlatformEarningRecordItem,
+  PlatformEarningsBalance,
   CourierManagerItem,
   CourierManagerCreatePayload,
   CourierManagerUpdatePayload,
@@ -131,6 +164,9 @@ import type {
   PriceApprovalItem,
   PriceApprovalCreatePayload,
   PriceApprovalAuditPayload,
+  PropertyCoinEarnPayload,
+  PropertyCoinEarnResult,
+  MerchantCoinEarnPayload,
   PropertyCoinMallRules,
   RoleWithdrawalItem,
   RoleWithdrawalPayload,
@@ -145,11 +181,44 @@ import type {
   CoordinatorIndividualLeaderCreatePayload,
   CoordinatorMerchantCreatePayload,
   CoordinatorMerchantFreezePayload,
+  CoordinatorMerchantAuditPayload,
   ProductAnnouncementCreatePayload,
   ActivityAnnouncementCreatePayload,
   MerchantTargetedAdCreatePayload,
   DistributorProductBillingCyclePayload,
-  DistributorProductItem
+  DistributorProductItem,
+  TechnicianDetail,
+  TechnicianTaskItem,
+  TechnicianTaskStatusPayload,
+  CoinUseCondition,
+  CoinUseConditionPayload,
+  CoinWithdrawalSettings,
+  WithdrawalBlockPayload,
+  ProfileRewardItem,
+  ProfileRewardPayload,
+  CompanyAccountBalance,
+  CompanyAccountRecord,
+  CommunityPointPool,
+  CommunityPointRecord,
+  CommunityPointAdjustPayload,
+  ArrearsReport,
+  RoomStructure,
+  AvailableRoomsResult,
+  PointsTrend,
+  PointsConsumptionStructure,
+  PointPoolRecordItem,
+  RegionalLeaderItem,
+  RegionalLeaderPayload,
+  ProjectLeaderItem,
+  ProjectLeaderPayload,
+  MerchantRecommendPayload,
+  MerchantKeywordsResult,
+  MerchantKeywordItem,
+  MerchantKeywordCreatePayload,
+  MerchantKeywordBatchPayload,
+  MerchantKeywordUpdatePayload,
+  MerchantPostItem,
+  MerchantPostPayload
 } from './types'
 
 
@@ -175,10 +244,8 @@ export const authApi = {
 
   },
 
-  profile() {
-
-    return request<UserProfile>('/auth/profile')
-
+  profile(options: { softAuth?: boolean } = {}) {
+    return request<UserProfile>('/auth/profile', { softAuth: options.softAuth })
   }
 
 }
@@ -216,6 +283,7 @@ export const residentApi = {
     keyword?: string
     communityId?: string
     building?: string
+    buildingIsNull?: boolean
     status?: string
     role?: string
     userType?: string
@@ -280,6 +348,12 @@ export const residentApi = {
 
   }
 
+}
+
+export const familyApi = {
+  listMembers(familyId: string) {
+    return request<{ list: FamilyMemberItem[] }>(`/families/${familyId}/members`)
+  }
 }
 
 export const coinFreezeRecordApi = {
@@ -382,6 +456,14 @@ export const merchantApi = {
     })
   },
 
+  /** POST /admin/merchants/{id}/coin/earn — 发放物业币到商家关联居民账户 */
+  earnCoin(id: string, payload: MerchantCoinEarnPayload) {
+    return request<PropertyCoinEarnResult>(`/admin/merchants/${id}/coin/earn`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+
   profitSpace(
     platformMerchantId: string,
     params: { consumptionAmount: number }
@@ -405,10 +487,28 @@ export const pointApi = {
 
   },
 
-  records(params: Record<string, string | number | undefined> = {}) {
+  records(params: {
+    page?: number
+    pageSize?: number
+    /** 流水类型筛选，取值见 POINT_POOL_RECORD_TYPE */
+    recordType?: string
+    source?: string
+    startDate?: string
+    endDate?: string
+    propertyCompanyId?: string
+    sort?: string
+  } = {}) {
+    return request<PageResult<PointPoolRecordItem>>(`/admin/point-pools/records${buildQuery(params)}`)
+  },
 
-    return request<PageResult<unknown>>(`/admin/point-pools/records${buildQuery(params)}`)
+  trend(params: { month?: string; propertyCompanyId?: string } = {}) {
+    return request<PointsTrend>(`/admin/points/trend${buildQuery(params)}`)
+  },
 
+  consumptionStructure(params: { month?: string; propertyCompanyId?: string } = {}) {
+    return request<PointsConsumptionStructure>(
+      `/admin/points/consumption-structure${buildQuery(params)}`
+    )
   }
 
 }
@@ -514,6 +614,34 @@ export const deliveryApi = {
 
 }
 
+/** 配送规则 / 可选项（§76） */
+export const deliveryRulesApi = {
+  /** GET /delivery-rules/scope-options — 公开字典 */
+  scopeOptions() {
+    return request<DeliveryScopeOptions>('/delivery-rules/scope-options', {}, false)
+  },
+
+  list(params: Record<string, string | number | undefined> = {}) {
+    return request<PageResult<DeliveryRule> | DeliveryRule[]>(
+      `/delivery-rules${buildQuery(params)}`
+    )
+  },
+
+  create(payload: DeliveryRuleUpsertPayload) {
+    return request<DeliveryRule>('/delivery-rules', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+
+  update(id: string, payload: DeliveryRuleUpsertPayload) {
+    return request<DeliveryRule>(`/delivery-rules/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
+  }
+}
+
 
 
 export const propertyCompanyApi = {
@@ -532,8 +660,31 @@ export const propertyCompanyApi = {
     )
   },
 
-  communities(id: string) {
-    return request<PageResult<PropertyCompanyCommunity>>(`/property-companies/${id}/communities`)
+  /** 商家端当前物业（含自动提现开关/周期） */
+  current() {
+    return request<PropertyCompanyDetail>('/property-companies/current')
+  },
+
+  /**
+   * 小区列表（后端已公开，无需登录 token）
+   * - 有登录态时带 Token（管理端创建住户 / 楼宇等）
+   * - 无 Token 时按公开接口调用（注册完善资料）；显式传 auth=false 可强制不带 Token
+   */
+  communities(id: string, auth?: boolean) {
+    const withAuth = auth ?? Boolean(getAccessToken())
+    return request<PageResult<PropertyCompanyCommunity>>(
+      `/property-companies/${id}/communities`,
+      {},
+      withAuth
+    )
+  },
+
+  /** PUT /admin/property-companies/{id} — v3.9 含积分分成比例等 */
+  update(id: string, payload: PropertyCompanyUpdatePayload) {
+    return request<PropertyCompanyDetail>(`/admin/property-companies/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
   }
 
 }
@@ -546,6 +697,13 @@ export const configApi = {
 
     return request<PropertyCompanyDetail>(`/admin/property-companies/${id}`)
 
+  },
+
+  /** GET /admin/property-companies/{id}/config — 配置回显（含 deliveryPerKgFee / pointExchangeRate） */
+  getConfig(id: string) {
+    return request<PropertyCompanyConfig | PropertyCompanyDetail>(
+      `/admin/property-companies/${id}/config`
+    )
   },
 
   updateConfig(id: string, config: PropertyCompanyConfig) {
@@ -629,6 +787,25 @@ export const permissionApi = {
 
 export type { DeliveryOrderItem }
 
+/**
+ * 订单完成 / 确认收货。
+ * 商家入账：orderStatus=completed 后立刻刷新 GET /merchants/my。
+ * 配送入账：POST /deliveries/{id}/complete 后立刻刷新 GET /courier-managers/my（role=courier 即可）。
+ */
+export const ordersApi = {
+  /** 居民确认收货 → completed（商家侧入账） */
+  confirm(id: string) {
+    return request<OrderConfirmResult>(`/orders/${id}/confirm`, { method: 'POST' })
+  },
+
+  /** 商家 / 配送员将订单标为完成：body { orderStatus: 'completed' } */
+  updateStatus(id: string, orderStatus: string) {
+    return request<OrderItem>(`/orders/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ orderStatus })
+    })
+  }
+}
 
 export const merchantPortalApi = {
   my() {
@@ -658,10 +835,12 @@ export const merchantPortalApi = {
   },
 
   updateOrderStatus(id: string, orderStatus: string) {
-    return request<OrderItem>(`/orders/${id}/status`, {
-      method: 'PATCH',
-      body: JSON.stringify({ orderStatus })
-    })
+    return ordersApi.updateStatus(id, orderStatus)
+  },
+
+  /** 商家确认订单完成 → 本单收入立即计入可提现 */
+  completeOrder(id: string) {
+    return ordersApi.updateStatus(id, ORDER_STATUS.COMPLETED)
   },
 
   /** 商家手动发送配送任务（POST /orders/{id}/send-delivery）。
@@ -810,6 +989,11 @@ export const merchantPortalApi = {
     return request<MerchantAdQuota>('/merchant/ads/quota')
   },
 
+  /** GET /merchant/ads/quote?days=N — 按天计价试算 */
+  adQuote(days: number) {
+    return request<MerchantAdQuote>(`/merchant/ads/quote${buildQuery({ days })}`)
+  },
+
   ads(params: { page?: number; pageSize?: number } = {}) {
     return request<PageResult<MerchantAdItem>>(`/merchant/ads${buildQuery(params)}`)
   },
@@ -844,6 +1028,7 @@ export const courierPortalApi = {
     return request<CourierDeliveryItem>(`/deliveries/${id}/grab`, { method: 'POST' })
   },
 
+  /** 完成配送成功后立刻刷新 GET /courier-managers/my（本单 courierEarning 入可提现；B 方案来自配送费） */
   complete(id: string, payload: DeliveryCompletePayload = {}) {
     return request<CourierDeliveryItem>(`/deliveries/${id}/complete`, {
       method: 'POST',
@@ -860,28 +1045,100 @@ export const courierPortalApi = {
 }
 
 export const distributionApi = {
-  records(params: {
-    page?: number
-    pageSize?: number
-    orderId?: string
-    merchantId?: string
-    coordinatorId?: string
-    sectorLeaderId?: string
-    individualLeaderId?: string
-    startDate?: string
-    endDate?: string
-    sort?: string
-  } = {}) {
-    return request<PageResult<DistributionRecordItem>>(`/distribution/records${buildQuery(params)}`)
+  /** 分账明细；管理端也可走 /admin/distribution-records（同结构） */
+  async records(
+    params: {
+      page?: number
+      pageSize?: number
+      orderId?: string
+      merchantId?: string
+      coordinatorId?: string
+      sectorLeaderId?: string
+      individualLeaderId?: string
+      propertyCompanyId?: string
+      startDate?: string
+      endDate?: string
+      sort?: string
+    } = {},
+    options: { adminPath?: boolean } = {}
+  ) {
+    const path = options.adminPath ? '/admin/distribution-records' : '/distribution/records'
+    const raw = await request<unknown>(`${path}${buildQuery(params)}`)
+    const page = normalizePageResult<DistributionRecordItem>(
+      raw,
+      params.page || 1,
+      params.pageSize || 20
+    )
+    return {
+      ...page,
+      list: normalizeDistributionRecords(page.list || [])
+    }
   },
 
-  stats(params: {
-    startDate?: string
-    endDate?: string
-    dimension?: string
+  async stats(
+    params: {
+      startDate?: string
+      endDate?: string
+      dimension?: string
+      propertyCompanyId?: string
+    } = {},
+    options: { adminPath?: boolean } = {}
+  ) {
+    const path = options.adminPath ? '/admin/distribution/statistics' : '/distribution/stats'
+    return request<DistributionStats>(`${path}${buildQuery(params)}`)
+  },
+
+  /** 下单/结算前试算：前端只展示返回份额，不本地重算 */
+  calculate(params: {
+    merchantId: string
+    totalAmount: number
+    /** B 方案：配送费单独分账；不传则后端可能按旧口径把整单当商品价 */
+    deliveryFee?: number
+    pointUsed?: number
+    coinUsed?: number
     propertyCompanyId?: string
-  } = {}) {
-    return request<DistributionStats>(`/distribution/stats${buildQuery(params)}`)
+  }) {
+    return request<DistributionCalculateResult>(`/distribution/calculate${buildQuery(params)}`)
+  }
+}
+
+/** 物业分成账户（settlement）— 管理端路径带 /admin（后端 AdminPropertyCompanyController） */
+export const propertySettlementApi = {
+  balance(propertyCompanyId: string) {
+    return request<PropertySettlementBalance>(
+      `/admin/property-companies/${propertyCompanyId}/settlement-balance`
+    )
+  },
+
+  async withdrawals(
+    propertyCompanyId: string,
+    params: { page?: number; pageSize?: number; status?: string } = {}
+  ) {
+    const raw = await request<unknown>(
+      `/admin/property-companies/${propertyCompanyId}/settlement-withdrawals${buildQuery(params)}`
+    )
+    return normalizePageResult<RoleWithdrawalItem>(raw, params.page || 1, params.pageSize || 20)
+  },
+
+  createWithdrawal(propertyCompanyId: string, payload: RoleWithdrawalPayload) {
+    return request<RoleWithdrawalItem>(
+      `/admin/property-companies/${propertyCompanyId}/settlement-withdrawals`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    )
+  },
+
+  approve(propertyCompanyId: string, withdrawalId: string) {
+    return request<RoleWithdrawalItem>(
+      `/admin/property-companies/${propertyCompanyId}/settlement-withdrawals/${withdrawalId}/approve`,
+      { method: 'POST' }
+    )
+  },
+
+  reject(propertyCompanyId: string, withdrawalId: string, payload: { remark?: string } = {}) {
+    return request<RoleWithdrawalItem>(
+      `/admin/property-companies/${propertyCompanyId}/settlement-withdrawals/${withdrawalId}/reject`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    )
   }
 }
 
@@ -890,6 +1147,8 @@ export const serviceApi = {
     page?: number
     pageSize?: number
     category?: string
+    /** v4.1：merchant / resident / individual_leader / technician */
+    providerType?: string
     mine?: boolean
     sort?: string
   } = {}) {
@@ -924,6 +1183,30 @@ export const serviceApi = {
 export const sectorLeaderPortalApi = {
   my() {
     return request<SectorLeaderDetail>('/sector-leaders/my')
+  },
+
+  /** §39.7 申请提现 */
+  createWithdrawal(id: string, payload: RoleWithdrawalPayload) {
+    return request<RoleWithdrawalItem>(`/sector-leaders/${id}/withdrawals`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+
+  /** §39.8 提现记录 */
+  withdrawals(
+    id: string,
+    params: {
+      page?: number
+      pageSize?: number
+      auditStatus?: string
+      startDate?: string
+      endDate?: string
+    } = {}
+  ) {
+    return request<PageResult<RoleWithdrawalItem>>(
+      `/sector-leaders/${id}/withdrawals${buildQuery(params)}`
+    )
   }
 }
 
@@ -968,6 +1251,30 @@ export const coordinatorPortalApi = {
     return request<CoordinatorDetail>('/coordinators/my')
   },
 
+  /** §64.6 申请提现 */
+  createWithdrawal(id: string, payload: RoleWithdrawalPayload) {
+    return request<RoleWithdrawalItem>(`/coordinators/${id}/withdrawals`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+
+  /** §64.7 提现记录 */
+  withdrawals(
+    id: string,
+    params: {
+      page?: number
+      pageSize?: number
+      auditStatus?: string
+      startDate?: string
+      endDate?: string
+    } = {}
+  ) {
+    return request<PageResult<RoleWithdrawalItem>>(
+      `/coordinators/${id}/withdrawals${buildQuery(params)}`
+    )
+  },
+
   sectorLeaders: sectorLeaderAdminApi.list.bind(sectorLeaderAdminApi),
   createSectorLeader: sectorLeaderAdminApi.create.bind(sectorLeaderAdminApi),
   updateSectorLeader: sectorLeaderAdminApi.update.bind(sectorLeaderAdminApi),
@@ -980,9 +1287,15 @@ export const activityGroupApi = {
     pageSize?: number
     communityId?: string
     mine?: boolean
+    activityType?: string
     sort?: string
   } = {}) {
     return request<PageResult<ActivityGroupItem>>(`/activity-groups${buildQuery(params)}`)
+  },
+
+  /** 活动组组长：我管理的活动组 */
+  myLed(params: { page?: number; pageSize?: number; sort?: string } = {}) {
+    return request<PageResult<ActivityGroupItem>>(`/activity-groups/my-led${buildQuery(params)}`)
   },
 
   get(id: string) {
@@ -1006,6 +1319,43 @@ export const activityGroupApi = {
     return request<ActivityGroupItem>(`/activity-groups/${id}`, {
       method: 'PUT',
       body: JSON.stringify(payload)
+    })
+  },
+
+  /** §73.1 GET 课时价格列表（响应 list，非 tiers） */
+  listPricingTiers(groupId: string) {
+    return request<ActivityPricingTiersResult>(`/activity-groups/${groupId}/pricing-tiers`)
+  },
+
+  /** §73.2 POST 创建单档 */
+  createPricingTier(groupId: string, payload: ActivityPricingTierPayload) {
+    return request<ActivityPricingTier>(`/activity-groups/${groupId}/pricing-tiers`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+
+  /** §73.3 PUT 更新单档 */
+  updatePricingTier(tierId: string, payload: Partial<ActivityPricingTierPayload>) {
+    return request<ActivityPricingTier>(`/activity-groups/pricing-tiers/${tierId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
+  },
+
+  /** §73.4 DELETE 删除单档 */
+  deletePricingTier(tierId: string) {
+    return request<void>(`/activity-groups/pricing-tiers/${tierId}`, { method: 'DELETE' })
+  },
+
+  /**
+   * §73.5 PUT 批量替换课时价格
+   * v4.0：请求体为数组，不要包 { tiers: [...] }
+   */
+  replacePricingTiers(groupId: string, tiers: ActivityPricingTierPayload[]) {
+    return request<ActivityPricingTiersResult>(`/activity-groups/${groupId}/pricing-tiers`, {
+      method: 'PUT',
+      body: JSON.stringify(tiers)
     })
   }
 }
@@ -1056,6 +1406,12 @@ export const adminMerchantWithdrawalApi = {
     return request<AdminWithdrawalAuditResult>(
       `/admin/merchant-withdrawals/${id}/audit`,
       { method: 'POST', body: JSON.stringify(payload) }
+    )
+  },
+  /** §34.5 审批看板汇总 */
+  summary(params: { propertyCompanyId?: string } = {}) {
+    return request<MerchantWithdrawalSummary>(
+      `/admin/merchant-withdrawals/summary${buildQuery(params)}`
     )
   }
 }
@@ -1344,11 +1700,72 @@ export const residentMerchantAdminApi = {
   }
 }
 
+/** 业主商户门户 / 公开橱窗（§60） */
+export const residentMerchantApi = {
+  /** GET /resident-merchants/my */
+  my() {
+    return request<ResidentMerchantMyDetail>('/resident-merchants/my')
+  },
+
+  /** PUT /resident-merchants/visibility — 仅营业中店主 */
+  updateVisibility(visibility: string) {
+    return request<ResidentMerchantMyDetail>('/resident-merchants/visibility', {
+      method: 'PUT',
+      body: JSON.stringify({ visibility })
+    })
+  },
+
+  /** GET /resident-merchants/public — Auth Optional */
+  listPublic(
+    params: {
+      page?: number
+      pageSize?: number
+      keyword?: string
+      propertyCompanyId?: string
+    } = {}
+  ) {
+    return request<PageResult<ResidentMerchantPublicItem>>(
+      `/resident-merchants/public${buildQuery(params)}`,
+      {},
+      false
+    )
+  },
+
+  /** GET /resident-merchants/public/{residentId} — Auth Optional */
+  getPublic(residentId: string) {
+    return request<ResidentMerchantPublicDetail>(
+      `/resident-merchants/public/${residentId}`,
+      {},
+      false
+    )
+  },
+
+  /** POST /resident-merchants/listings/{id}/share */
+  shareListing(id: string) {
+    return request<ResidentMerchantShareResult>(`/resident-merchants/listings/${id}/share`, {
+      method: 'POST'
+    })
+  }
+}
+
 export const merchantAdAdminApi = {
   packages() {
     return request<{ list: MerchantAdPackageItem[] } | MerchantAdPackageItem[]>(
       '/admin/merchant-ad-packages'
     )
+  },
+
+  /** GET /admin/merchant-ad-settings — 单日价 / 免费额度配置 */
+  getSettings() {
+    return request<MerchantAdSettings>('/admin/merchant-ad-settings')
+  },
+
+  /** PUT /admin/merchant-ad-settings */
+  updateSettings(payload: MerchantAdSettings) {
+    return request<MerchantAdSettings>('/admin/merchant-ad-settings', {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
   },
 
   /** §59.5 为商家增加本周付费广告额度 */
@@ -1357,6 +1774,11 @@ export const merchantAdAdminApi = {
       method: 'POST',
       body: JSON.stringify({ purchasedQuota })
     })
+  },
+
+  /** §D6 查询商家当前广告周额度 */
+  getQuota(merchantId: string) {
+    return request<MerchantAdQuota>(`/admin/merchants/${merchantId}/ad-quota`)
   }
 }
 
@@ -1412,6 +1834,25 @@ export const platformShareApi = {
     return request<PageResult<PlatformEarningRecordItem>>(
       `/admin/platform-earnings/records${buildQuery(params)}`
     )
+  },
+
+  /** 平台收益钱包（仅 platform_admin） */
+  earningsBalance() {
+    return request<PlatformEarningsBalance>('/admin/platform-earnings/balance')
+  },
+
+  async earningsWithdrawals(params: { page?: number; pageSize?: number; status?: string } = {}) {
+    const raw = await request<unknown>(
+      `/admin/platform-earnings/withdrawals${buildQuery(params)}`
+    )
+    return normalizePageResult<RoleWithdrawalItem>(raw, params.page || 1, params.pageSize || 20)
+  },
+
+  createEarningsWithdrawal(payload: RoleWithdrawalPayload) {
+    return request<RoleWithdrawalItem>('/admin/platform-earnings/withdrawals', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
   }
 }
 
@@ -1470,6 +1911,7 @@ export const courierManagerApi = {
     })
   },
 
+  /** 钱包：role=courier 即可（负责人汇总 / 普通配送员本人），不强制快递负责人 */
   my() {
     return request<CourierManagerItem>('/courier-managers/my')
   }
@@ -1477,7 +1919,12 @@ export const courierManagerApi = {
 
 /** 配送价格区间：列表接口返回 data 为数组，非分页 */
 export const deliveryPriceRangeApi = {
-  async list(params: { propertyCompanyId?: string; status?: string } = {}) {
+  async list(params: {
+    propertyCompanyId?: string
+    status?: string
+    distanceType?: string
+    deliveryScope?: string
+  } = {}) {
     const data = await request<DeliveryPriceRangeItem[] | PageResult<DeliveryPriceRangeItem>>(
       `/admin/delivery-price-ranges${buildQuery(params)}`
     )
@@ -1517,9 +1964,20 @@ export const adminIndividualLeaderApi = {
   }
 }
 
-/** 价格审批 */
+/**
+ * 价格审批（对接说明书）
+ * - 菜单/列表/提交：platform_admin || property_leader
+ * - PUT 审批：仅 property_leader（平台调 → 20004）
+ * - 平台 POST 必须带 propertyCompanyId；领导勿传
+ */
 export const priceApprovalApi = {
-  list(params: { page?: number; pageSize?: number; status?: string } = {}) {
+  list(params: {
+    page?: number
+    pageSize?: number
+    status?: string
+    /** 平台管理员可跨物业筛选；不传=全部。领导勿传（后端限本公司） */
+    propertyCompanyId?: string
+  } = {}) {
     return request<PageResult<PriceApprovalItem>>(`/admin/price-approvals${buildQuery(params)}`)
   },
 
@@ -1530,6 +1988,7 @@ export const priceApprovalApi = {
     })
   },
 
+  /** 仅物业领导；平台管理员勿调 */
   audit(id: string, payload: PriceApprovalAuditPayload) {
     return request<PriceApprovalItem>(`/admin/price-approvals/${id}`, {
       method: 'PUT',
@@ -1538,7 +1997,17 @@ export const priceApprovalApi = {
   }
 }
 
-/** 物业币商城规则 */
+/** 物业币发放 / 商城规则 */
+export const propertyCoinApi = {
+  /** POST /property-coins/earn — property_admin / platform_admin */
+  earn(payload: PropertyCoinEarnPayload) {
+    return request<PropertyCoinEarnResult>('/property-coins/earn', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  }
+}
+
 export const propertyCoinMallApi = {
   getRules(propertyCompanyId?: string) {
     return request<PropertyCoinMallRules>(
@@ -1670,6 +2139,14 @@ export const coordinatorManageApi = {
       `/coordinators/${coordinatorId}/merchants/${merchantId}/freeze`,
       { method: 'PUT', body: JSON.stringify(payload) }
     )
+  },
+
+  /** 统筹审核商家加入（仅 coordinator；板块负责人调用将 403） */
+  auditMerchant(coordinatorId: string, payload: CoordinatorMerchantAuditPayload) {
+    return request<MerchantAuditResult>(`/coordinators/${coordinatorId}/merchant-audit`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
   }
 }
 
@@ -1734,7 +2211,7 @@ export const distributorProductApi = {
   }
 }
 
-/** 快递员提现（快递负责人 my） */
+/** 配送提现：role=courier 即可（负责人汇总 / 普通配送员看本人），不强制快递负责人 */
 export const courierWithdrawalApi = {
   create(payload: RoleWithdrawalPayload) {
     return request<RoleWithdrawalItem>('/courier-managers/my/withdrawals', {
@@ -1743,10 +2220,435 @@ export const courierWithdrawalApi = {
     })
   },
 
-  list(params: { page?: number; pageSize?: number } = {}) {
+  list(params: {
+    page?: number
+    pageSize?: number
+    auditStatus?: string
+  } = {}) {
     return request<PageResult<RoleWithdrawalItem>>(
       `/courier-managers/my/withdrawals${buildQuery(params)}`
     )
+  }
+}
+
+/** 技工门户 — 路径约定：/technicians/my* */
+export const technicianPortalApi = {
+  my() {
+    return request<TechnicianDetail>('/technicians/my')
+  },
+
+  tasks(
+    params: {
+      page?: number
+      pageSize?: number
+      status?: string
+      sort?: string
+    } = {}
+  ) {
+    return request<PageResult<TechnicianTaskItem>>(
+      `/technicians/my/tasks${buildQuery(params)}`
+    )
+  },
+
+  updateTaskStatus(id: string, payload: TechnicianTaskStatusPayload) {
+    return request<TechnicianTaskItem>(`/technicians/my/tasks/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload)
+    })
+  }
+}
+
+/* ---------- v3.8 管理端扩展 API ---------- */
+
+export const merchantRecommendApi = {
+  listOfficial(params: {
+    page?: number
+    pageSize?: number
+    propertyCompanyId?: string
+  } = {}) {
+    return request<PageResult<MerchantItem>>(`/merchants/official-recommended${buildQuery(params)}`)
+  },
+  set(id: string, payload: MerchantRecommendPayload) {
+    return request<{ id?: string }>(`/admin/merchants/${id}/recommend`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
+  }
+}
+
+export const coinUseConditionApi = {
+  get() {
+    return request<CoinUseCondition>('/property-coins/use-condition')
+  },
+  set(propertyCompanyId: string, payload: CoinUseConditionPayload) {
+    return request<CoinUseCondition>(
+      `/admin/property-companies/${propertyCompanyId}/coin-use-condition`,
+      { method: 'PUT', body: JSON.stringify(payload) }
+    )
+  }
+}
+
+export const coinWithdrawalAdminApi = {
+  /** §33.1 物业币提现/兑换审核列表 */
+  list(params: {
+    page?: number
+    pageSize?: number
+    merchantId?: string
+    auditStatus?: string
+    status?: string
+    startDate?: string
+    endDate?: string
+    propertyCompanyId?: string
+    sort?: string
+  } = {}) {
+    return request<PageResult<AdminCoinWithdrawalItem>>(
+      `/admin/coin-withdrawals${buildQuery(params)}`
+    )
+  },
+  /** 审核：body 用 auditResult（与商家提现/积分购买一致；勿用 auditStatus） */
+  audit(id: string, payload: AdminCoinWithdrawalAuditPayload) {
+    return request<AdminCoinWithdrawalItem>(`/admin/coin-withdrawals/${id}/audit`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+  getSettings() {
+    return request<CoinWithdrawalSettings>('/admin/coin-withdrawals/settings')
+  },
+  updateSettings(payload: { autoEnabled?: boolean; periodDays?: number }) {
+    return request<CoinWithdrawalSettings>('/admin/coin-withdrawals/settings', {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
+  },
+  blockResident(id: string, payload: WithdrawalBlockPayload) {
+    return request<{ success?: boolean }>(`/admin/coin-withdrawals/residents/${id}/block`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
+  },
+  blockMerchant(id: string, payload: WithdrawalBlockPayload) {
+    return request<{ success?: boolean }>(`/admin/coin-withdrawals/merchants/${id}/block`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
+  },
+  /** §33.3 物业币提现审批汇总 */
+  summary(params: { propertyCompanyId?: string } = {}) {
+    return request<CoinWithdrawalSummary>(
+      `/admin/coin-withdrawals/summary${buildQuery(params)}`
+    )
+  }
+}
+
+/** 管理端 — 物业联系方式（全局单条） */
+export const propertyContactAdminApi = {
+  get() {
+    return request<PropertyContactConfig | null>('/admin/property-contact')
+  },
+  save(payload: PropertyContactPayload) {
+    return request<PropertyContactConfig>('/admin/property-contact', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  }
+}
+
+/**
+ * 社区论坛 — 管理端治理（§C.10–C.14）
+ * 居民端发帖/点赞/评论不在本管理端仓库实现
+ */
+export const communityForumAdminApi = {
+  listPosts(params: {
+    page?: number
+    pageSize?: number
+    status?: string
+    keyword?: string
+  } = {}) {
+    return request<PageResult<CommunityPostItem>>(
+      `/admin/community/posts${buildQuery(params)}`
+    )
+  },
+  deletePost(id: string) {
+    return request<null>(`/admin/community/posts/${id}`, { method: 'DELETE' })
+  },
+  deleteComment(id: string) {
+    return request<null>(`/admin/community/comments/${id}`, { method: 'DELETE' })
+  },
+  listReports(params: {
+    page?: number
+    pageSize?: number
+    status?: string
+  } = {}) {
+    return request<PageResult<ContentReportItem>>(
+      `/admin/community/reports${buildQuery(params)}`
+    )
+  },
+  handleReport(id: string, payload: ContentReportHandlePayload) {
+    return request<ContentReportItem>(`/admin/community/reports/${id}/handle`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  }
+}
+
+export const profileRewardApi = {
+  list(params: { scope?: string; scopeId?: string } = {}) {
+    return request<{ list: ProfileRewardItem[] } | ProfileRewardItem[]>(
+      `/admin/profile-rewards${buildQuery(params)}`
+    )
+  },
+  create(payload: ProfileRewardPayload) {
+    return request<ProfileRewardItem>('/admin/profile-rewards', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+  update(id: string, payload: Partial<ProfileRewardPayload>) {
+    return request<ProfileRewardItem>(`/admin/profile-rewards/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
+  },
+  remove(id: string) {
+    return request<{ id?: string }>(`/admin/profile-rewards/${id}`, { method: 'DELETE' })
+  }
+}
+
+export const companyAccountApi = {
+  balance() {
+    return request<CompanyAccountBalance>('/admin/company-account/balance')
+  },
+  records(params: { page?: number; pageSize?: number } = {}) {
+    return request<PageResult<CompanyAccountRecord>>(
+      `/admin/company-account/records${buildQuery(params)}`
+    )
+  },
+  adjust(payload: { propertyCompanyId: string; amount: number; remark?: string }) {
+    return request<CompanyAccountBalance>('/admin/company-account/adjust', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  }
+}
+
+export const communityPointApi = {
+  get(communityId: string) {
+    return request<CommunityPointPool>(`/community-points/${communityId}`)
+  },
+  records(communityId: string, params: { page?: number; pageSize?: number } = {}) {
+    return request<PageResult<CommunityPointRecord>>(
+      `/community-points/${communityId}/records${buildQuery(params)}`
+    )
+  },
+  adjust(communityId: string, payload: CommunityPointAdjustPayload) {
+    return request<CommunityPointPool>(`/admin/community-points/${communityId}/adjust`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  }
+}
+
+export const arrearsReportApi = {
+  get(params: {
+    propertyCompanyId?: string
+    communityId?: string
+    building?: string
+    feeType?: string
+  } = {}) {
+    return request<ArrearsReport>(`/admin/property-fees/arrears-report${buildQuery(params)}`)
+  },
+
+  async exportCsv(params: {
+    propertyCompanyId?: string
+    communityId?: string
+    building?: string
+    feeType?: string
+  } = {}) {
+    const { getAccessToken } = await import('../stores/tokenStore')
+    const { API_PATH_PREFIX, API_REMOTE_BASE_URL } = await import('../config/api')
+    const { isNativeApp } = await import('../utils/native')
+    const base = import.meta.env.DEV && !isNativeApp() ? API_PATH_PREFIX : API_REMOTE_BASE_URL
+    const token = getAccessToken()
+    const res = await fetch(`${base}/admin/property-fees/arrears-report/export${buildQuery(params)}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    })
+    if (!res.ok) throw new Error('导出失败')
+    return res.blob()
+  },
+
+  /** POST /admin/property-fees/arrears-reminder — v3.9 催缴通知 */
+  sendReminder(payload: ArrearsReminderPayload) {
+    return request<ArrearsReminderResult>('/admin/property-fees/arrears-reminder', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  }
+}
+
+/** §88 管理端 — 物业住户聊天 */
+export const adminMessageApi = {
+  conversations(params: { page?: number; pageSize?: number; keyword?: string } = {}) {
+    return request<PageResult<AdminConversationItem>>(
+      `/admin/messages/conversations${buildQuery(params)}`
+    )
+  },
+
+  conversationMessages(
+    residentId: string,
+    params: { page?: number; pageSize?: number } = {}
+  ) {
+    return request<PageResult<AdminChatMessageItem>>(
+      `/admin/messages/conversations/${residentId}${buildQuery(params)}`
+    )
+  },
+
+  send(residentId: string, payload: { content: string }) {
+    return request<AdminChatMessageItem>(`/admin/messages/conversations/${residentId}`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  }
+}
+
+export const communityRoomApi = {
+  structure(communityId: string, params: { building?: string } = {}) {
+    return request<RoomStructure>(
+      `/communities/${communityId}/room-structure${buildQuery(params)}`
+    )
+  },
+  availableRooms(communityId: string, params: { building?: string; unit?: string } = {}) {
+    return request<AvailableRoomsResult>(
+      `/communities/${communityId}/available-rooms${buildQuery(params)}`
+    )
+  }
+}
+
+export const regionalLeaderApi = {
+  list(params: { propertyCompanyId?: string; sectorLeaderId?: string; page?: number; pageSize?: number } = {}) {
+    return request<PageResult<RegionalLeaderItem> | { list: RegionalLeaderItem[] }>(
+      `/regional-leaders${buildQuery(params)}`
+    )
+  },
+  create(payload: RegionalLeaderPayload) {
+    return request<RegionalLeaderItem>('/regional-leaders', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+  update(id: string, payload: Partial<RegionalLeaderPayload>) {
+    return request<RegionalLeaderItem>(`/regional-leaders/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
+  },
+  remove(id: string) {
+    return request<{ id?: string }>(`/regional-leaders/${id}`, { method: 'DELETE' })
+  }
+}
+
+export const projectLeaderApi = {
+  list(params: { regionalLeaderId?: string; page?: number; pageSize?: number } = {}) {
+    return request<PageResult<ProjectLeaderItem> | { list: ProjectLeaderItem[] }>(
+      `/project-leaders${buildQuery(params)}`
+    )
+  },
+  create(payload: ProjectLeaderPayload) {
+    return request<ProjectLeaderItem>('/project-leaders', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+  update(id: string, payload: Partial<ProjectLeaderPayload>) {
+    return request<ProjectLeaderItem>(`/project-leaders/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
+  },
+  remove(id: string) {
+    return request<{ id?: string }>(`/project-leaders/${id}`, { method: 'DELETE' })
+  }
+}
+
+/** §77 商家关键词 */
+export const merchantKeywordApi = {
+  my() {
+    return request<MerchantKeywordsResult>('/merchants/my/keywords')
+  },
+  add(payload: MerchantKeywordCreatePayload) {
+    return request<MerchantKeywordItem>('/merchants/my/keywords', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+  addBatch(payload: MerchantKeywordBatchPayload) {
+    return request<MerchantKeywordsResult>('/merchants/my/keywords/batch', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+  updateWeight(id: string, payload: MerchantKeywordUpdatePayload) {
+    return request<MerchantKeywordItem>(`/merchants/keywords/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
+  },
+  remove(id: string) {
+    return request<{ id?: string }>(`/merchants/keywords/${id}`, { method: 'DELETE' })
+  }
+}
+
+/** §87 商家动态 */
+export const merchantPostApi = {
+  my(params: { page?: number; pageSize?: number } = {}) {
+    return request<PageResult<MerchantPostItem>>(`/merchant-posts/my${buildQuery(params)}`)
+  },
+  get(id: string) {
+    return request<MerchantPostItem>(`/merchant-posts/${id}`)
+  },
+  create(payload: MerchantPostPayload) {
+    return request<MerchantPostItem>('/merchant-posts', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+  update(id: string, payload: Partial<MerchantPostPayload>) {
+    return request<MerchantPostItem>(`/merchant-posts/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
+  },
+  remove(id: string) {
+    return request<{ id?: string }>(`/merchant-posts/${id}`, { method: 'DELETE' })
+  }
+}
+
+/** 文件模块：上传后返回 url，业务字段仍存 URL 字符串 */
+export const fileApi = {
+  upload(file: File, category: string) {
+    const body = new FormData()
+    body.append('file', file)
+    // 与 API 文档 / C 端一致：category 走 multipart 字段，而非仅 query
+    body.append('category', category)
+    return request<import('./types').UploadFileResponse>('/files/upload', {
+      method: 'POST',
+      body
+    })
+  },
+  uploadBatch(files: File[], category: string) {
+    const body = new FormData()
+    files.forEach((f) => body.append('files', f))
+    body.append('category', category)
+    return request<import('./types').BatchUploadFileItemResponse[]>('/files/upload-batch', {
+      method: 'POST',
+      body
+    })
+  },
+  get(id: string) {
+    return request<import('./types').FileDetailResponse>(`/files/${id}`)
+  },
+  remove(id: string) {
+    return request<import('./types').DeleteFileResponse>(`/files/${id}`, { method: 'DELETE' })
   }
 }
 

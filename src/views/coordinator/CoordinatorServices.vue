@@ -15,6 +15,11 @@
           {{ opt.label }}
         </option>
       </select>
+      <select v-model="providerTypeFilter" class="input" @change="reload">
+        <option v-for="opt in PROVIDER_TYPE_OPTIONS" :key="opt.value || 'all'" :value="opt.value">
+          {{ opt.label }}
+        </option>
+      </select>
       <button class="btnGhost" :disabled="loading" @click="reload">刷新</button>
     </div>
 
@@ -26,6 +31,7 @@
           <tr>
             <th>服务名称</th>
             <th>分类</th>
+            <th>提供者</th>
             <th>价格</th>
             <th>会员价</th>
             <th>单位</th>
@@ -37,6 +43,12 @@
           <tr v-for="item in services" :key="item.id">
             <td>{{ item.name }}</td>
             <td>{{ getEnumLabel(SERVICE_CATEGORY_LABEL, item.category, item.categoryName || '—') }}</td>
+            <td>
+              <span v-if="item.providerType" class="providerTag" :class="item.providerType">
+                {{ getEnumLabel(PROVIDER_TYPE_LABEL, item.providerType) }}
+              </span>
+              <span v-else>—</span>
+            </td>
             <td>{{ item.price != null ? `¥${formatMoney(item.price)}` : '—' }}</td>
             <td>{{ item.memberPrice != null ? `¥${formatMoney(item.memberPrice)}` : '—' }}</td>
             <td>{{ item.priceUnit || '—' }}</td>
@@ -108,6 +120,8 @@ import { ApiError } from '../../api/request'
 import {
   ENTITY_STATUS,
   getEnumLabel,
+  PROVIDER_TYPE_LABEL,
+  PROVIDER_TYPE_OPTIONS,
   SERVICE_CATEGORY,
   SERVICE_CATEGORY_LABEL,
   SERVICE_CATEGORY_OPTIONS
@@ -119,6 +133,7 @@ const { isMobile } = useIsMobile()
 const loading = ref(false)
 const error = ref('')
 const categoryFilter = ref('')
+const providerTypeFilter = ref('')
 const modalOpen = ref(false)
 const submitting = ref(false)
 const formError = ref('')
@@ -144,6 +159,7 @@ async function load() {
       page: 1,
       pageSize: 100,
       category: categoryFilter.value || undefined,
+      providerType: providerTypeFilter.value || undefined,
       sort: '-createdAt'
     })
     services.value = res.list || []
@@ -218,6 +234,17 @@ onMounted(load)
 .table th { color: #8c8c9a; font-weight: 500; }
 .loading, .empty, .error { font-size: 14px; color: #8c8c9a; padding: 12px 0; }
 .error { color: #e05c5c; }
+.providerTag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: #f4f5f7;
+  color: #5c5c66;
+}
+.providerTag.technician { background: #eef6ff; color: #2f6fed; }
+.providerTag.individual_leader { background: #f6ffed; color: #389e0d; }
+.providerTag.merchant { background: #f5f5fb; color: #5c5c9e; }
 .modalOverlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 1000; }
 .modal { width: 520px; max-width: calc(100vw - 32px); background: #fff; border-radius: 12px; overflow: hidden; }
 .modalHeader { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #f0f0f3; }
@@ -242,9 +269,9 @@ onMounted(load)
   .mobileCards td { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; }
   .mobileCards td::before { color: #8c8c9a; }
   .mobileCards td:nth-child(1)::before { content: '服务名称'; }.mobileCards td:nth-child(2)::before { content: '分类'; }
-  .mobileCards td:nth-child(3)::before { content: '价格'; }.mobileCards td:nth-child(4)::before { content: '会员价'; }
-  .mobileCards td:nth-child(5)::before { content: '单位'; }.mobileCards td:nth-child(6)::before { content: '状态'; }
-  .mobileCards td:nth-child(7)::before { content: '创建时间'; }
+  .mobileCards td:nth-child(3)::before { content: '提供者'; }.mobileCards td:nth-child(4)::before { content: '价格'; }
+  .mobileCards td:nth-child(5)::before { content: '会员价'; }.mobileCards td:nth-child(6)::before { content: '单位'; }
+  .mobileCards td:nth-child(7)::before { content: '状态'; }.mobileCards td:nth-child(8)::before { content: '创建时间'; }
   .modalOverlay { padding: 0; align-items: flex-end; }.modal.mobileSheet { max-width: 100%; border-radius: 18px 18px 0 0; }
   .fieldRow { grid-template-columns: 1fr; }
 }

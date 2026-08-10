@@ -154,6 +154,15 @@
               </option>
             </select>
             <select
+              v-if="viewMode === 'property'"
+              v-model="onlyOfficialRecommended"
+              class="filterSelect"
+              @change="applyFilters"
+            >
+              <option value="">全部商家</option>
+              <option value="1">仅官方推荐</option>
+            </select>
+            <select
               v-else
               v-model="selectedPlatformStatus"
               class="filterSelect"
@@ -188,7 +197,21 @@
             </div>
             <div class="merchantCardActions">
               <button class="cardActionBtn" @click="openDetailModal(merchant.id, merchant.category)">详情</button>
+              <button
+                v-if="canAuditMerchant(merchant.id)"
+                class="cardActionBtn primary"
+                @click="openAuditModal(merchant.id, merchant.name)"
+              >
+                审核
+              </button>
               <button class="cardActionBtn primary" @click="openEditModal(merchant.id)">编辑</button>
+              <button
+                v-if="canGrantMerchantCoin"
+                class="cardActionBtn success"
+                @click="openEarnModal(merchant.id, merchant.name)"
+              >
+                发币
+              </button>
               <button v-if="canManageAdQuota" class="cardActionBtn success" @click="openAdQuotaModal(merchant.id, merchant.name)">广告额度</button>
               <button v-if="canKick && merchant.status !== MERCHANT_STATUS.KICKED" class="cardActionBtn danger" @click="openKickModal(merchant.id, merchant.name)">踢出</button>
             </div>
@@ -237,8 +260,24 @@
                   <button class="actionBtn detail" title="详情" @click="openDetailModal(merchant.id, merchant.category)">
                     <IconSvg name="eye" />
                   </button>
+                  <button
+                    v-if="canAuditMerchant(merchant.id)"
+                    class="actionBtn edit"
+                    title="审核"
+                    @click="openAuditModal(merchant.id, merchant.name)"
+                  >
+                    审
+                  </button>
                   <button class="actionBtn edit" title="编辑" @click="openEditModal(merchant.id)">
                     <IconSvg name="edit" />
+                  </button>
+                  <button
+                    v-if="canGrantMerchantCoin"
+                    class="actionBtn adQuota"
+                    title="发放物业币"
+                    @click="openEarnModal(merchant.id, merchant.name)"
+                  >
+                    <IconSvg name="coin" />
                   </button>
                   <button
                     v-if="canManageAdQuota"
@@ -350,15 +389,88 @@
           </div>
           <div class="modalBody">
             <div v-if="detailLoading" class="loadingText">加载中...</div>
-            <div v-else-if="detailData" class="detailGrid">
-              <div v-for="row in detailRows" :key="row.label" class="detailItem">
-                <span class="detailLabel">{{ row.label }}</span>
-                <span class="detailValue">{{ row.value }}</span>
-              </div>
+            <template v-else-if="detailData">
+              <section class="detailSection">
+                <h4 class="detailSectionTitle">基本信息</h4>
+                <div class="detailGrid">
+                  <div v-for="row in detailBasicRows" :key="row.label" class="detailItem">
+                    <span class="detailLabel">{{ row.label }}</span>
+                    <span class="detailValue">{{ row.value }}</span>
+                  </div>
+                </div>
+              </section>
+              <section class="detailSection">
+                <h4 class="detailSectionTitle">配送设置（商家自设，只读；成本从商家费用扣除）</h4>
+                <div class="detailGrid">
+                  <div v-for="row in detailDeliveryRows" :key="row.label" class="detailItem">
+                    <span class="detailLabel">{{ row.label }}</span>
+                    <span class="detailValue">{{ row.value }}</span>
+                  </div>
+                </div>
+              </section>
+              <section class="detailSection">
+                <h4 class="detailSectionTitle">财务与经营</h4>
+                <p v-if="detailMissingFinance" class="detailHint">
+                  部分字段显示「接口未返回」：需后端在商家详情中补齐分成、兑换、营收等字段后才会有数。
+                </p>
+                <div class="detailGrid">
+                  <div v-for="row in detailFinanceRows" :key="row.label" class="detailItem">
+                    <span class="detailLabel">{{ row.label }}</span>
+                    <span class="detailValue" :class="{ mutedValue: String(row.value).includes('接口未返回') }">{{ row.value }}</span>
+                  </div>
+                </div>
+              </section>
+              <section class="detailSection">
+                <h4 class="detailSectionTitle">其他</h4>
+                <div class="detailGrid">
+                  <div v-for="row in detailOtherRows" :key="row.label" class="detailItem">
+                    <span class="detailLabel">{{ row.label }}</span>
+                    <span class="detailValue">{{ row.value }}</span>
+                  </div>
+                </div>
+              </section>
+            </template>
+            <div v-if="detailData && !detailData.isOfficialRecommended" class="recommendSortRow">
+              <label class="label">设为官方推荐时的排序（越大越靠前）</label>
+              <input v-model.number="recommendSortDraft" type="number" min="0" class="input sortInput" />
             </div>
             <p v-if="formError" class="error">{{ formError }}</p>
             <div class="modalFooter">
               <button type="button" class="btnSecondary" @click="closeDetailModal">关闭</button>
+              <button
+                v-if="detailData && canAuditMerchant(detailData.id)"
+                type="button"
+                class="btnPrimary"
+                @click="openAuditModal(detailData.id, detailData.name || ''); closeDetailModal()"
+              >
+                审核
+              </button>
+              <button
+                v-if="detailData"
+                type="button"
+                class="btnSecondary"
+                :disabled="recommendSubmittingId === detailData.id"
+                @click="toggleRecommend(detailData)"
+              >
+                {{ detailData.isOfficialRecommended ? '取消官方推荐' : '设为官方推荐' }}
+              </button>
+              <button
+                v-if="detailData"
+                type="button"
+                class="btnSecondary"
+                :disabled="withdrawBlockSubmitting"
+                @click="toggleMerchantWithdrawBlock(detailData)"
+              >
+                {{ detailData.withdrawalBlocked ? '解除提现阻止' : '阻止提现' }}
+              </button>
+              <button
+                v-if="detailData && canGrantMerchantCoin"
+                type="button"
+                class="btnSecondary"
+                @click="openEarnModal(detailData.id, detailData.name || ''); closeDetailModal()"
+              >
+                发放物业币
+              </button>
               <button v-if="detailData" type="button" class="btnPrimary" @click="openEditModal(detailData.id); closeDetailModal()">
                 编辑
               </button>
@@ -378,6 +490,16 @@
           <form class="modalBody" @submit.prevent="submitEdit">
             <div v-if="editLoading" class="loadingText">加载中...</div>
             <template v-else>
+              <section class="readonlyBlock">
+                <h4 class="detailSectionTitle">查看参数（不可在此修改）</h4>
+                <div class="detailGrid">
+                  <div v-for="row in editReadonlyRows" :key="row.label" class="detailItem">
+                    <span class="detailLabel">{{ row.label }}</span>
+                    <span class="detailValue">{{ row.value }}</span>
+                  </div>
+                </div>
+                <p class="formHint">配送费、满额免配送由商家端自行设置，物业只读查看；配送相关成本从商家费用中扣除，物业不做干预。分成/营收等来自商家详情接口；积分兑换比例取商家挂接配置（物业可在参数配置中调整），后端未返回时显示「—」。</p>
+              </section>
               <div class="field">
                 <label class="label">商家名称</label>
                 <input v-model="editForm.name" type="text" class="input" maxlength="100" />
@@ -400,27 +522,28 @@
                 <label class="label">地址</label>
                 <input v-model="editForm.address" type="text" class="input" maxlength="200" />
               </div>
-              <div class="fieldRow">
-                <div class="field">
-                  <label class="label">配送费</label>
-                  <input v-model="editForm.deliveryFee" type="number" min="0" step="0.01" class="input" />
-                </div>
-                <div class="field">
-                  <label class="label">满额免配送费</label>
-                  <input v-model="editForm.freeDeliveryThreshold" type="number" min="0" step="0.01" class="input" />
-                </div>
-                <div class="field">
-                  <label class="label">排序权重</label>
-                  <input v-model.number="editForm.rankOrder" type="number" min="0" class="input" />
-                </div>
+              <div class="field">
+                <label class="label">排序权重</label>
+                <input v-model.number="editForm.rankOrder" type="number" min="0" class="input" />
+                <p class="formHint">权重越高，在用户端展示越靠前。</p>
               </div>
               <div class="field">
-                <label class="label">封面图片 URL</label>
-                <input v-model="editForm.coverUrlsText" type="text" class="input" placeholder="多个 URL 用逗号分隔" />
+                <label class="label">封面图</label>
+                <MediaUploader
+                  v-model="editForm.coverUrls"
+                  category="merchant"
+                  accept="image"
+                  :max="9"
+                />
               </div>
               <div class="field">
-                <label class="label">视频 URL</label>
-                <input v-model="editForm.videoUrl" type="text" class="input" maxlength="500" />
+                <label class="label">视频</label>
+                <MediaUploader
+                  v-model="editForm.videoUrl"
+                  category="merchant"
+                  accept="video"
+                  :max="1"
+                />
               </div>
             </template>
             <p v-if="formError" class="error">{{ formError }}</p>
@@ -482,8 +605,13 @@
                 <input v-model="platformForm.address" type="text" class="input" maxlength="200" />
               </div>
               <div class="field">
-                <label class="label">封面图 URL</label>
-                <input v-model="platformForm.coverUrl" type="text" class="input" maxlength="500" />
+                <label class="label">封面图</label>
+                <MediaUploader
+                  v-model="platformForm.coverUrl"
+                  category="merchant"
+                  accept="image"
+                  :max="1"
+                />
               </div>
             </template>
             <p v-if="formError" class="error">{{ formError }}</p>
@@ -563,6 +691,125 @@
     </Teleport>
 
     <Teleport to="body">
+      <div v-if="earnModalOpen" class="modalOverlay" @click.self="closeEarnModal">
+        <div class="modal modalScroll" :class="{ mobileSheet: isMobile }">
+          <div class="modalHeader">
+            <h3 class="modalTitle">发放物业币</h3>
+            <button class="modalClose" @click="closeEarnModal">&times;</button>
+          </div>
+          <form class="modalBody" @submit.prevent="submitEarnModal">
+            <p class="formHint">
+              将向商家「{{ earnTargetName }}」关联的居民账户发放物业币（无需再查 residentId）。
+            </p>
+            <div class="field">
+              <label class="label">发放金额 <span class="required">*</span></label>
+              <input
+                v-model.number="earnForm.coinAmount"
+                type="number"
+                min="0.01"
+                step="0.01"
+                class="input"
+                placeholder="最少 0.01"
+                required
+              />
+            </div>
+            <div class="field">
+              <label class="label">来源</label>
+              <div class="readonly">手动发放（manual）</div>
+            </div>
+            <div class="field">
+              <label class="label">描述（选填）</label>
+              <textarea
+                v-model="earnForm.description"
+                class="textarea"
+                rows="3"
+                maxlength="200"
+                placeholder="如：管理端发放、活动补贴"
+              />
+            </div>
+            <p v-if="earnError" class="error">{{ earnError }}</p>
+            <p v-if="earnSuccess" class="success">{{ earnSuccess }}</p>
+            <div class="modalFooter">
+              <button type="button" class="btnSecondary" :disabled="earnSubmitting" @click="closeEarnModal">
+                取消
+              </button>
+              <button type="submit" class="btnPrimary" :disabled="earnSubmitting">
+                {{ earnSubmitting ? '提交中...' : '确认发放' }}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div v-if="auditModalOpen" class="modalOverlay" @click.self="closeAuditModal">
+        <div class="modal modalScroll" :class="{ mobileSheet: isMobile }">
+          <div class="modalHeader">
+            <h3 class="modalTitle">审核商家「{{ auditTargetName }}」</h3>
+            <button class="modalClose" @click="closeAuditModal">&times;</button>
+          </div>
+          <form class="modalBody" @submit.prevent="submitAudit">
+            <div class="field">
+              <label class="label">审核结果</label>
+              <select v-model="auditForm.auditResult" class="input">
+                <option :value="AUDIT_RESULT.APPROVED">通过</option>
+                <option :value="AUDIT_RESULT.REJECTED">拒绝</option>
+              </select>
+            </div>
+            <div v-if="auditForm.auditResult === AUDIT_RESULT.REJECTED" class="field">
+              <label class="label">拒绝原因 <span class="required">*</span></label>
+              <textarea
+                v-model="auditForm.rejectReason"
+                class="textarea"
+                rows="3"
+                maxlength="200"
+                required
+                placeholder="请填写拒绝原因"
+              />
+            </div>
+            <template v-if="auditForm.auditResult === AUDIT_RESULT.APPROVED">
+              <div class="field">
+                <label class="label">商家等级</label>
+                <select v-model="auditForm.merchantLevel" class="input">
+                  <option v-for="opt in MERCHANT_LEVEL_OPTIONS" :key="opt.value" :value="opt.value">
+                    {{ opt.label }}
+                  </option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="label">分类</label>
+                <input v-model="auditForm.category" type="text" class="input" maxlength="50" placeholder="如：外卖" />
+              </div>
+              <div class="field">
+                <label class="label">营业时间</label>
+                <input
+                  v-model="auditForm.businessHours"
+                  type="text"
+                  class="input"
+                  maxlength="50"
+                  placeholder="如：08:00-22:00"
+                />
+              </div>
+              <p class="formHint">通过后将自动开通商家账号。配送费 / 满额免配送由商家自行设置，审核不干预。</p>
+            </template>
+            <div class="field">
+              <label class="label">备注（选填）</label>
+              <textarea v-model="auditForm.remark" class="textarea" rows="2" maxlength="200" placeholder="审核备注" />
+            </div>
+            <p v-if="formError" class="error">{{ formError }}</p>
+            <div class="modalFooter">
+              <button type="button" class="btnSecondary" @click="closeAuditModal">取消</button>
+              <button type="submit" class="btnPrimary" :disabled="formSubmitting">
+                {{ formSubmitting ? '提交中...' : '提交审核' }}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
       <div v-if="adQuotaModalOpen" class="modalOverlay" @click.self="closeAdQuotaModal">
         <div class="modal modalScroll" :class="{ mobileSheet: isMobile }">
           <div class="modalHeader">
@@ -571,6 +818,22 @@
           </div>
           <form class="modalBody" @submit.prevent="submitAdQuota">
             <p class="kickHint">为「{{ adQuotaTargetName }}」增加本周付费广告条数。</p>
+            <div v-if="adQuotaLoading" class="kickHint">正在查询当前额度...</div>
+            <div v-else-if="adQuotaCurrent" class="adQuotaResult">
+              <div class="adQuotaResultTitle">当前额度</div>
+              <div class="adQuotaResultRow">
+                <span>周期</span>
+                <strong>{{ adQuotaCurrent.weekStart || '—' }} ~ {{ adQuotaCurrent.weekEnd || '—' }}</strong>
+              </div>
+              <div class="adQuotaResultRow">
+                <span>免费 / 已购</span>
+                <strong>{{ adQuotaCurrent.freeQuota ?? 1 }} / {{ adQuotaCurrent.purchasedQuota ?? 0 }}</strong>
+              </div>
+              <div class="adQuotaResultRow">
+                <span>已用 / 剩余</span>
+                <strong>{{ adQuotaCurrent.usedCount ?? 0 }} / {{ adQuotaCurrent.remainingCount ?? 0 }}</strong>
+              </div>
+            </div>
             <div class="field">
               <label class="label">增加付费条数 <span class="required">*</span></label>
               <input
@@ -603,7 +866,7 @@
               <button type="button" class="btnSecondary" @click="closeAdQuotaModal">
                 {{ adQuotaResult ? '关闭' : '取消' }}
               </button>
-              <button v-if="!adQuotaResult" type="submit" class="btnPrimary" :disabled="formSubmitting">
+              <button v-if="!adQuotaResult" type="submit" class="btnPrimary" :disabled="formSubmitting || adQuotaLoading">
                 {{ formSubmitting ? '提交中...' : '确认增加' }}
               </button>
             </div>
@@ -616,10 +879,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import IconSvg from '../components/IconSvg.vue'
+import MediaUploader from '../components/MediaUploader.vue'
 import SegmentedControl from '../components/SegmentedControl.vue'
-import { merchantApi, merchantAdAdminApi, propertyCompanyApi } from '../api/services'
+import { merchantApi, merchantAdAdminApi, merchantRecommendApi, coinWithdrawalAdminApi, propertyCompanyApi } from '../api/services'
 import type {
   MerchantAdQuota,
+  MerchantAuditPayload,
   MerchantItem,
   MerchantUpdatePayload,
   PlatformMerchantCreatePayload,
@@ -637,14 +902,22 @@ import {
 } from '../api/mappers'
 import { ApiError } from '../api/request'
 import {
+  AUDIT_RESULT,
   ENTITY_STATUS,
+  MERCHANT_AUDIT_STATUS,
   MERCHANT_AUDIT_STATUS_LABEL,
   MERCHANT_AUDIT_STATUS_OPTIONS,
+  MERCHANT_LEVEL,
   MERCHANT_LEVEL_LABEL,
+  MERCHANT_LEVEL_OPTIONS,
+  MERCHANT_SOURCE_LABEL,
   MERCHANT_STATUS,
   MERCHANT_STATUS_LABEL,
   PLATFORM_MERCHANT_STATUS_OPTIONS,
+  PROPERTY_COIN_SOURCE,
   USER_ROLE,
+  DELIVERY_SCOPE_LABEL,
+  DISTANCE_TYPE_LABEL,
   getEnumLabel
 } from '../constants/enums'
 import { useAuthStore } from '../stores/auth'
@@ -663,6 +936,9 @@ const canKick = computed(
   () => auth.profile?.role === USER_ROLE.PROPERTY_ADMIN || auth.profile?.role === USER_ROLE.PLATFORM_ADMIN
 )
 const canManageAdQuota = computed(
+  () => auth.profile?.role === USER_ROLE.PROPERTY_ADMIN || auth.profile?.role === USER_ROLE.PLATFORM_ADMIN
+)
+const canGrantMerchantCoin = computed(
   () => auth.profile?.role === USER_ROLE.PROPERTY_ADMIN || auth.profile?.role === USER_ROLE.PLATFORM_ADMIN
 )
 const viewTabs = [
@@ -686,6 +962,8 @@ const searchKeyword = ref('')
 const appliedKeyword = ref('')
 const selectedCategory = ref('')
 const selectedAuditStatus = ref('')
+const onlyOfficialRecommended = ref('')
+const recommendSortDraft = ref(0)
 const selectedPlatformStatus = ref('')
 const mobileFilterOpen = ref(false)
 const categoryOptions = ref<string[]>([])
@@ -703,6 +981,7 @@ const editLoading = ref(false)
 const formSubmitting = ref(false)
 const formError = ref('')
 const detailData = ref<MerchantItem | null>(null)
+const editSnapshot = ref<MerchantItem | null>(null)
 const editingId = ref('')
 
 const platformFormModalOpen = ref(false)
@@ -731,11 +1010,38 @@ const kickForm = ref({
   notifyMerchant: true
 })
 
+const earnModalOpen = ref(false)
+const earnSubmitting = ref(false)
+const earnError = ref('')
+const earnSuccess = ref('')
+const earnTargetId = ref('')
+const earnTargetName = ref('')
+const earnForm = ref({
+  coinAmount: undefined as number | undefined,
+  description: ''
+})
+
+const auditModalOpen = ref(false)
+const auditTargetId = ref('')
+const auditTargetName = ref('')
+const auditForm = ref({
+  auditResult: AUDIT_RESULT.APPROVED as string,
+  merchantLevel: MERCHANT_LEVEL.PROPERTY_CERTIFIED,
+  category: '',
+  businessHours: '',
+  rejectReason: '',
+  remark: ''
+})
+
 const adQuotaModalOpen = ref(false)
 const adQuotaTargetId = ref('')
 const adQuotaTargetName = ref('')
 const adQuotaPurchased = ref<number | ''>(1)
 const adQuotaResult = ref<MerchantAdQuota | null>(null)
+const adQuotaCurrent = ref<MerchantAdQuota | null>(null)
+const adQuotaLoading = ref(false)
+const recommendSubmittingId = ref('')
+const withdrawBlockSubmitting = ref(false)
 
 const editForm = ref({
   name: '',
@@ -746,7 +1052,7 @@ const editForm = ref({
   deliveryFee: '' as string | number,
   freeDeliveryThreshold: '' as string | number,
   rankOrder: undefined as number | undefined,
-  coverUrlsText: '',
+  coverUrls: [] as string[],
   videoUrl: ''
 })
 
@@ -792,7 +1098,7 @@ const profitMerchantOptions = computed(() => {
   return options.sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
 })
 
-const detailRows = computed(() => {
+const detailBasicRows = computed(() => {
   const d = detailData.value
   if (!d) return []
   return [
@@ -800,18 +1106,76 @@ const detailRows = computed(() => {
     { label: '平台商家 ID', value: d.platformMerchantId || '—' },
     { label: '分类', value: d.category || '—' },
     { label: '等级', value: getEnumLabel(MERCHANT_LEVEL_LABEL, d.merchantLevel) },
+    { label: '商家来源', value: getEnumLabel(MERCHANT_SOURCE_LABEL, d.merchantSource) },
+    { label: '等级权重', value: d.levelWeight !== undefined ? String(d.levelWeight) : '—' },
     { label: '审核状态', value: getEnumLabel(MERCHANT_AUDIT_STATUS_LABEL, d.auditStatus) },
     { label: '营业状态', value: getEnumLabel(MERCHANT_STATUS_LABEL, d.status, '—') },
     { label: '联系电话', value: d.contactPhone || '—' },
     { label: '地址', value: d.address || '—' },
-    { label: '营业时间', value: d.businessHours || '—' },
-    { label: '配送费', value: d.deliveryFee !== undefined ? `¥${formatMoney(Number(d.deliveryFee))}` : '—' },
-    { label: '满额免配送', value: d.freeDeliveryThreshold !== undefined ? `¥${formatMoney(Number(d.freeDeliveryThreshold))}` : '—' },
-    { label: '返现比例', value: d.coinRebateRate !== undefined ? `${formatPercent(d.coinRebateRate)}%` : '—' },
+    { label: '营业时间', value: d.businessHours || '—' }
+  ]
+})
+
+const detailDeliveryRows = computed(() => {
+  const d = detailData.value
+  if (!d) return []
+  return [
+    { label: '配送费', value: d.deliveryFee !== undefined && d.deliveryFee !== null && d.deliveryFee !== '' ? `¥${formatMoney(Number(d.deliveryFee))}` : '未设置' },
+    { label: '满额免配送', value: d.freeDeliveryThreshold !== undefined && d.freeDeliveryThreshold !== null && d.freeDeliveryThreshold !== '' ? `¥${formatMoney(Number(d.freeDeliveryThreshold))}` : '未设置' },
+    { label: '配送范围', value: getEnumLabel(DELIVERY_SCOPE_LABEL, d.deliveryScope, '—') },
+    { label: '配送距离', value: getEnumLabel(DISTANCE_TYPE_LABEL, d.distanceType, '—') },
     { label: '排序权重', value: d.rankOrder !== undefined ? String(d.rankOrder) : '—' },
+    { label: '官方推荐', value: d.isOfficialRecommended ? `是${d.recommendedSort != null ? `（排序 ${d.recommendedSort}）` : ''}` : '否' }
+  ]
+})
+
+const detailFinanceRows = computed(() => {
+  const d = detailData.value
+  if (!d) return []
+  return [
+    { label: '分成比例', value: d.commissionRate !== undefined && d.commissionRate !== null ? `${formatPercent(d.commissionRate)}%` : '—（接口未返回）' },
+    { label: '积分兑换比例', value: d.pointExchangeRate !== undefined && d.pointExchangeRate !== null ? `1元=${d.pointExchangeRate}积分` : '—（接口未返回）' },
+    { label: '返现开关', value: d.coinRebateEnabled === true ? '开启' : d.coinRebateEnabled === false ? '关闭' : '—（接口未返回）' },
+    { label: '返现比例', value: d.coinRebateRate !== undefined ? `${formatPercent(d.coinRebateRate)}%` : '—（接口未返回）' },
+    { label: '会员优惠价', value: d.memberDiscountPrice != null && d.memberDiscountPrice !== '' ? `${d.memberDiscountPrice} 元` : '—' },
+    { label: '累计订单', value: d.totalOrders !== undefined ? String(d.totalOrders) : '—（接口未返回）' },
+    { label: '累计营收', value: d.totalRevenue !== undefined ? `¥${formatMoney(Number(d.totalRevenue))}` : '—（接口未返回）' },
+    { label: '可提现余额', value: d.withdrawableAmount !== undefined ? `¥${formatMoney(Number(d.withdrawableAmount))}` : '—' },
+    { label: '提现阻止', value: d.withdrawalBlocked === true ? '已阻止' : d.withdrawalBlocked === false ? '正常' : '—' }
+  ]
+})
+
+const detailMissingFinance = computed(() =>
+  detailFinanceRows.value.some((row) => String(row.value).includes('接口未返回'))
+)
+
+const detailOtherRows = computed(() => {
+  const d = detailData.value
+  if (!d) return []
+  const coverText = Array.isArray(d.coverUrls) && d.coverUrls.length
+    ? d.coverUrls.join(', ')
+    : '—'
+  return [
+    { label: '二维码', value: d.qrCodeUrl || '—' },
+    { label: '封面图', value: coverText },
+    { label: '视频', value: d.videoUrl || '—' },
     { label: '描述', value: d.description || '—' },
     { label: '创建时间', value: d.createdAt || '—' },
     { label: '更新时间', value: d.updatedAt || '—' }
+  ]
+})
+
+const editReadonlyRows = computed(() => {
+  const d = editSnapshot.value
+  if (!d) return []
+  return [
+    { label: '配送费', value: d.deliveryFee !== undefined && d.deliveryFee !== null && d.deliveryFee !== '' ? `¥${formatMoney(Number(d.deliveryFee))}` : '未设置' },
+    { label: '满额免配送', value: d.freeDeliveryThreshold !== undefined && d.freeDeliveryThreshold !== null && d.freeDeliveryThreshold !== '' ? `¥${formatMoney(Number(d.freeDeliveryThreshold))}` : '未设置' },
+    { label: '分成比例', value: d.commissionRate !== undefined && d.commissionRate !== null ? `${formatPercent(d.commissionRate)}%` : '—（接口未返回）' },
+    { label: '积分兑换比例', value: d.pointExchangeRate !== undefined && d.pointExchangeRate !== null ? `1元=${d.pointExchangeRate}积分` : '—（接口未返回）' },
+    { label: '返现比例', value: d.coinRebateRate !== undefined ? `${formatPercent(d.coinRebateRate)}%` : '—（接口未返回）' },
+    { label: '累计订单', value: d.totalOrders !== undefined ? String(d.totalOrders) : '—（接口未返回）' },
+    { label: '累计营收', value: d.totalRevenue !== undefined ? `¥${formatMoney(Number(d.totalRevenue))}` : '—（接口未返回）' }
   ]
 })
 
@@ -895,15 +1259,21 @@ async function loadMerchants(page = currentPage.value) {
   }
   loading.value = true
   try {
-    const res = await merchantApi.list({
-      page,
-      pageSize: PAGE_SIZE,
-      keyword: appliedKeyword.value || undefined,
-      category: selectedCategory.value || undefined,
-      auditStatus: selectedAuditStatus.value || undefined,
-      propertyCompanyId: selectedPropertyCompanyId.value,
-      sort: '-rankOrder'
-    })
+    const res = onlyOfficialRecommended.value === '1'
+      ? await merchantRecommendApi.listOfficial({
+          page,
+          pageSize: PAGE_SIZE,
+          propertyCompanyId: selectedPropertyCompanyId.value
+        })
+      : await merchantApi.list({
+          page,
+          pageSize: PAGE_SIZE,
+          keyword: appliedKeyword.value || undefined,
+          category: selectedCategory.value || undefined,
+          auditStatus: selectedAuditStatus.value || undefined,
+          propertyCompanyId: selectedPropertyCompanyId.value,
+          sort: '-rankOrder'
+        })
     const list = res.list || []
     list.forEach(item => {
       merchantListCache.value[item.id] = item
@@ -1066,6 +1436,7 @@ async function openDetailModal(id: string, listCategory?: string) {
   resetFormError()
   const cached = merchantListCache.value[id]
   detailData.value = cached ? { ...cached } : null
+  recommendSortDraft.value = cached?.recommendedSort ?? 100
   detailModalOpen.value = true
   detailLoading.value = true
   try {
@@ -1074,6 +1445,7 @@ async function openDetailModal(id: string, listCategory?: string) {
       ...data,
       category: resolveCategory(id, data.category || listCategory)
     }
+    recommendSortDraft.value = data.recommendedSort ?? recommendSortDraft.value
   } catch (e) {
     formError.value = resolveErrorMessage(e)
   } finally {
@@ -1090,10 +1462,12 @@ function closeDetailModal() {
 async function openEditModal(id: string) {
   resetFormError()
   editingId.value = id
+  editSnapshot.value = null
   editModalOpen.value = true
   editLoading.value = true
   try {
     const data = await merchantApi.get(id, selectedPropertyCompanyId.value || undefined)
+    editSnapshot.value = data
     editForm.value = {
       name: data.name || '',
       description: data.description || '',
@@ -1103,7 +1477,7 @@ async function openEditModal(id: string) {
       deliveryFee: data.deliveryFee ?? '',
       freeDeliveryThreshold: data.freeDeliveryThreshold ?? '',
       rankOrder: data.rankOrder,
-      coverUrlsText: (data.coverUrls || []).join(', '),
+      coverUrls: data.coverUrls?.length ? [...data.coverUrls] : [],
       videoUrl: data.videoUrl || ''
     }
   } catch (e) {
@@ -1116,6 +1490,7 @@ async function openEditModal(id: string) {
 function closeEditModal() {
   editModalOpen.value = false
   editingId.value = ''
+  editSnapshot.value = null
   resetFormError()
 }
 
@@ -1124,18 +1499,13 @@ async function submitEdit() {
   resetFormError()
   formSubmitting.value = true
   try {
-    const coverUrls = editForm.value.coverUrlsText
-      .split(',')
-      .map(s => s.trim())
-      .filter(Boolean)
+    const coverUrls = editForm.value.coverUrls.filter((s) => s.trim())
     const payload: MerchantUpdatePayload = {
       name: editForm.value.name.trim() || undefined,
       description: editForm.value.description.trim() || undefined,
       contactPhone: editForm.value.contactPhone.trim() || undefined,
       businessHours: editForm.value.businessHours.trim() || undefined,
       address: editForm.value.address.trim() || undefined,
-      deliveryFee: editForm.value.deliveryFee !== '' ? editForm.value.deliveryFee : undefined,
-      freeDeliveryThreshold: editForm.value.freeDeliveryThreshold !== '' ? editForm.value.freeDeliveryThreshold : undefined,
       rankOrder: editForm.value.rankOrder,
       coverUrls: coverUrls.length ? coverUrls : undefined,
       videoUrl: editForm.value.videoUrl.trim() || undefined
@@ -1275,6 +1645,126 @@ function closeKickModal() {
   resetFormError()
 }
 
+function openEarnModal(id: string, name: string) {
+  earnTargetId.value = id
+  earnTargetName.value = name
+  earnForm.value = { coinAmount: undefined, description: '' }
+  earnError.value = ''
+  earnSuccess.value = ''
+  earnSubmitting.value = false
+  earnModalOpen.value = true
+}
+
+function closeEarnModal() {
+  earnModalOpen.value = false
+  earnTargetId.value = ''
+  earnTargetName.value = ''
+  earnForm.value = { coinAmount: undefined, description: '' }
+  earnError.value = ''
+  earnSuccess.value = ''
+  earnSubmitting.value = false
+}
+
+async function submitEarnModal() {
+  if (!earnTargetId.value) return
+  const coinAmount = Number(earnForm.value.coinAmount)
+  if (!coinAmount || coinAmount < 0.01) {
+    earnError.value = '发放金额须不少于 0.01'
+    earnSuccess.value = ''
+    return
+  }
+
+  earnSubmitting.value = true
+  earnError.value = ''
+  earnSuccess.value = ''
+  try {
+    const description = earnForm.value.description.trim()
+    const result = await merchantApi.earnCoin(earnTargetId.value, {
+      coinAmount,
+      source: PROPERTY_COIN_SOURCE.MANUAL,
+      description: description || undefined
+    })
+    const balance = result.newBalance ?? result.balance
+    const name = earnTargetName.value || '该商家'
+    earnSuccess.value =
+      balance !== undefined
+        ? `已向「${name}」发放 ${formatMoney(coinAmount)} 物业币，关联账户余额 ¥${formatMoney(balance)}`
+        : `已向「${name}」发放 ${formatMoney(coinAmount)} 物业币`
+    setTimeout(closeEarnModal, 1500)
+  } catch (e) {
+    earnError.value = resolveErrorMessage(e)
+  } finally {
+    earnSubmitting.value = false
+  }
+}
+
+function canAuditMerchant(id: string) {
+  const raw = merchantListCache.value[id]
+  return !!raw && raw.auditStatus === MERCHANT_AUDIT_STATUS.PENDING
+}
+
+function openAuditModal(id: string, name: string) {
+  const raw = merchantListCache.value[id]
+  if (!raw || raw.auditStatus !== MERCHANT_AUDIT_STATUS.PENDING) {
+    formError.value = '该商家已审核，不可重复操作'
+    return
+  }
+  resetFormError()
+  auditTargetId.value = id
+  auditTargetName.value = name
+  auditForm.value = {
+    auditResult: AUDIT_RESULT.APPROVED,
+    merchantLevel: raw.merchantLevel || MERCHANT_LEVEL.PROPERTY_CERTIFIED,
+    category: raw.category || '',
+    businessHours: raw.businessHours || '',
+    rejectReason: '',
+    remark: ''
+  }
+  auditModalOpen.value = true
+}
+
+function closeAuditModal() {
+  auditModalOpen.value = false
+  auditTargetId.value = ''
+  auditTargetName.value = ''
+  resetFormError()
+}
+
+async function submitAudit() {
+  if (!auditTargetId.value) return
+  const raw = merchantListCache.value[auditTargetId.value]
+  if (!raw || raw.auditStatus !== MERCHANT_AUDIT_STATUS.PENDING) {
+    formError.value = '该商家已审核，不可重复操作'
+    return
+  }
+  if (auditForm.value.auditResult === AUDIT_RESULT.REJECTED && !auditForm.value.rejectReason.trim()) {
+    formError.value = '请填写拒绝原因'
+    return
+  }
+  resetFormError()
+  formSubmitting.value = true
+  try {
+    const payload: MerchantAuditPayload = {
+      auditResult: auditForm.value.auditResult as typeof AUDIT_RESULT.APPROVED
+    }
+    if (auditForm.value.remark.trim()) payload.remark = auditForm.value.remark.trim()
+    if (auditForm.value.auditResult === AUDIT_RESULT.REJECTED) {
+      payload.rejectReason = auditForm.value.rejectReason.trim()
+    } else {
+      payload.merchantLevel = auditForm.value.merchantLevel
+      if (auditForm.value.category.trim()) payload.category = auditForm.value.category.trim()
+      if (auditForm.value.businessHours.trim()) payload.businessHours = auditForm.value.businessHours.trim()
+    }
+    await merchantApi.audit(auditTargetId.value, payload)
+    closeAuditModal()
+    await loadMerchants(currentPage.value)
+  } catch (e) {
+    formError.value = resolveErrorMessage(e)
+  } finally {
+    formSubmitting.value = false
+  }
+}
+
 async function submitKick() {
   if (!kickTargetId.value) return
   if (!kickForm.value.reason.trim()) {
@@ -1297,13 +1787,22 @@ async function submitKick() {
   }
 }
 
-function openAdQuotaModal(id: string, name: string) {
+async function openAdQuotaModal(id: string, name: string) {
   resetFormError()
   adQuotaTargetId.value = id
   adQuotaTargetName.value = name
   adQuotaPurchased.value = 1
   adQuotaResult.value = null
+  adQuotaCurrent.value = null
   adQuotaModalOpen.value = true
+  adQuotaLoading.value = true
+  try {
+    adQuotaCurrent.value = await merchantAdAdminApi.getQuota(id)
+  } catch (e) {
+    formError.value = resolveErrorMessage(e)
+  } finally {
+    adQuotaLoading.value = false
+  }
 }
 
 function closeAdQuotaModal() {
@@ -1312,6 +1811,7 @@ function closeAdQuotaModal() {
   adQuotaTargetName.value = ''
   adQuotaPurchased.value = 1
   adQuotaResult.value = null
+  adQuotaCurrent.value = null
   resetFormError()
 }
 
@@ -1326,10 +1826,59 @@ async function submitAdQuota() {
   formSubmitting.value = true
   try {
     adQuotaResult.value = await merchantAdAdminApi.addQuota(adQuotaTargetId.value, amount)
+    adQuotaCurrent.value = adQuotaResult.value
   } catch (e) {
     formError.value = resolveErrorMessage(e)
   } finally {
     formSubmitting.value = false
+  }
+}
+
+async function toggleRecommend(merchant: MerchantItem) {
+  if (!merchant.id || recommendSubmittingId.value) return
+  const next = !merchant.isOfficialRecommended
+  const sort = Number(recommendSortDraft.value)
+  recommendSubmittingId.value = merchant.id
+  resetFormError()
+  try {
+    await merchantRecommendApi.set(merchant.id, {
+      isRecommended: next,
+      recommendedSort: next ? (Number.isFinite(sort) ? sort : 100) : 0
+    })
+    if (detailData.value?.id === merchant.id) {
+      detailData.value = {
+        ...detailData.value,
+        isOfficialRecommended: next,
+        recommendedSort: next ? (Number.isFinite(sort) ? sort : 100) : undefined
+      }
+    }
+    await loadMerchants(currentPage.value)
+  } catch (e) {
+    formError.value = resolveErrorMessage(e)
+  } finally {
+    recommendSubmittingId.value = ''
+  }
+}
+
+async function toggleMerchantWithdrawBlock(merchant: MerchantItem) {
+  if (!merchant.id || withdrawBlockSubmitting.value) return
+  const nextBlocked = !merchant.withdrawalBlocked
+  const reason = nextBlocked ? window.prompt('请输入阻止提现原因（可选）') || undefined : undefined
+  withdrawBlockSubmitting.value = true
+  resetFormError()
+  try {
+    await coinWithdrawalAdminApi.blockMerchant(merchant.id, {
+      blocked: nextBlocked,
+      reason
+    })
+    if (detailData.value?.id === merchant.id) {
+      detailData.value = { ...detailData.value, withdrawalBlocked: nextBlocked }
+    }
+    await loadMerchants(currentPage.value)
+  } catch (e) {
+    formError.value = resolveErrorMessage(e)
+  } finally {
+    withdrawBlockSubmitting.value = false
   }
 }
 
@@ -1495,8 +2044,33 @@ onMounted(async () => {
 .textarea { resize: vertical; min-height: 80px; font-family: inherit; }
 .input:focus, .textarea:focus { border-color: #5c5c9e; }
 .error { font-size: 13px; color: #e05c5c; margin-bottom: 12px; }
+.success { font-size: 13px; color: #3aaf7d; margin-bottom: 12px; }
+.readonly {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f5f5f7;
+  color: #5c5c66;
+  font-size: 14px;
+}
+.formHint { font-size: 12px; color: #8c8c9a; margin: 0 0 12px; line-height: 1.5; }
+.field .input:disabled { background: #f5f5f7; color: #8c8c9a; cursor: not-allowed; }
 .loadingText { text-align: center; color: #8c8c9a; padding: 24px 0; }
 .detailGrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px 24px; margin-bottom: 8px; }
+.detailSection { margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #f0f0f3; }
+.detailSection:last-of-type { border-bottom: none; margin-bottom: 8px; }
+.detailSectionTitle { margin: 0 0 12px; font-size: 14px; font-weight: 600; color: #1f1f2e; }
+.detailHint { margin: 0 0 12px; font-size: 12px; color: #d48806; line-height: 1.5; background: #fffbe6; border: 1px solid #ffe58f; border-radius: 8px; padding: 8px 10px; }
+.mutedValue { color: #8c8c9a; }
+.recommendSortRow { margin: 8px 0 12px; display: flex; flex-direction: column; gap: 6px; }
+.recommendSortRow .label { font-size: 13px; color: #5c5c66; }
+.recommendSortRow .sortInput { max-width: 180px; }
+.readonlyBlock {
+  margin-bottom: 20px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: #fafafc;
+  border: 1px solid #f0f0f3;
+}
 .detailItem { display: flex; flex-direction: column; gap: 4px; }
 .detailLabel { font-size: 12px; color: #8c8c9a; }
 .detailValue { font-size: 14px; color: #1f1f2e; word-break: break-all; }

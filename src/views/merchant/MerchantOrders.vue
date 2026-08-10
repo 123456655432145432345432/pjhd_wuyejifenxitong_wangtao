@@ -3,7 +3,7 @@
     <div class="header">
       <div>
         <h1 class="title">订单管理</h1>
-        <p class="desc">查看和处理店铺订单</p>
+        <p class="desc">查看和处理店铺订单。支付成功后系统会自动进入配送大厅；订单「确认完成」后本单收入立即计入可提现。</p>
       </div>
     </div>
 
@@ -12,21 +12,23 @@
         <option value="">全部状态</option>
         <option v-for="opt in ORDER_STATUS_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
       </select>
-      <input
-        v-model="filters.startDate"
-        type="date"
-        class="input dateInput"
-        :class="{ empty: !filters.startDate }"
-        @change="reload"
-      />
-      <span class="sep">至</span>
-      <input
-        v-model="filters.endDate"
-        type="date"
-        class="input dateInput"
-        :class="{ empty: !filters.endDate }"
-        @change="reload"
-      />
+      <div class="dateRange">
+        <input
+          v-model="filters.startDate"
+          type="date"
+          class="input dateInput"
+          :class="{ empty: !filters.startDate }"
+          @change="reload"
+        />
+        <span class="sep">至</span>
+        <input
+          v-model="filters.endDate"
+          type="date"
+          class="input dateInput"
+          :class="{ empty: !filters.endDate }"
+          @change="reload"
+        />
+      </div>
       <button class="btnGhost" :disabled="loading" @click="reload">查询</button>
     </div>
 
@@ -52,6 +54,14 @@
               <button class="linkBtn" @click="openDetail(order.id)">详情</button>
               <button class="linkBtn" :disabled="sendId === order.id || !canSendDelivery(order) || hasCourier(order)" @click="sendDeliveryTask(order.id)">{{ sendId === order.id ? '发送中...' : '发送任务' }}</button>
               <button class="linkBtn" :disabled="actionId === order.id || !canDeliver(order) || hasCourier(order)" @click="openAssign(order.id, order.deliveryId ?? undefined)">{{ actionId === order.id ? '处理中...' : '开始配送' }}</button>
+              <button
+                v-if="canCompleteOrder(order)"
+                class="linkBtn"
+                :disabled="completeId === order.id"
+                @click="completeOrder(order.id)"
+              >
+                {{ completeId === order.id ? '完成中...' : '确认完成' }}
+              </button>
             </div>
           </article>
         </div>
@@ -102,6 +112,14 @@
                     @click="openAssign(order.id, order.deliveryId ?? undefined)"
                   >
                     {{ actionId === order.id ? '处理中...' : '开始配送' }}
+                  </button>
+                  <button
+                    v-if="canCompleteOrder(order)"
+                    class="linkBtn"
+                    :disabled="completeId === order.id"
+                    @click="completeOrder(order.id)"
+                  >
+                    {{ completeId === order.id ? '完成中...' : '确认完成' }}
                   </button>
                 </div>
               </td>
@@ -204,6 +222,63 @@
               </section>
 
               <section class="section">
+                <h4 class="sectionTitle">分账预览（B方案·账面试算）</h4>
+                <p class="calcHint">调用 /distribution/calculate（含配送费），仅供预览，非已到账。</p>
+                <p v-if="calcLoading" class="muted">试算中...</p>
+                <p v-else-if="calcError" class="error">{{ calcError }}</p>
+                <template v-else-if="calcResult">
+                  <ul class="infoGrid">
+                    <li v-if="calcResult.productAmount != null">
+                      <span>商品价</span>
+                      <strong>¥{{ formatMoney(calcResult.productAmount) }}</strong>
+                    </li>
+                    <li v-if="calcResult.deliveryFee != null">
+                      <span>配送费</span>
+                      <strong>¥{{ formatMoney(calcResult.deliveryFee) }}</strong>
+                    </li>
+                    <li><span>抽佣比例</span><strong>{{ formatRate(calcResult.commissionRate) }}</strong></li>
+                    <li><span>预计商家份额</span><strong>¥{{ formatMoney(calcResult.merchantShare) }}</strong></li>
+                    <li>
+                      <span>抽佣基础额</span>
+                      <strong>¥{{ formatMoney(calcResult.commissionBaseAmount) }}</strong>
+                    </li>
+                    <li><span>积分成本</span><strong>¥{{ formatMoney(calcResult.pointCost) }}</strong></li>
+                    <li><span>物业币成本</span><strong>¥{{ formatMoney(calcResult.coinCost) }}</strong></li>
+                    <li>
+                      <span>实际可分配平台盘</span>
+                      <strong>¥{{ formatMoney(calcResult.distributableAmount) }}</strong>
+                    </li>
+                    <li><span>我们公司</span><strong>¥{{ formatMoney(calcResult.platformShare) }}</strong></li>
+                    <li><span>物业</span><strong>¥{{ formatMoney(calcResult.propertyShare) }}</strong></li>
+                    <li v-if="calcResult.coordinatorShare != null">
+                      <span>统筹</span>
+                      <strong>¥{{ formatMoney(calcResult.coordinatorShare) }}</strong>
+                    </li>
+                    <li v-if="calcResult.sectorLeaderShare != null">
+                      <span>板块负责人</span>
+                      <strong>¥{{ formatMoney(calcResult.sectorLeaderShare) }}</strong>
+                    </li>
+                    <li v-if="calcResult.individualLeaderShare != null">
+                      <span>个体负责人</span>
+                      <strong>¥{{ formatMoney(calcResult.individualLeaderShare) }}</strong>
+                    </li>
+                    <li v-if="calcResult.platformDeliveryShare != null">
+                      <span>配送费·我们公司</span>
+                      <strong>¥{{ formatMoney(calcResult.platformDeliveryShare) }}</strong>
+                    </li>
+                    <li>
+                      <span>配送费·配送员</span>
+                      <strong>¥{{ formatMoney(calcResult.courierShare) }}</strong>
+                    </li>
+                  </ul>
+                  <p class="calcHint">
+                    商品价 → 商家 vs 平台盘（我们公司/物业/统筹·板块·个体）；配送费单独拆给我们公司与配送员。
+                  </p>
+                </template>
+                <p v-else class="muted">暂无试算结果</p>
+              </section>
+
+              <section class="section">
                 <h4 class="sectionTitle">配送与进度</h4>
                 <ul class="infoGrid">
                   <li><span>配送员</span><strong>{{ detail.courierName || '—' }}</strong></li>
@@ -232,6 +307,14 @@
               @click="markDeliveringFromDetail"
             >
               {{ actionId === detail.id ? '处理中...' : '开始配送' }}
+            </button>
+            <button
+              v-if="canCompleteOrder(detail)"
+              class="btnPrimary"
+              :disabled="completeId === detail.id"
+              @click="completeOrder(detail.id)"
+            >
+              {{ completeId === detail.id ? '完成中...' : '确认完成' }}
             </button>
           </div>
         </div>
@@ -279,9 +362,9 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { merchantPortalApi } from '../../api/services'
-import type { DeliveryTaskItem, OrderItem } from '../../api/types'
-import { ApiError } from '../../api/request'
+import { distributionApi, merchantPortalApi } from '../../api/services'
+import type { DeliveryTaskItem, DistributionCalculateResult, OrderItem } from '../../api/types'
+import { ApiError, formatApiError } from '../../api/request'
 import {
   getEnumLabel,
   ORDER_STATUS,
@@ -302,12 +385,16 @@ const totalPages = ref(1)
 const total = ref(0)
 const actionId = ref('')
 const sendId = ref('')
+const completeId = ref('')
 const filters = reactive({ orderStatus: '', startDate: '', endDate: '' })
 
 const detailOpen = ref(false)
 const detailLoading = ref(false)
 const detailError = ref('')
 const detail = ref<OrderItem | null>(null)
+const calcLoading = ref(false)
+const calcError = ref('')
+const calcResult = ref<DistributionCalculateResult | null>(null)
 
 /** 快递员指配弹窗 */
 const assignOpen = ref(false)
@@ -320,6 +407,11 @@ const assignTarget = ref<{ orderId: string; deliveryId: string } | null>(null)
 function formatMoney(value?: number | null) {
   if (value === undefined || value === null) return '0.00'
   return Number(value).toFixed(2)
+}
+
+function formatRate(rate?: number | null) {
+  if (rate === undefined || rate === null || Number.isNaN(Number(rate))) return '—'
+  return `${(Number(rate) * 100).toFixed(2)}%`
 }
 
 function orderStatus(order: OrderItem) {
@@ -373,6 +465,11 @@ function hasCourier(order: OrderItem) {
   return !!(order.courierId || order.courierName)
 }
 
+/** 配送中可确认完成 → PATCH orderStatus=completed，本单收入计入可提现 */
+function canCompleteOrder(order: OrderItem) {
+  return orderStatus(order) === ORDER_STATUS.DELIVERING
+}
+
 async function load(pageNo = 1) {
   loading.value = true
   error.value = ''
@@ -410,8 +507,11 @@ async function openDetail(id: string) {
   detailLoading.value = true
   detailError.value = ''
   detail.value = null
+  calcResult.value = null
+  calcError.value = ''
   try {
     detail.value = await merchantPortalApi.getOrder(id)
+    void loadCalculatePreview(detail.value)
   } catch (e) {
     detailError.value = e instanceof ApiError ? e.message : '订单详情加载失败'
   } finally {
@@ -419,10 +519,46 @@ async function openDetail(id: string) {
   }
 }
 
+async function loadCalculatePreview(order: OrderItem) {
+  let merchantId = order.merchantId
+  if (!merchantId) {
+    try {
+      const me = await merchantPortalApi.my()
+      merchantId = me?.id
+    } catch {
+      /* ignore */
+    }
+  }
+  const totalAmount = Number(order.totalAmount)
+  if (!merchantId || !Number.isFinite(totalAmount) || totalAmount <= 0) {
+    calcError.value = '缺少商家或金额，无法试算'
+    return
+  }
+  calcLoading.value = true
+  calcError.value = ''
+  try {
+    calcResult.value = await distributionApi.calculate({
+      merchantId,
+      totalAmount,
+      deliveryFee: order.deliveryFee != null ? Number(order.deliveryFee) : undefined,
+      pointUsed: order.pointUsed != null ? Number(order.pointUsed) : undefined,
+      coinUsed: order.coinUsed != null ? Number(order.coinUsed) : undefined
+    })
+  } catch (e) {
+    calcResult.value = null
+    calcError.value = formatApiError(e, '分账试算失败')
+  } finally {
+    calcLoading.value = false
+  }
+}
+
 function closeDetail() {
   detailOpen.value = false
   detail.value = null
   detailError.value = ''
+  calcResult.value = null
+  calcError.value = ''
+  calcLoading.value = false
 }
 
 /** 打开快递员指配弹窗 */
@@ -517,6 +653,33 @@ async function sendDeliveryFromDetail() {
   await sendDeliveryTask(detail.value.id)
 }
 
+async function completeOrder(id: string) {
+  if (completeId.value) return
+  if (!window.confirm('确认将该订单标记为已完成？完成后本单收入将计入可提现。')) return
+  completeId.value = id
+  error.value = ''
+  success.value = ''
+  try {
+    const order = await merchantPortalApi.completeOrder(id)
+    // 入账触发：订单 completed 后立刻以接口返回为准刷新可提现（勿本地累加）
+    const wallet = await merchantPortalApi.my().catch(() => null)
+    const withdrawable = wallet?.withdrawableAmount
+    const revenue = wallet?.totalRevenue
+    success.value =
+      withdrawable != null
+        ? `订单已完成。可提现 ¥${formatMoney(Number(withdrawable))}${revenue != null ? ` · 累计收入 ¥${formatMoney(Number(revenue))}` : ''}`
+        : '订单已完成，请打开提现页确认可提现余额'
+    await load(page.value)
+    if (detail.value?.id === id) {
+      detail.value = order?.id ? order : await merchantPortalApi.getOrder(id)
+    }
+  } catch (e) {
+    error.value = e instanceof ApiError ? e.message : '确认完成失败'
+  } finally {
+    completeId.value = ''
+  }
+}
+
 onMounted(() => load(1))
 </script>
 
@@ -526,6 +689,7 @@ onMounted(() => load(1))
 .title { font-size: 24px; font-weight: 600; color: #1f1f2e; margin-bottom: 8px; }
 .desc { font-size: 14px; color: #8c8c9a; }
 .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.dateRange { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .select, .input { padding: 8px 12px; border: 1px solid #e8e8ec; border-radius: 8px; background: #fff; font-size: 14px; }
 .dateInput {
   padding: 6px 4px;
@@ -646,6 +810,7 @@ onMounted(() => load(1))
 .meta { font-size: 13px; color: #8c8c9a; }
 .section { margin-bottom: 20px; }
 .sectionTitle { font-size: 14px; font-weight: 600; color: #1f1f2e; margin-bottom: 12px; }
+.calcHint { margin: 0 0 10px; font-size: 12px; color: #8a6d1d; }
 .infoGrid { list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 10px 20px; }
 .infoGrid li { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #f7f7f9; }
 .infoGrid span { color: #8c8c9a; flex-shrink: 0; }
@@ -685,7 +850,13 @@ onMounted(() => load(1))
   .header { margin-bottom: 16px; }
   .toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .toolbar .select, .toolbar .btnGhost { width: 100%; min-height: 44px; }
-  .toolbar .dateInput { width: 100%; }
+  .toolbar .dateRange {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .toolbar .dateInput { width: 100%; min-width: 0; }
   .toolbar .sep { display: none; }
   .panel { padding: 14px; }
   .modalOverlay { align-items: flex-end; padding: 0; }

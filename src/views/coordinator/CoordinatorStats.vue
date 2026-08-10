@@ -28,6 +28,14 @@
     <p v-else-if="error" class="error">{{ error }}</p>
     <template v-else-if="stats">
       <div class="stats">
+        <div class="statCard">
+          <div class="label">总订单额</div>
+          <div class="value">¥{{ formatMoney(stats.summary?.totalOrderAmount) }}</div>
+        </div>
+        <div class="statCard green">
+          <div class="label">商家实得</div>
+          <div class="value">¥{{ formatMoney(stats.summary?.merchantAmount) }}</div>
+        </div>
         <div class="statCard purple">
           <div class="label">可分配总额</div>
           <div class="value">¥{{ formatMoney(stats.summary?.totalDistributableAmount) }}</div>

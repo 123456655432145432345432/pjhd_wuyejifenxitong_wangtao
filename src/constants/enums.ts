@@ -46,6 +46,44 @@ export const MERCHANT_STATUS_LABEL: Record<string, string> = {
   kicked: '已踢出'
 }
 
+/** 商家来源（v4.1 merchants.merchant_source） */
+export const MERCHANT_SOURCE = {
+  PLATFORM: 'platform',
+  GROUP_LEADER: 'group_leader',
+  TECHNICIAN: 'technician'
+} as const
+
+export const MERCHANT_SOURCE_LABEL: Record<string, string> = {
+  platform: '平台入驻',
+  group_leader: '组长小店',
+  technician: '技工档口'
+}
+
+export const MERCHANT_SOURCE_OPTIONS = [
+  { value: '', label: '全部来源' },
+  ...Object.entries(MERCHANT_SOURCE_LABEL).map(([value, label]) => ({ value, label }))
+]
+
+/** 社区服务提供者类型（GET /services?providerType=） */
+export const PROVIDER_TYPE = {
+  MERCHANT: 'merchant',
+  RESIDENT: 'resident',
+  INDIVIDUAL_LEADER: 'individual_leader',
+  TECHNICIAN: 'technician'
+} as const
+
+export const PROVIDER_TYPE_LABEL: Record<string, string> = {
+  merchant: '商家',
+  resident: '居民',
+  individual_leader: '个体负责人',
+  technician: '技工'
+}
+
+export const PROVIDER_TYPE_OPTIONS = [
+  { value: '', label: '全部提供者' },
+  ...Object.entries(PROVIDER_TYPE_LABEL).map(([value, label]) => ({ value, label }))
+]
+
 export const ANNOUNCEMENT_TYPE = {
   PROPERTY: 'property',
   COMMUNITY: 'community',
@@ -155,6 +193,38 @@ export const PAYMENT_METHOD_LABEL: Record<string, string> = {
   alipay: '支付宝'
 }
 
+/** 商家广告投放支付方式（§59 按天计价） */
+export const MERCHANT_AD_PAYMENT_METHOD = {
+  FREE: 'free',
+  COIN: 'coin',
+  POINT: 'point',
+  WECHAT: 'wechat',
+  MOCK: 'mock'
+} as const
+
+export const MERCHANT_AD_PAYMENT_METHOD_LABEL: Record<string, string> = {
+  free: '免费额度',
+  coin: '物业币',
+  point: '商家积分',
+  wechat: '微信支付',
+  mock: '模拟支付'
+}
+
+export const MERCHANT_AD_PAYMENT_METHOD_OPTIONS = Object.entries(
+  MERCHANT_AD_PAYMENT_METHOD_LABEL
+).map(([value, label]) => ({ value, label }))
+
+/** 业主商户对外展示（§60.9） */
+export const RESIDENT_SHOP_VISIBILITY = {
+  PUBLIC: 'public',
+  PRIVATE: 'private'
+} as const
+
+export const RESIDENT_SHOP_VISIBILITY_LABEL: Record<string, string> = {
+  public: '对外展示',
+  private: '不对外'
+}
+
 export const VOTE_OPTION = {
   SUPPORT: 'support',
   OPPOSE: 'oppose',
@@ -261,6 +331,26 @@ export const FILTER_GENDER_OPTIONS = Object.entries(FILTER_GENDER_LABEL).map(([v
   label
 }))
 
+/** 定向推送已读状态 */
+export const READ_STATUS = {
+  READ: 'read',
+  UNREAD: 'unread'
+} as const
+
+export const READ_STATUS_LABEL: Record<string, string> = {
+  read: '已读',
+  unread: '未读'
+}
+
+/** 住户 gender 数字编码 → 定向推送 FILTER_GENDER */
+export function normalizeFilterGender(value?: string | number | null): string | undefined {
+  if (value === null || value === undefined || value === '') return undefined
+  if (value === 1 || value === '1' || value === FILTER_GENDER.MALE) return FILTER_GENDER.MALE
+  if (value === 2 || value === '2' || value === FILTER_GENDER.FEMALE) return FILTER_GENDER.FEMALE
+  if (value === 0 || value === '0' || value === FILTER_GENDER.ALL) return undefined
+  return typeof value === 'string' ? value : undefined
+}
+
 /** 公告投递渠道 */
 export const DELIVERY_CHANNEL = {
   ANNOUNCEMENT_BOARD: 'announcement_board',
@@ -295,6 +385,7 @@ export const COMMUNITY_PERMISSION_LEVEL_OPTIONS = Object.entries(
 
 /** 商家消息服务半径 */
 export const SERVICE_RADIUS = {
+  KM1: '1km',
   KM3: '3km',
   KM5: '5km',
   DISTRICT: 'district',
@@ -302,6 +393,7 @@ export const SERVICE_RADIUS = {
 } as const
 
 export const SERVICE_RADIUS_LABEL: Record<string, string> = {
+  '1km': '1公里',
   '3km': '3公里',
   '5km': '5公里',
   district: '本区',
@@ -334,6 +426,23 @@ export const SERVICE_REQUEST_STATUS_LABEL: Record<string, string> = {
   cancelled: '已取消'
 }
 
+/** 技工工单状态 */
+export const TECHNICIAN_TASK_STATUS = {
+  PENDING: 'pending',
+  ASSIGNED: 'assigned',
+  IN_PROGRESS: 'in_progress',
+  COMPLETED: 'completed',
+  CANCELLED: 'cancelled'
+} as const
+
+export const TECHNICIAN_TASK_STATUS_LABEL: Record<string, string> = {
+  pending: '待接单',
+  assigned: '已分配',
+  in_progress: '进行中',
+  completed: '已完成',
+  cancelled: '已取消'
+}
+
 /** 咨询领域 */
 export const CONSULTATION_CATEGORY = {
   MEDICAL: 'medical',
@@ -357,12 +466,19 @@ export const PHASE2_ERROR_MESSAGE: Record<number, string> = {
   90102: '物业公司当日定向推送任务已达上限',
   90103: '今日新聊人数已达上限',
   90104: '商家响应已超时',
-  90105: '本周广告发布额度不足',
+  90105: '本周免费额度已用完，请选择付费投放',
   90106: '保证金未缴纳或状态不允许',
   90107: '存在进行中订单，无法退出',
   90108: '所有匹配商家均未响应，需求已关闭',
   90109: '超出管辖范围',
-  90110: '该咨询师暂不可预约'
+  90110: '该咨询师暂不可预约',
+  90111: '该店铺暂未对外展示'
+}
+
+/** 商家入驻/接单资质（v4.1.1） */
+export const MERCHANT_GATE_ERROR_MESSAGE: Record<number, string> = {
+  60002: '入驻审核中，暂不能接单，请查看入驻进度',
+  60005: '商家已被踢出，无法接单或报价'
 }
 
 export const RESIDENT_USER_TYPE = {
@@ -380,6 +496,25 @@ export const RESIDENT_USER_TYPE_OPTIONS = [
   { value: RESIDENT_USER_TYPE.OWNER, label: '业主' },
   { value: RESIDENT_USER_TYPE.TENANT, label: '租住人员' }
 ]
+
+/** 家庭成员关系（API §3.5） */
+export const FAMILY_RELATION = {
+  OWNER: 'owner',
+  SPOUSE: 'spouse',
+  CHILD: 'child',
+  PARENT: 'parent',
+  SIBLING: 'sibling',
+  OTHER: 'other'
+} as const
+
+export const FAMILY_RELATION_LABEL: Record<string, string> = {
+  owner: '户主',
+  spouse: '配偶',
+  child: '子女',
+  parent: '父母',
+  sibling: '兄弟姐妹',
+  other: '其他'
+}
 
 export const RESIDENT_STATUS = {
   ACTIVE: 'active',
@@ -630,41 +765,114 @@ export function isSpecialOfferEnded(status?: string) {
 
 export const WITHDRAWAL_AUDIT_STATUS = {
   PENDING: 'pending_audit',
+  /** 兼容：商家申请落库偶发 pending（移动端显示「处理中」） */
+  PENDING_LEGACY: 'pending',
   APPROVED: 'approved',
   REJECTED: 'rejected',
-  COMPLETED: 'completed'
+  COMPLETED: 'completed',
+  FAILED: 'failed'
 } as const
 
 export const WITHDRAWAL_AUDIT_STATUS_LABEL: Record<string, string> = {
   pending_audit: '待审核',
+  /** 管理端将 pending 视为待审（与文档正式码对齐展示） */
+  pending: '待审核',
   approved: '已通过',
   rejected: '已拒绝',
-  completed: '已完成'
+  completed: '已完成',
+  failed: '失败'
+}
+
+/** 待审态：正式码 + 兼容码（v4.7：二者等价） */
+export function isWithdrawalPendingStatus(status?: string | null): boolean {
+  return status === WITHDRAWAL_AUDIT_STATUS.PENDING || status === WITHDRAWAL_AUDIT_STATUS.PENDING_LEGACY
+}
+
+/** 通用审核待审判定（提现 / 兑换 / 积分购买） */
+export function isAuditPendingStatus(status?: string | null): boolean {
+  return status === 'pending' || status === 'pending_audit'
+}
+
+/** 已终态：才应显示「已处理」 */
+export function isWithdrawalTerminalStatus(status?: string | null): boolean {
+  return (
+    status === WITHDRAWAL_AUDIT_STATUS.APPROVED ||
+    status === WITHDRAWAL_AUDIT_STATUS.REJECTED ||
+    status === WITHDRAWAL_AUDIT_STATUS.COMPLETED ||
+    status === WITHDRAWAL_AUDIT_STATUS.FAILED
+  )
 }
 
 /** 积分购买审核状态 */
 export const POINT_PURCHASE_AUDIT_STATUS = {
   PENDING: 'pending_audit',
+  PENDING_LEGACY: 'pending',
   APPROVED: 'approved',
   REJECTED: 'rejected'
 } as const
 
 export const POINT_PURCHASE_AUDIT_STATUS_LABEL: Record<string, string> = {
   pending_audit: '待审核',
+  pending: '待审核',
   approved: '已通过',
   rejected: '已拒绝'
 }
 
 export const POINT_PURCHASE_AUDIT_STATUS_OPTIONS = [
   { value: '', label: '全部状态' },
-  { value: POINT_PURCHASE_AUDIT_STATUS.PENDING, label: '待审核' },
+  /** v4.7：传 pending，后端按 IN(pending, pending_audit) 覆盖全部待审 */
+  { value: 'pending', label: '待审核' },
   { value: POINT_PURCHASE_AUDIT_STATUS.APPROVED, label: '已通过' },
   { value: POINT_PURCHASE_AUDIT_STATUS.REJECTED, label: '已拒绝' }
 ]
 
+/** 积分池流水类型（GET /admin/point-pools/records 的 recordType） */
+export const POINT_POOL_RECORD_TYPE = {
+  DIFF: 'diff',
+  EXPIRY_CLEAR: 'expiry_clear',
+  FEE_CLEAR: 'fee_clear',
+  MANUAL_ADJUST: 'manual_adjust',
+  MANUAL_OUT: 'manual_out',
+  SPEND: 'spend'
+} as const
+
+export const POINT_POOL_RECORD_TYPE_LABEL: Record<string, string> = {
+  diff: '差额注入',
+  exchange_diff: '差额注入',
+  expiry_clear: '过期清零',
+  coin_expired: '过期清零',
+  fee_clear: '欠费清零',
+  manual_adjust: '手工调整',
+  manual_out: '手工支出',
+  spend: '兑换支出',
+  pool_in: '流入',
+  pool_out: '流出'
+}
+
+export const POINT_POOL_RECORD_TYPE_OPTIONS = [
+  { value: '', label: '全部类型' },
+  { value: POINT_POOL_RECORD_TYPE.DIFF, label: '差额注入' },
+  { value: POINT_POOL_RECORD_TYPE.EXPIRY_CLEAR, label: '过期清零' },
+  { value: POINT_POOL_RECORD_TYPE.FEE_CLEAR, label: '欠费清零' },
+  { value: POINT_POOL_RECORD_TYPE.MANUAL_ADJUST, label: '手工调整' },
+  { value: POINT_POOL_RECORD_TYPE.MANUAL_OUT, label: '手工支出' },
+  { value: POINT_POOL_RECORD_TYPE.SPEND, label: '兑换支出' }
+]
+
+/** 筛选值对应的后端可能别名（接口暂不按 recordType 过滤时，前端用此做匹配） */
+export const POINT_POOL_RECORD_TYPE_ALIASES: Record<string, string[]> = {
+  [POINT_POOL_RECORD_TYPE.DIFF]: ['diff', 'exchange_diff'],
+  [POINT_POOL_RECORD_TYPE.EXPIRY_CLEAR]: ['expiry_clear', 'coin_expired'],
+  [POINT_POOL_RECORD_TYPE.FEE_CLEAR]: ['fee_clear'],
+  [POINT_POOL_RECORD_TYPE.MANUAL_ADJUST]: ['manual_adjust'],
+  [POINT_POOL_RECORD_TYPE.MANUAL_OUT]: ['manual_out'],
+  [POINT_POOL_RECORD_TYPE.SPEND]: ['spend']
+}
+
 export const WITHDRAWAL_AUDIT_STATUS_OPTIONS = [
   { value: '', label: '全部状态' },
-  { value: WITHDRAWAL_AUDIT_STATUS.PENDING, label: '待审核' },
+  /** v4.7：传 pending，后端 IN(pending, pending_audit) 覆盖全部待审 */
+  { value: WITHDRAWAL_AUDIT_STATUS.PENDING_LEGACY, label: '待审核' },
   { value: WITHDRAWAL_AUDIT_STATUS.APPROVED, label: '已通过' },
   { value: WITHDRAWAL_AUDIT_STATUS.REJECTED, label: '已拒绝' },
   { value: WITHDRAWAL_AUDIT_STATUS.COMPLETED, label: '已完成' }
@@ -792,7 +1000,11 @@ export const DELIVERY_STATUS = {
   ACCEPTED: 'accepted',
   GRABBED: 'grabbed',
   DELIVERING: 'delivering',
+  /** 已送达（配送完成；配送侧可提现在 complete 成功后刷新 /courier-managers/my） */
   DELIVERED: 'delivered',
+  /**
+   * @deprecated 历史脏数据/旧契约；后端已归一为 delivered，展示与判定请兼容两者
+   */
   COMPLETED: 'completed',
   CANCELLED: 'cancelled',
   FAILED: 'failed'
@@ -809,11 +1021,16 @@ export const DELIVERY_STATUS_LABEL: Record<string, string> = {
   failed: '配送失败'
 }
 
+/** 配送是否已完成（兼容 delivered / 历史 completed） */
+export function isDeliveryFinished(status?: string | null) {
+  return status === DELIVERY_STATUS.DELIVERED || status === DELIVERY_STATUS.COMPLETED
+}
+
 export const COURIER_TASK_STATUS_OPTIONS = [
   { value: '', label: '全部状态' },
   { value: DELIVERY_STATUS.ACCEPTED, label: '已接单' },
   { value: DELIVERY_STATUS.DELIVERING, label: '配送中' },
-  { value: DELIVERY_STATUS.COMPLETED, label: '已完成' },
+  { value: DELIVERY_STATUS.DELIVERED, label: '已送达' },
   { value: DELIVERY_STATUS.CANCELLED, label: '已取消' }
 ]
 
@@ -830,6 +1047,7 @@ export function getEnumLabel(map: Record<string, string>, value?: string | null,
 }
 
 export function getPhase2ErrorMessage(code?: number, fallback?: string) {
+  if (code != null && MERCHANT_GATE_ERROR_MESSAGE[code]) return MERCHANT_GATE_ERROR_MESSAGE[code]
   if (code != null && PHASE2_ERROR_MESSAGE[code]) return PHASE2_ERROR_MESSAGE[code]
   return fallback || '操作失败'
 }
@@ -877,15 +1095,145 @@ export const PRICE_APPROVAL_ITEM_TYPE = {
   DELIVERY_FEE: 'delivery_fee',
   PRODUCT_PRICE: 'product_price',
   MERCHANT_AD: 'merchant_ad',
-  MERCHANT_DISTRIBUTION: 'merchant_distribution'
+  MERCHANT_DISTRIBUTION: 'merchant_distribution',
+  PROPERTY_FEE_PRICE: 'property_fee_price',
+  RESIDENT_SHARE_RATE: 'resident_share_rate'
 } as const
 
 export const PRICE_APPROVAL_ITEM_TYPE_LABEL: Record<string, string> = {
   delivery_fee: '配送费',
   product_price: '商品价格',
   merchant_ad: '商家广告',
-  merchant_distribution: '商家分成'
+  merchant_distribution: '商家分成',
+  property_fee_price: '物业费价格',
+  resident_share_rate: '积分分成比例'
 }
+
+/** 物业币流水来源（property_coin_records.source） */
+export const PROPERTY_COIN_SOURCE = {
+  ORDER: 'order',
+  PROPERTY_FEE: 'property_fee',
+  MANUAL: 'manual',
+  COIN_EXPIRED: 'coin_expired'
+} as const
+
+export const PROPERTY_COIN_SOURCE_LABEL: Record<string, string> = {
+  order: '订单返现',
+  property_fee: '物业费相关',
+  manual: '手动发放',
+  coin_expired: '过期清零'
+}
+
+/** 物业币使用条件 */
+export const COIN_USE_CONDITION = {
+  NONE: 'none',
+  POINT_THRESHOLD: 'point_threshold',
+  PROPERTY_FEE_PAID: 'property_fee_paid',
+  MANUAL_ISSUE: 'manual_issue'
+} as const
+
+export const COIN_USE_CONDITION_LABEL: Record<string, string> = {
+  none: '无限制',
+  point_threshold: '积分达阈值可用',
+  property_fee_paid: '缴清物业费可用',
+  manual_issue: '仅物业配发可用'
+}
+
+export const COIN_USE_CONDITION_OPTIONS = [
+  { value: COIN_USE_CONDITION.NONE, label: '无限制' },
+  { value: COIN_USE_CONDITION.POINT_THRESHOLD, label: '积分达阈值可用' },
+  { value: COIN_USE_CONDITION.PROPERTY_FEE_PAID, label: '缴清物业费可用' },
+  { value: COIN_USE_CONDITION.MANUAL_ISSUE, label: '仅物业配发可用' }
+]
+
+/**
+ * 配送距离类型（价格区间 §76：1km/3km/5km/citywide/any；
+ * 商家 distanceType 另见 MERCHANT_DISTANCE_TYPE）
+ */
+export const DISTANCE_TYPE = {
+  KM_1: '1km',
+  KM_3: '3km',
+  KM_5: '5km',
+  CITYWIDE: 'citywide',
+  ANY: 'any'
+} as const
+
+export const DISTANCE_TYPE_LABEL: Record<string, string> = {
+  '1km': '1公里',
+  '3km': '3公里',
+  '5km': '5公里',
+  citywide: '同城',
+  any: '不限',
+  /** 商家 distanceType 兼容展示 */
+  radius: '按半径',
+  district: '本区',
+  city: '本市'
+}
+
+export const DISTANCE_TYPE_OPTIONS = [
+  { value: DISTANCE_TYPE.ANY, label: '不限' },
+  { value: DISTANCE_TYPE.KM_1, label: '1公里' },
+  { value: DISTANCE_TYPE.KM_3, label: '3公里' },
+  { value: DISTANCE_TYPE.KM_5, label: '5公里' },
+  { value: DISTANCE_TYPE.CITYWIDE, label: '同城' }
+]
+
+/** 商家 distanceType（any / radius / district / city） */
+export const MERCHANT_DISTANCE_TYPE = {
+  ANY: 'any',
+  RADIUS: 'radius',
+  DISTRICT: 'district',
+  CITY: 'city'
+} as const
+
+export const MERCHANT_DISTANCE_TYPE_OPTIONS = [
+  { value: MERCHANT_DISTANCE_TYPE.ANY, label: '不限' },
+  { value: MERCHANT_DISTANCE_TYPE.RADIUS, label: '按半径' },
+  { value: MERCHANT_DISTANCE_TYPE.DISTRICT, label: '本区' },
+  { value: MERCHANT_DISTANCE_TYPE.CITY, label: '本市' }
+]
+
+/** 配送范围（价格区间 / 规则） */
+export const DELIVERY_SCOPE = {
+  IN_COMMUNITY: 'in_community',
+  OUT_COMMUNITY: 'out_community',
+  BOTH: 'both',
+  COMMUNITY_INSIDE: 'community_inside',
+  COMMUNITY_OUTSIDE: 'community_outside'
+} as const
+
+export const DELIVERY_SCOPE_LABEL: Record<string, string> = {
+  in_community: '小区内',
+  out_community: '小区外',
+  both: '小区内外',
+  community_inside: '小区内',
+  community_outside: '小区外'
+}
+
+export const DELIVERY_SCOPE_OPTIONS = [
+  { value: DELIVERY_SCOPE.BOTH, label: '小区内外' },
+  { value: DELIVERY_SCOPE.IN_COMMUNITY, label: '小区内' },
+  { value: DELIVERY_SCOPE.OUT_COMMUNITY, label: '小区外' }
+]
+
+/** 资料奖励 scope */
+export const PROFILE_REWARD_SCOPE = {
+  PROPERTY_COMPANY: 'property_company',
+  COMMUNITY: 'community',
+  PLATFORM: 'platform',
+  COORDINATOR: 'coordinator'
+} as const
+
+export const PROFILE_REWARD_SCOPE_LABEL: Record<string, string> = {
+  property_company: '物业公司',
+  community: '小区',
+  platform: '平台',
+  coordinator: '统筹'
+}
+
+export const PROFILE_REWARD_SCOPE_OPTIONS = Object.entries(PROFILE_REWARD_SCOPE_LABEL).map(
+  ([value, label]) => ({ value, label })
+)
 
 /** 分销商品收费周期 */
 export const BILLING_CYCLE = {
@@ -929,4 +1277,166 @@ export const ANNOUNCEMENT_CONTENT_TYPE = {
 export const ANNOUNCEMENT_CONTENT_TYPE_LABEL: Record<string, string> = {
   product: '产品推荐',
   activity: '活动内容'
+}
+
+/**
+ * 平台商品分类体系（发布商品时选择；与商家 category 自由文本不同）
+ * API 仍以字符串传 category，无独立分类 CRUD 接口时以前端常量对齐平台设计。
+ */
+export const PRODUCT_CATEGORY = {
+  CLOTHING: '服装衣帽',
+  DRINKS: '饮品',
+  SUPERMARKET: '商超',
+  FOOD: '餐饮外卖',
+  FRESH: '生鲜果蔬',
+  DAILY: '日用百货',
+  HOME: '家居家电',
+  BEAUTY: '美妆个护',
+  DIGITAL: '数码配件',
+  SERVICE: '到家服务',
+  OTHER: '其他'
+} as const
+
+export const PRODUCT_CATEGORY_OPTIONS = [
+  { value: PRODUCT_CATEGORY.CLOTHING, label: '服装衣帽' },
+  { value: PRODUCT_CATEGORY.DRINKS, label: '饮品' },
+  { value: PRODUCT_CATEGORY.SUPERMARKET, label: '商超' },
+  { value: PRODUCT_CATEGORY.FOOD, label: '餐饮外卖' },
+  { value: PRODUCT_CATEGORY.FRESH, label: '生鲜果蔬' },
+  { value: PRODUCT_CATEGORY.DAILY, label: '日用百货' },
+  { value: PRODUCT_CATEGORY.HOME, label: '家居家电' },
+  { value: PRODUCT_CATEGORY.BEAUTY, label: '美妆个护' },
+  { value: PRODUCT_CATEGORY.DIGITAL, label: '数码配件' },
+  { value: PRODUCT_CATEGORY.SERVICE, label: '到家服务' },
+  { value: PRODUCT_CATEGORY.OTHER, label: '其他' }
+] as const
+
+/** 商家动态发布状态 */
+export const MERCHANT_POST_STATUS = {
+  DRAFT: 'draft',
+  PUBLISHED: 'published'
+} as const
+
+export const MERCHANT_POST_STATUS_LABEL: Record<string, string> = {
+  draft: '草稿',
+  published: '已发布'
+}
+
+export const MERCHANT_POST_STATUS_OPTIONS = [
+  { value: MERCHANT_POST_STATUS.PUBLISHED, label: '发布' },
+  { value: MERCHANT_POST_STATUS.DRAFT, label: '存为草稿' }
+]
+
+/** [ENUM] 社区论坛 — 帖子状态 */
+export const COMMUNITY_POST_STATUS = {
+  PUBLISHED: 'published',
+  HIDDEN: 'hidden',
+  DELETED: 'deleted'
+} as const
+
+export const COMMUNITY_POST_STATUS_LABEL: Record<string, string> = {
+  published: '已发布',
+  hidden: '已隐藏',
+  deleted: '已删除'
+}
+
+export const COMMUNITY_POST_STATUS_OPTIONS = [
+  { value: '', label: '全部状态' },
+  { value: COMMUNITY_POST_STATUS.PUBLISHED, label: '已发布' },
+  { value: COMMUNITY_POST_STATUS.HIDDEN, label: '已隐藏' },
+  { value: COMMUNITY_POST_STATUS.DELETED, label: '已删除' }
+]
+
+/** [ENUM] 社区论坛 — 举报目标 */
+export const COMMUNITY_REPORT_TARGET = {
+  POST: 'post',
+  COMMENT: 'comment'
+} as const
+
+export const COMMUNITY_REPORT_TARGET_LABEL: Record<string, string> = {
+  post: '帖子',
+  comment: '评论'
+}
+
+/** [ENUM] 社区论坛 — 举报原因 */
+export const COMMUNITY_REPORT_REASON = {
+  SPAM: 'spam',
+  ABUSE: 'abuse',
+  POLITICS: 'politics',
+  PORN: 'porn',
+  OTHER: 'other'
+} as const
+
+export const COMMUNITY_REPORT_REASON_LABEL: Record<string, string> = {
+  spam: '垃圾广告',
+  abuse: '辱骂骚扰',
+  politics: '政治敏感',
+  porn: '色情低俗',
+  other: '其他'
+}
+
+/** [ENUM] 社区论坛 — 举报处理状态 */
+export const COMMUNITY_REPORT_STATUS = {
+  PENDING: 'pending',
+  ACCEPTED: 'accepted',
+  REJECTED: 'rejected'
+} as const
+
+export const COMMUNITY_REPORT_STATUS_LABEL: Record<string, string> = {
+  pending: '待处理',
+  accepted: '已通过',
+  rejected: '已驳回'
+}
+
+export const COMMUNITY_REPORT_STATUS_OPTIONS = [
+  { value: '', label: '全部状态' },
+  { value: COMMUNITY_REPORT_STATUS.PENDING, label: '待处理' },
+  { value: COMMUNITY_REPORT_STATUS.ACCEPTED, label: '已通过' },
+  { value: COMMUNITY_REPORT_STATUS.REJECTED, label: '已驳回' }
+]
+
+/** [ENUM] 社区论坛 — 处理动作 */
+export const COMMUNITY_REPORT_ACTION = {
+  ACCEPT: 'accept',
+  REJECT: 'reject'
+} as const
+
+/** 社区论坛错误码（98xxx） */
+export const COMMUNITY_FORUM_ERROR_MESSAGE: Record<number, string> = {
+  98001: '帖子不存在',
+  98002: '评论不存在',
+  98003: '举报记录不存在',
+  98004: '已举报过该内容',
+  98005: '内容包含敏感词',
+  98006: '无权删除该内容',
+  98007: '帖子内容过长',
+  98008: '评论内容过长',
+  98009: '该举报已处理'
+}
+
+/**
+ * 文件上传分类（POST /files/upload multipart 字段 category）
+ * 契约：avatar | announcement | merchant | service | activity
+ * C 端另用 proof / community，后端已兼容时可用
+ */
+export const FILE_CATEGORY = {
+  AVATAR: 'avatar',
+  ANNOUNCEMENT: 'announcement',
+  MERCHANT: 'merchant',
+  SERVICE: 'service',
+  ACTIVITY: 'activity',
+  PROOF: 'proof',
+  COMMUNITY: 'community'
+} as const
+
+export type FileCategory = (typeof FILE_CATEGORY)[keyof typeof FILE_CATEGORY]
+
+export const FILE_CATEGORY_LABEL: Record<string, string> = {
+  avatar: '头像',
+  announcement: '公告图片',
+  merchant: '商家图片/视频',
+  service: '服务图片',
+  activity: '活动组图片',
+  proof: '送达凭证',
+  community: '社区论坛'
 }

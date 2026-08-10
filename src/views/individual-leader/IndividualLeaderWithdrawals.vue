@@ -3,7 +3,7 @@
     <div class="header">
       <div>
         <h1 class="title">提现记录</h1>
-        <p class="desc">个体负责人收益提现申请与记录</p>
+        <p class="desc">个体负责人账面分成提现（待结算/可提现口径，手续费以服务端返回为准）</p>
       </div>
       <button class="btnPrimary" @click="openApply">申请提现</button>
     </div>

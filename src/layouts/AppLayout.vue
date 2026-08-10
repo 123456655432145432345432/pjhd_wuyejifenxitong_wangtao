@@ -1,5 +1,6 @@
 <template>
-  <div class="appLayout" :class="{ appLayoutMobile: isMobile }">
+  <MobileShellLayout v-if="useMobileShell" />
+  <div v-else class="appLayout" :class="{ appLayoutMobile: isMobile }">
     <AppSidebar v-if="!isMobile" />
     <Transition name="mobile-drawer">
       <div v-if="isMobile && mobileMenuOpen" class="mobileSidebarOverlay" @click.self="closeMobileMenu">
@@ -9,9 +10,13 @@
     <div class="appLayoutRight">
       <AppHeader :mobile="isMobile" :menu-open="mobileMenuOpen" @toggle-menu="toggleMobileMenu" />
       <main class="appLayoutMain" :class="{ appLayoutMainMobile: isMobile }">
-        <RouterView v-slot="{ Component, route }">
+        <RouterView v-slot="{ Component, route: viewRoute }">
           <Transition name="page-fade" mode="out-in">
-            <div v-if="Component" :key="route.fullPath" class="pageView">
+            <div
+              v-if="Component"
+              :key="`${viewRoute.fullPath}::${auth.propertyCompanyId || ''}`"
+              class="pageView"
+            >
               <component :is="Component" />
             </div>
           </Transition>
@@ -22,15 +27,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import AppSidebar from '../components/AppSidebar.vue'
 import AppHeader from '../components/AppHeader.vue'
 import { useIsMobile } from '../composables/useIsMobile'
+import MobileShellLayout from './MobileShellLayout.vue'
+import { usesMobileShell } from '../constants/mobilePortal'
+import { useAuthStore } from '../stores/auth'
 
 const route = useRoute()
 const { isMobile } = useIsMobile()
+const auth = useAuthStore()
 const mobileMenuOpen = ref(false)
+const useMobileShell = computed(() => isMobile.value && usesMobileShell(auth.profile))
 
 function toggleMobileMenu() {
   mobileMenuOpen.value = !mobileMenuOpen.value
@@ -71,6 +81,7 @@ watch(
 .appLayoutMain {
   flex: 1;
   overflow: auto;
+  overscroll-behavior: none;
   padding: 24px;
   min-width: 0;
 }

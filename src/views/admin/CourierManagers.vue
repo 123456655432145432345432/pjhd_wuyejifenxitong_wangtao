@@ -19,34 +19,42 @@
     <div class="panel">
       <div v-if="loading" class="hint">加载中...</div>
       <p v-else-if="error" class="error">{{ error }}</p>
-      <table v-else-if="list.length" class="table managerTable" :class="{ mobileCards: isMobile }">
-        <thead>
-          <tr>
-            <th>姓名</th>
-            <th>手机号</th>
-            <th>小区</th>
-            <th>负责区域</th>
-            <th>快递员数</th>
-            <th>状态</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="item in list" :key="item.id">
-            <td>{{ item.name || '—' }}</td>
-            <td>{{ item.phone || '—' }}</td>
-            <td>{{ item.communityName || item.communityId || '—' }}</td>
-            <td>{{ item.responsibleArea || '—' }}</td>
-            <td>{{ item.courierCount ?? '—' }}</td>
-            <td>{{ getEnumLabel(ENTITY_STATUS_LABEL, item.status) }}</td>
-            <td class="actions">
-              <button class="linkBtn" @click="openDetail(item)">详情</button>
-              <button class="linkBtn" @click="openEdit(item)">编辑</button>
-              <button v-if="item.status === ENTITY_STATUS.ACTIVE" class="linkBtn danger" @click="removeItem(item)">停用</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <div v-else-if="list.length" class="tableScroll">
+        <table class="table managerTable" :class="{ mobileCards: isMobile }">
+          <thead>
+            <tr>
+              <th>姓名</th>
+              <th>手机号</th>
+              <th>小区</th>
+              <th>负责区域</th>
+              <th>快递员数</th>
+              <th>状态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="item in list" :key="item.id">
+              <td>
+                <MobileCellText variant="primary">{{ item.name || '—' }}</MobileCellText>
+              </td>
+              <td><MobileCellText variant="nowrap">{{ item.phone || '—' }}</MobileCellText></td>
+              <td class="mCellStack">
+                <MobileCellText>{{ item.communityName || item.communityId || '—' }}</MobileCellText>
+              </td>
+              <td class="mCellStack">
+                <MobileCellText>{{ item.responsibleArea || '—' }}</MobileCellText>
+              </td>
+              <td><MobileCellText variant="nowrap">{{ item.courierCount ?? '—' }}</MobileCellText></td>
+              <td><MobileCellText variant="nowrap">{{ getEnumLabel(ENTITY_STATUS_LABEL, item.status) }}</MobileCellText></td>
+              <td class="actions">
+                <button class="linkBtn" @click="openDetail(item)">详情</button>
+                <button class="linkBtn" @click="openEdit(item)">编辑</button>
+                <button v-if="item.status === ENTITY_STATUS.ACTIVE" class="linkBtn danger" @click="removeItem(item)">停用</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       <p v-else class="hint">暂无数据</p>
       <div v-if="totalPages > 1" class="pager">
         <button class="pageBtn" :disabled="page <= 1" @click="changePage(page - 1)">&lt;</button>
@@ -126,17 +134,21 @@
               <ResidentSearchSelect v-model="newCourierId" :status="RESIDENT_STATUS.ACTIVE" />
               <button class="btnPrimary" :disabled="binding || !newCourierId" @click="bindCourier">添加</button>
             </div>
-            <table v-if="couriers.length" class="table courierTable" :class="{ mobileCards: isMobile }">
-              <thead><tr><th>姓名</th><th>手机号</th><th>状态</th><th>操作</th></tr></thead>
-              <tbody>
-                <tr v-for="c in couriers" :key="c.id">
-                  <td>{{ c.name || '—' }}</td>
-                  <td>{{ c.phone || '—' }}</td>
-                  <td>{{ getEnumLabel(ENTITY_STATUS_LABEL, c.status) }}</td>
-                  <td><button class="linkBtn danger" @click="unbindCourier(c.id)">解绑</button></td>
-                </tr>
-              </tbody>
-            </table>
+            <p v-if="courierError" class="error courierError">{{ courierError }}</p>
+            <div v-else-if="couriersLoading" class="hint">快递员加载中...</div>
+            <div v-else-if="couriers.length" class="tableScroll">
+              <table class="table courierTable" :class="{ mobileCards: isMobile }">
+                <thead><tr><th>姓名</th><th>手机号</th><th>状态</th><th>操作</th></tr></thead>
+                <tbody>
+                  <tr v-for="c in couriers" :key="c.id">
+                    <td><MobileCellText variant="primary">{{ c.name || '—' }}</MobileCellText></td>
+                    <td><MobileCellText variant="nowrap">{{ c.phone || '—' }}</MobileCellText></td>
+                    <td><MobileCellText variant="nowrap">{{ getEnumLabel(ENTITY_STATUS_LABEL, c.status) }}</MobileCellText></td>
+                    <td><button class="linkBtn danger" @click="unbindCourier(c.id)">解绑</button></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
             <p v-else class="hint">暂无绑定快递员</p>
           </div>
         </div>
@@ -148,6 +160,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import ResidentSearchSelect from '../../components/ResidentSearchSelect.vue'
+import MobileCellText from '../../components/MobileCellText.vue'
 import { courierManagerApi, propertyCompanyApi, residentApi, configApi } from '../../api/services'
 import type {
   CourierManagerItem,
@@ -186,8 +199,56 @@ const form = ref({ residentId: '', name: '', phone: '', communityId: '', respons
 const detailOpen = ref(false)
 const detailTarget = ref<CourierManagerItem | null>(null)
 const couriers = ref<CourierManagerCourierItem[]>([])
+const couriersLoading = ref(false)
+const courierError = ref('')
 const newCourierId = ref('')
 const binding = ref(false)
+
+function unwrapList<T>(res: { list?: T[]; items?: T[]; records?: T[]; couriers?: T[]; data?: T[] } | T[] | null | undefined): T[] {
+  if (!res) return []
+  if (Array.isArray(res)) return res
+  if (Array.isArray(res.list)) return res.list
+  if (Array.isArray(res.items)) return res.items
+  if (Array.isArray(res.records)) return res.records
+  if (Array.isArray(res.couriers)) return res.couriers
+  if (Array.isArray(res.data)) return res.data
+  return []
+}
+
+function pickStr(raw: Record<string, unknown>, ...keys: string[]) {
+  for (const key of keys) {
+    const value = raw[key]
+    if (typeof value === 'string' && value.trim()) return value.trim()
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  }
+  return ''
+}
+
+function normalizeCourier(item: CourierManagerCourierItem | Record<string, unknown>): CourierManagerCourierItem {
+  const raw = item as Record<string, unknown>
+  return {
+    id: pickStr(raw, 'id', 'courierId', 'courier_id', 'residentId', 'resident_id'),
+    name: pickStr(raw, 'name', 'residentName', 'resident_name') || undefined,
+    phone: pickStr(raw, 'phone', 'residentPhone', 'resident_phone') || undefined,
+    status: pickStr(raw, 'status') || undefined
+  }
+}
+
+async function loadCouriers(managerId: string) {
+  couriersLoading.value = true
+  courierError.value = ''
+  try {
+    const data = await courierManagerApi.couriers(managerId)
+    couriers.value = unwrapList(data)
+      .map((item) => normalizeCourier(item))
+      .filter((item) => !!item.id)
+  } catch (e) {
+    couriers.value = []
+    courierError.value = e instanceof ApiError ? e.message : '绑定快递员加载失败'
+  } finally {
+    couriersLoading.value = false
+  }
+}
 
 const propertyCompanyId = computed(
   () => auth.propertyCompanyId || auth.profile?.propertyCompanyId || ''
@@ -329,28 +390,27 @@ async function openDetail(item: CourierManagerItem) {
   detailTarget.value = item
   detailOpen.value = true
   newCourierId.value = ''
+  courierError.value = ''
+  couriers.value = []
   try {
-    const [detail, data] = await Promise.all([
-      courierManagerApi.get(item.id),
-      courierManagerApi.couriers(item.id)
-    ])
-    detailTarget.value = detail
-    couriers.value = Array.isArray(data) ? data : data.list || []
-  } catch (e) {
-    couriers.value = []
+    detailTarget.value = await courierManagerApi.get(item.id)
+  } catch {
+    // 保留列表行数据，继续拉下属快递员
   }
+  await loadCouriers(item.id)
 }
 
 async function bindCourier() {
   if (!detailTarget.value || !newCourierId.value.trim()) return
   binding.value = true
+  courierError.value = ''
   try {
     await courierManagerApi.addCourier(detailTarget.value.id, newCourierId.value.trim())
     newCourierId.value = ''
-    await openDetail(detailTarget.value)
+    await loadCouriers(detailTarget.value.id)
     await load(page.value)
   } catch (e) {
-    formError.value = e instanceof ApiError ? e.message : '绑定失败'
+    courierError.value = e instanceof ApiError ? e.message : '绑定失败'
   } finally {
     binding.value = false
   }
@@ -358,12 +418,13 @@ async function bindCourier() {
 
 async function unbindCourier(courierId: string) {
   if (!detailTarget.value || !confirm('确定解绑该快递员？')) return
+  courierError.value = ''
   try {
     await courierManagerApi.removeCourier(detailTarget.value.id, courierId)
-    await openDetail(detailTarget.value)
+    await loadCouriers(detailTarget.value.id)
     await load(page.value)
   } catch (e) {
-    formError.value = e instanceof ApiError ? e.message : '解绑失败'
+    courierError.value = e instanceof ApiError ? e.message : '解绑失败'
   }
 }
 
@@ -385,9 +446,14 @@ onMounted(async () => {
 .desc { font-size: 14px; color: #8c8c9a; }
 .toolbar { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
 .input { padding: 10px 14px; border: 1px solid #e8e8ec; border-radius: 8px; font-size: 14px; }
-.panel { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+.panel { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); min-width: 0; overflow: hidden; }
+.tableScroll { width: 100%; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .table { width: 100%; border-collapse: collapse; font-size: 14px; }
-.table th, .table td { padding: 12px 16px; text-align: left; border-bottom: 1px solid #f0f0f3; }
+.managerTable { min-width: 760px; }
+.courierTable { min-width: 420px; }
+.table th, .table td {
+  padding: 12px 16px; text-align: left; border-bottom: 1px solid #f0f0f3;
+}
 .table th { color: #8c8c9a; font-weight: 500; background: #fafafc; }
 .linkBtn { border: none; background: none; color: #5c5c9e; cursor: pointer; font-size: 14px; margin-right: 8px; }
 .linkBtn.danger { color: #e05c5c; }
@@ -395,6 +461,7 @@ onMounted(async () => {
 .btnSecondary { padding: 10px 18px; border-radius: 8px; border: 1px solid #e8e8ec; background: #fff; cursor: pointer; }
 .hint, .error { font-size: 14px; color: #8c8c9a; text-align: center; padding: 24px 0; }
 .error { color: #e05c5c; }
+.courierError { text-align: left; padding: 0 0 12px; }
 .pager { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 16px; }
 .pageBtn { padding: 6px 12px; border: 1px solid #e8e8ec; border-radius: 8px; background: #fff; cursor: pointer; }
 .modalOverlay { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; padding: 24px; }
@@ -421,12 +488,15 @@ onMounted(async () => {
   .toolbar .input { width: 100%; min-width: 0; box-sizing: border-box; }
   .toolbar .btnPrimary { grid-column: 1 / -1; width: 100%; }
   .panel { padding: 12px; border-radius: 14px; }
+  .managerTable.mobileCards,
+  .courierTable.mobileCards { min-width: 0; }
+  .tableScroll:has(.mobileCards) { overflow-x: visible; }
   .mobileCards thead { display: none; }
   .mobileCards, .mobileCards tbody, .mobileCards tr, .mobileCards td { display: block; width: 100%; }
   .mobileCards tr { padding: 12px 0; border-bottom: 1px solid #f0f0f3; }
   .mobileCards td {
-    display: flex; justify-content: space-between; align-items: center; gap: 12px;
-    padding: 6px 0; text-align: right; border-bottom: none; word-break: break-word;
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+    padding: 6px 0; text-align: right; border-bottom: none;
   }
   .mobileCards td::before { color: #8c8c9a; text-align: left; flex-shrink: 0; }
   .managerTable.mobileCards td:nth-child(1)::before { content: '姓名'; }

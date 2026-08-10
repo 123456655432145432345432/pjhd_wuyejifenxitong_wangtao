@@ -2,8 +2,8 @@
   <div class="page" :class="{ mobile: isMobile }">
     <div class="header">
       <div>
-        <h1 class="title">我的服务</h1>
-        <p class="desc">发布和管理社区服务项目</p>
+        <h1 class="title">{{ pageTitle }}</h1>
+        <p class="desc">{{ pageDesc }}</p>
       </div>
       <button class="btnPrimary" @click="openCreate">发布服务</button>
     </div>
@@ -111,21 +111,13 @@
               </select>
             </div>
             <div class="field">
-              <label class="label">封面图 URL</label>
-              <input
-                v-model="form.coverUrlsText"
-                class="input"
-                placeholder="多个 URL 用英文逗号分隔"
+              <label class="label">封面图</label>
+              <MediaUploader
+                v-model="form.coverUrls"
+                category="service"
+                accept="image"
+                :max="9"
               />
-              <div v-if="previewCoverUrls.length" class="coverPreviewList">
-                <img
-                  v-for="(url, index) in previewCoverUrls"
-                  :key="url + index"
-                  :src="url"
-                  :alt="form.name || '封面'"
-                  class="coverThumb"
-                />
-              </div>
             </div>
             <div class="fieldRow">
               <div class="field">
@@ -216,6 +208,8 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
+import MediaUploader from '../../components/MediaUploader.vue'
 import { serviceApi } from '../../api/services'
 import type { CommunityServiceItem } from '../../api/types'
 import { ApiError } from '../../api/request'
@@ -228,7 +222,16 @@ import {
 } from '../../constants/enums'
 import { useIsMobile } from '../../composables/useIsMobile'
 
+const route = useRoute()
 const { isMobile } = useIsMobile()
+const isTechnicianPortal = computed(() => route.name === 'technician-services')
+const pageTitle = '我的服务'
+const pageDesc = computed(() =>
+  isTechnicianPortal.value
+    ? '首次发布服务将自动开通技工档口，providerType 由后端固定为 technician'
+    : '发布和管理社区服务项目'
+)
+
 const services = ref<CommunityServiceItem[]>([])
 const loading = ref(false)
 const error = ref('')
@@ -246,7 +249,7 @@ const detail = ref<CommunityServiceItem | null>(null)
 const form = reactive({
   name: '',
   category: SERVICE_CATEGORY.CLEANING_REPAIR,
-  coverUrlsText: '',
+  coverUrls: [] as string[],
   price: undefined as number | undefined,
   memberPrice: undefined as number | undefined,
   priceUnit: '次',
@@ -254,24 +257,12 @@ const form = reactive({
   status: ENTITY_STATUS.ACTIVE
 })
 
-const previewCoverUrls = computed(() => parseCoverUrls(form.coverUrlsText))
 const detailCoverUrls = computed(() => (detail.value ? getCoverUrls(detail.value) : []))
-
-function parseCoverUrls(text: string) {
-  return text
-    .split(',')
-    .map((url) => url.trim())
-    .filter(Boolean)
-}
 
 function getCoverUrls(item: CommunityServiceItem) {
   if (item.coverUrls?.length) return item.coverUrls
   if (item.coverUrl) return [item.coverUrl]
   return []
-}
-
-function coverUrlsToText(item: CommunityServiceItem) {
-  return getCoverUrls(item).join(', ')
 }
 
 function formatMoney(value?: number | null) {
@@ -288,7 +279,7 @@ function statusLabel(status?: string) {
 function resetForm() {
   form.name = ''
   form.category = SERVICE_CATEGORY.CLEANING_REPAIR
-  form.coverUrlsText = ''
+  form.coverUrls = []
   form.price = undefined
   form.memberPrice = undefined
   form.priceUnit = '次'
@@ -300,7 +291,7 @@ function resetForm() {
 function applyToForm(data: CommunityServiceItem) {
   form.name = data.name || ''
   form.category = data.category || SERVICE_CATEGORY.CLEANING_REPAIR
-  form.coverUrlsText = coverUrlsToText(data)
+  form.coverUrls = [...getCoverUrls(data)]
   form.price = data.price
   form.memberPrice = data.memberPrice
   form.priceUnit = data.priceUnit || '次'
@@ -367,8 +358,7 @@ function closeDetail() {
 function validateForm(): string | null {
   if (!form.name.trim()) return '请输入服务名称'
   if (form.name.trim().length > 100) return '服务名称不能超过 100 字'
-  const coverUrls = parseCoverUrls(form.coverUrlsText)
-  if (coverUrls.some((url) => url.length > 500)) return '单个封面图 URL 不能超过 500 字'
+  if (form.coverUrls.some((url) => url.length > 500)) return '单个封面图地址不能超过 500 字'
   if (form.priceUnit.trim().length > 20) return '价格单位不能超过 20 字'
   if (form.price != null && form.price < 0.01) return '价格需 ≥ 0.01'
   if (form.memberPrice != null && form.memberPrice < 0.01) return '会员价需 ≥ 0.01'
@@ -384,7 +374,7 @@ async function submitForm() {
   submitting.value = true
   formError.value = ''
   try {
-    const coverUrls = parseCoverUrls(form.coverUrlsText)
+    const coverUrls = form.coverUrls.filter((url) => url.trim())
     if (editingId.value) {
       await serviceApi.update(editingId.value, {
         name: form.name.trim(),

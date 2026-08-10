@@ -9,7 +9,7 @@ const jpushAppKey = process.env.VITE_JPUSH_APP_KEY || ''
 
 const config: CapacitorConfig = {
   appId: 'com.yuanxu.wuyejifen',
-  appName: '万达物业',
+  appName: '邻里商城服务管理端',
   webDir: 'dist',
   server: {
     androidScheme: 'https'
