@@ -1836,11 +1836,14 @@ export const platformShareApi = {
     )
   },
 
-  /** 平台收益钱包（仅 platform_admin） */
-  earningsBalance() {
-    return request<PlatformEarningsBalance>('/admin/platform-earnings/balance')
+  /** 平台收益对账快照（只读；CBK 真分账无提现） */
+  earningsBalance(params: { propertyCompanyId?: string } = {}) {
+    return request<PlatformEarningsBalance>(
+      `/admin/platform-earnings/balance${buildQuery(params)}`
+    )
   },
 
+  /** @deprecated CBK 真分账下平台侧无提现；保留接口定义以免旧环境报错 */
   async earningsWithdrawals(params: { page?: number; pageSize?: number; status?: string } = {}) {
     const raw = await request<unknown>(
       `/admin/platform-earnings/withdrawals${buildQuery(params)}`
@@ -1848,6 +1851,7 @@ export const platformShareApi = {
     return normalizePageResult<RoleWithdrawalItem>(raw, params.page || 1, params.pageSize || 20)
   },
 
+  /** @deprecated CBK 真分账下勿调用 */
   createEarningsWithdrawal(payload: RoleWithdrawalPayload) {
     return request<RoleWithdrawalItem>('/admin/platform-earnings/withdrawals', {
       method: 'POST',

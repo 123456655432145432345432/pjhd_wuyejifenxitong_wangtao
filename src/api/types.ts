@@ -1310,8 +1310,27 @@ export interface PlatformEarningRecordItem {
   createdAt?: string
 }
 
-/** 平台收益可提现余额（仅 platform_admin；三条链路汇总钱包） */
+/** 平台收益对账快照（CBK 真分账只读；无内部提现钱包） */
 export interface PlatformEarningsBalance {
+  /** 累计平台收益（已实时入账 CBK） */
+  totalEarned?: number | string
+  /** 平台 CBK 已入账余额（通常 = totalEarned） */
+  settledBalance?: number | string
+  /** 处理中金额（真分账通常为 0） */
+  pendingAmount?: number | string
+  /** 结算方式，如 cbk_real_split */
+  settleMode?: string
+  /** 结算状态文案 */
+  settlementStatus?: string
+  /** 是否可申请提现；CBK 下恒为 false */
+  withdrawAvailable?: boolean
+  /** 构成：订单分成 */
+  distributionShare?: number | string
+  /** 构成：配送费分成 */
+  deliveryShare?: number | string
+  /** 构成：提现手续费分成 */
+  withdrawalFeeShare?: number | string
+  /** @deprecated 旧内部钱包字段，兼容回退 */
   withdrawableAmount?: number
   totalWithdrawn?: number
   pendingWithdrawalAmount?: number
