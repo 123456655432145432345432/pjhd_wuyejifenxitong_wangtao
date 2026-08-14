@@ -59,16 +59,31 @@
             </div>
             <div v-if="publishMode === 'product'" class="fieldGroup">
               <div class="field">
-                <label class="label">小区 ID</label>
-                <input v-model="productForm.communityId" class="input" placeholder="com_xxx" />
+                <label class="label">发布小区</label>
+                <select v-model="productForm.communityId" class="input">
+                  <option value="">请选择小区</option>
+                  <option v-for="community in communities" :key="community.id" :value="community.id">
+                    {{ community.name || community.id }}
+                  </option>
+                </select>
               </div>
               <div class="field">
-                <label class="label">商家 ID</label>
-                <input v-model="productForm.merchantId" class="input" placeholder="mch_xxx" />
+                <label class="label">关联商家</label>
+                <select v-model="productForm.merchantId" class="input" @change="loadProducts">
+                  <option value="">请选择商家</option>
+                  <option v-for="merchant in merchants" :key="merchant.id" :value="merchant.id">
+                    {{ merchant.name || merchant.id }}
+                  </option>
+                </select>
               </div>
               <div class="field">
-                <label class="label">商品 ID</label>
-                <input v-model="productForm.productId" class="input" placeholder="prd_xxx" />
+                <label class="label">推荐商品</label>
+                <select v-model="productForm.productId" class="input" :disabled="!productForm.merchantId || optionsLoading">
+                  <option value="">{{ productForm.merchantId ? '请选择商品' : '请先选择商家' }}</option>
+                  <option v-for="product in products" :key="product.id" :value="product.id">
+                    {{ product.name || product.id }}
+                  </option>
+                </select>
               </div>
               <div class="field">
                 <label class="label">封面图</label>
@@ -82,14 +97,29 @@
             </div>
             <div v-if="publishMode === 'activity'" class="fieldGroup">
               <div class="field">
-                <label class="label">小区 ID</label>
-                <input v-model="activityForm.communityId" class="input" placeholder="com_xxx" />
+                <label class="label">发布小区</label>
+                <select v-model="activityForm.communityId" class="input" @change="loadActivityGroups">
+                  <option value="">请选择小区</option>
+                  <option v-for="community in communities" :key="community.id" :value="community.id">
+                    {{ community.name || community.id }}
+                  </option>
+                </select>
               </div>
               <div class="field">
-                <label class="label">活动组 ID</label>
-                <input v-model="activityForm.activityGroupId" class="input" placeholder="ag_xxx" />
+                <label class="label">关联活动组</label>
+                <select
+                  v-model="activityForm.activityGroupId"
+                  class="input"
+                  :disabled="!activityForm.communityId || optionsLoading"
+                >
+                  <option value="">{{ activityForm.communityId ? '请选择活动组' : '请先选择小区' }}</option>
+                  <option v-for="group in activityGroups" :key="group.id" :value="group.id">
+                    {{ group.name || group.id }}
+                  </option>
+                </select>
               </div>
             </div>
+            <p v-if="optionsError && publishMode !== 'standard'" class="hint">{{ optionsError }}</p>
             <div class="field">
               <label class="label">通告标题</label>
               <input
@@ -123,9 +153,15 @@
                 <span>物业公司</span>
                 <strong>{{ propertyCompanyLabel }}</strong>
               </div>
-              <div class="readonlyRow">
-                <span>小区 ID</span>
-                <strong>{{ DEFAULT_COMMUNITY_ID }}</strong>
+              <div v-if="publishMode === 'standard'" class="field">
+                <label class="label">发布小区</label>
+                <select v-model="standardCommunityId" class="input">
+                  <option value="">请选择小区</option>
+                  <option v-for="community in communities" :key="community.id" :value="community.id">
+                    {{ community.name || community.id }}
+                  </option>
+                </select>
+                <p v-if="optionsError" class="hint">{{ optionsError }}</p>
               </div>
             </div>
             <div class="field">
@@ -155,9 +191,17 @@
                 </label>
               </div>
             </div>
-            <div v-if="form.announcementType === ANNOUNCEMENT_TYPE.MERCHANT" class="field">
-              <label class="label">关联商家 ID</label>
-              <input v-model="form.merchantId" class="input" placeholder="merchant_xxx，商家公告时填写" />
+            <div
+              v-if="publishMode === 'standard' && form.announcementType === ANNOUNCEMENT_TYPE.MERCHANT"
+              class="field"
+            >
+              <label class="label">关联商家</label>
+              <select v-model="form.merchantId" class="input">
+                <option value="">请选择商家</option>
+                <option v-for="merchant in merchants" :key="merchant.id" :value="merchant.id">
+                  {{ merchant.name || merchant.id }}
+                </option>
+              </select>
             </div>
             <div class="field">
               <label class="label">封面图</label>
@@ -214,8 +258,7 @@
             <div v-if="form.collectEnabled" class="field">
               <label class="label">收集字段</label>
               <div v-for="(field, index) in form.collectFields" :key="index" class="collectFieldRow">
-                <input v-model="field.name" class="input sm" placeholder="字段 key" />
-                <input v-model="field.label" class="input" placeholder="显示名称" />
+                <input v-model="field.label" class="input" placeholder="填写需要住户回答的问题" />
                 <select v-model="field.type" class="input sm">
                   <option v-for="opt in ANNOUNCEMENT_COLLECT_FIELD_TYPE_OPTIONS" :key="opt.value" :value="opt.value">
                     {{ opt.label }}
@@ -494,7 +537,15 @@ import { computed, onMounted, ref, watch } from 'vue'
 import IconSvg from '../components/IconSvg.vue'
 import MediaUploader from '../components/MediaUploader.vue'
 import { useIsMobile } from '../composables/useIsMobile'
-import { announcementApi, announcementExtApi, residentApi } from '../api/services'
+import {
+  activityGroupApi,
+  announcementApi,
+  announcementExtApi,
+  merchantApi,
+  merchantPortalApi,
+  propertyCompanyApi,
+  residentApi
+} from '../api/services'
 import { mapAnnouncements } from '../api/mappers'
 import { ApiError } from '../api/request'
 import type {
@@ -503,6 +554,10 @@ import type {
   AnnouncementItem,
   AnnouncementReadStats,
   AnnouncementUpdatePayload,
+  ActivityGroupItem,
+  MerchantItem,
+  ProductItem,
+  PropertyCompanyCommunity,
   ResidentItem
 } from '../api/types'
 import { useAuthStore } from '../stores/auth'
@@ -541,6 +596,13 @@ const formError = ref('')
 const formSuccess = ref('')
 const editingId = ref('')
 const publishMode = ref<'standard' | 'product' | 'activity'>('standard')
+const standardCommunityId = ref(DEFAULT_COMMUNITY_ID)
+const communities = ref<PropertyCompanyCommunity[]>([])
+const merchants = ref<MerchantItem[]>([])
+const products = ref<ProductItem[]>([])
+const activityGroups = ref<ActivityGroupItem[]>([])
+const optionsLoading = ref(false)
+const optionsError = ref('')
 
 const productForm = ref({
   communityId: DEFAULT_COMMUNITY_ID,
@@ -631,7 +693,13 @@ async function openReadStats(id: string) {
   }
 }
 
-const propertyCompanyLabel = computed(() => authStore.propertyCompanyId || '—')
+const propertyCompanyLabel = computed(
+  () => authStore.profile?.propertyName || authStore.profile?.communityName || '当前物业公司'
+)
+
+function optionLabel<T extends { id: string; name?: string }>(items: T[], id: string) {
+  return items.find((item) => item.id === id)?.name || id || '未选择'
+}
 
 const targetRolesText = computed(() => {
   if (selectAllTargetRoles.value || !form.value.selectedTargetRoles.length) return '全部角色'
@@ -733,6 +801,84 @@ async function loadBuildingOptions() {
   }
 }
 
+async function loadFormOptions() {
+  const propertyCompanyId = authStore.propertyCompanyId
+  if (!propertyCompanyId) {
+    optionsError.value = '未获取到物业公司，暂时无法加载发布范围'
+    return
+  }
+  optionsLoading.value = true
+  optionsError.value = ''
+  try {
+    const [communityRes, merchantRes] = await Promise.all([
+      propertyCompanyApi.communities(propertyCompanyId),
+      merchantApi.list({ page: 1, pageSize: 100, propertyCompanyId, sort: '-createdAt' })
+    ])
+    communities.value = communityRes.list || []
+    merchants.value = merchantRes.list || []
+    const preferredCommunity =
+      communities.value.find((item) => item.id === DEFAULT_COMMUNITY_ID)?.id ||
+      communities.value[0]?.id ||
+      ''
+    if (!communities.value.some((item) => item.id === standardCommunityId.value)) {
+      standardCommunityId.value = preferredCommunity
+    }
+    if (!communities.value.some((item) => item.id === productForm.value.communityId)) {
+      productForm.value.communityId = preferredCommunity
+    }
+    if (!communities.value.some((item) => item.id === activityForm.value.communityId)) {
+      activityForm.value.communityId = preferredCommunity
+    }
+    await loadActivityGroups()
+  } catch (e) {
+    optionsError.value = resolveErrorMessage(e)
+  } finally {
+    optionsLoading.value = false
+  }
+}
+
+async function loadProducts() {
+  productForm.value.productId = ''
+  products.value = []
+  if (!productForm.value.merchantId) return
+  optionsLoading.value = true
+  optionsError.value = ''
+  try {
+    const res = await merchantPortalApi.products({
+      page: 1,
+      pageSize: 100,
+      merchantId: productForm.value.merchantId,
+      sort: '-createdAt'
+    })
+    products.value = res.list || []
+  } catch (e) {
+    optionsError.value = resolveErrorMessage(e)
+  } finally {
+    optionsLoading.value = false
+  }
+}
+
+async function loadActivityGroups() {
+  activityForm.value.activityGroupId = ''
+  activityGroups.value = []
+  if (!activityForm.value.communityId) return
+  optionsLoading.value = true
+  optionsError.value = ''
+  try {
+    const res = await activityGroupApi.list({
+      page: 1,
+      pageSize: 100,
+      communityId: activityForm.value.communityId,
+      sort: '-createdAt'
+    })
+    activityGroups.value = res.list || []
+  } catch (e) {
+    optionsError.value = resolveErrorMessage(e)
+  } finally {
+    optionsLoading.value = false
+  }
+}
+
 function buildCollectFields() {
   if (!form.value.collectEnabled) return undefined
   const fields = form.value.collectFields
@@ -772,7 +918,7 @@ function buildCreatePayload(status: string): AnnouncementCreatePayload {
   const collectFields = buildCollectFields()
   if (collectFields?.length) payload.collectFields = collectFields
   if (authStore.propertyCompanyId) payload.propertyCompanyId = authStore.propertyCompanyId
-  payload.communityId = DEFAULT_COMMUNITY_ID
+  payload.communityId = standardCommunityId.value
   if (form.value.announcementType === ANNOUNCEMENT_TYPE.MERCHANT && form.value.merchantId.trim()) {
     payload.merchantId = form.value.merchantId.trim()
   }
@@ -804,14 +950,19 @@ function buildUpdatePayload(status: string): AnnouncementUpdatePayload {
 function resetForm() {
   editingId.value = ''
   publishMode.value = 'standard'
+  const preferredCommunity =
+    communities.value.find((item) => item.id === DEFAULT_COMMUNITY_ID)?.id ||
+    communities.value[0]?.id ||
+    DEFAULT_COMMUNITY_ID
+  standardCommunityId.value = preferredCommunity
   productForm.value = {
-    communityId: DEFAULT_COMMUNITY_ID,
+    communityId: preferredCommunity,
     merchantId: '',
     productId: '',
     coverUrl: ''
   }
   activityForm.value = {
-    communityId: DEFAULT_COMMUNITY_ID,
+    communityId: preferredCommunity,
     activityGroupId: ''
   }
   form.value = {
@@ -834,7 +985,7 @@ function resetForm() {
 
 function addCollectField() {
   form.value.collectFields.push({
-    name: `field_${form.value.collectFields.length + 1}`,
+    name: '',
     label: '',
     type: 'text'
   })
@@ -846,6 +997,7 @@ function removeCollectField(index: number) {
 
 function applyDetailToForm(data: AnnouncementItem) {
   editingId.value = data.id
+  if (data.communityId) standardCommunityId.value = data.communityId
   form.value.title = data.title || ''
   form.value.content = data.content || ''
   form.value.announcementType = normalizeAnnouncementType(data.announcementType)
@@ -910,10 +1062,11 @@ async function submitForm(status: string) {
     return
   }
   if (
+    publishMode.value === 'standard' &&
     form.value.announcementType === ANNOUNCEMENT_TYPE.MERCHANT &&
     !form.value.merchantId.trim()
   ) {
-    formError.value = '商家公告请填写关联商家 ID'
+    formError.value = '商家公告请选择关联商家'
     formSuccess.value = ''
     return
   }
@@ -921,6 +1074,50 @@ async function submitForm(status: string) {
     formError.value = '请选择目标群体，或勾选全部角色'
     formSuccess.value = ''
     return
+  }
+  if (publishMode.value === 'standard' && !standardCommunityId.value) {
+    formError.value = '请选择发布小区'
+    formSuccess.value = ''
+    return
+  }
+  if (
+    publishMode.value === 'product' &&
+    (!productForm.value.communityId || !productForm.value.merchantId || !productForm.value.productId)
+  ) {
+    formError.value = '产品推荐请选择小区、商家和商品'
+    formSuccess.value = ''
+    return
+  }
+  if (
+    publishMode.value === 'activity' &&
+    (!activityForm.value.communityId || !activityForm.value.activityGroupId)
+  ) {
+    formError.value = '活动内容请选择小区和活动组'
+    formSuccess.value = ''
+    return
+  }
+  if (status === ANNOUNCEMENT_STATUS.PUBLISHED) {
+    let rangeSummary = ''
+    if (publishMode.value === 'product') {
+      rangeSummary =
+        `小区：${optionLabel(communities.value, productForm.value.communityId)}\n` +
+        `商家：${optionLabel(merchants.value, productForm.value.merchantId)}\n` +
+        `商品：${optionLabel(products.value, productForm.value.productId)}`
+    } else if (publishMode.value === 'activity') {
+      rangeSummary =
+        `小区：${optionLabel(communities.value, activityForm.value.communityId)}\n` +
+        `活动组：${optionLabel(activityGroups.value, activityForm.value.activityGroupId)}`
+    } else {
+      rangeSummary =
+        `小区：${optionLabel(communities.value, standardCommunityId.value)}\n` +
+        `目标群体：${targetRolesText.value}\n` +
+        `覆盖楼栋：${buildingsText.value}\n` +
+        `投递渠道：${getEnumLabel(DELIVERY_CHANNEL_LABEL, form.value.deliveryChannel, '仅公告栏')}`
+    }
+    const confirmed = window.confirm(
+      `确认立即发布「${title}」？\n${rangeSummary}\n发布后目标用户将立即看到该内容。`
+    )
+    if (!confirmed) return
   }
 
   formSubmitting.value = true
@@ -932,11 +1129,6 @@ async function submitForm(status: string) {
       await announcementApi.update(editingId.value, buildUpdatePayload(status))
       formSuccess.value = status === ANNOUNCEMENT_STATUS.PUBLISHED ? '通告已更新并发布' : '草稿已保存'
     } else if (publishMode.value === 'product') {
-      if (!productForm.value.communityId || !productForm.value.merchantId || !productForm.value.productId) {
-        formError.value = '产品推荐请填写小区、商家和商品 ID'
-        formSubmitting.value = false
-        return
-      }
       await announcementExtApi.createProduct({
         title,
         content,
@@ -948,11 +1140,6 @@ async function submitForm(status: string) {
       formSuccess.value = '产品推荐发布成功'
       resetForm()
     } else if (publishMode.value === 'activity') {
-      if (!activityForm.value.communityId || !activityForm.value.activityGroupId) {
-        formError.value = '活动内容请填写小区和活动组 ID'
-        formSubmitting.value = false
-        return
-      }
       await announcementExtApi.createActivity({
         title,
         content,
@@ -1067,7 +1254,7 @@ function onSearchInput() {
 }
 
 onMounted(async () => {
-  await loadBuildingOptions()
+  await Promise.all([loadBuildingOptions(), loadFormOptions()])
   await loadNotices(1)
 })
 </script>
@@ -1117,7 +1304,7 @@ onMounted(async () => {
 .history .head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; gap: 12px; flex-wrap: wrap; }
 .listFilters { display: flex; gap: 8px; flex-wrap: wrap; }
 .filterSelect { padding: 8px 12px; border: 1px solid #e8e8ec; border-radius: 8px; background: #fafafc; font-size: 13px; color: #1f1f2e; }
-.collectFieldRow { display: grid; grid-template-columns: 1fr 1.2fr 100px auto; gap: 8px; margin-bottom: 8px; align-items: center; }
+.collectFieldRow { display: grid; grid-template-columns: 1fr 120px auto; gap: 8px; margin-bottom: 8px; align-items: center; }
 .collectFieldRow .input.sm { min-width: 0; }
 .btnRemove { padding: 8px 10px; border: 1px solid #ffa39e; background: #fff1f0; color: #cf1322; border-radius: 6px; cursor: pointer; font-size: 12px; white-space: nowrap; }
 .btnAddField { padding: 8px 12px; border: 1px dashed #d0d0d8; background: #fafafc; color: #5c5c66; border-radius: 6px; cursor: pointer; font-size: 13px; }

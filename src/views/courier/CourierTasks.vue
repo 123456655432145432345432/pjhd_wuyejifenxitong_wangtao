@@ -4,7 +4,8 @@
       <div>
         <h1 class="title">我的任务</h1>
         <p class="desc">
-          管理已接配送任务。完成配送后预计收入计入可提现（配送费 − 我们公司抽成，无保底；与分成明细配送员收入同一笔）。
+          管理已接配送任务。单笔「预计收入」只读取 courierEarning；完成配送后立刻刷新
+          GET /courier-managers/my，账户「实际可拿」以 withdrawableAmount 为准，禁止前端加减。
         </p>
       </div>
       <button class="btnGhost" :disabled="loading" @click="load(page, true)">刷新</button>
@@ -42,7 +43,7 @@
               <td>{{ item.merchantName || '—' }}</td>
               <td class="addrCell">{{ item.pickupAddress || item.merchantAddress || '—' }}</td>
               <td class="addrCell">{{ item.deliveryAddress || '—' }}</td>
-              <td>¥{{ formatMoney(item.courierEarning ?? item.fee) }}</td>
+              <td>¥{{ formatMoney(item.courierEarning) }}</td>
               <td>
                 <span class="tag" :class="statusClass(item.status)">
                   {{ getEnumLabel(DELIVERY_STATUS_LABEL, item.status) }}
@@ -82,7 +83,7 @@
                 {{ getEnumLabel(DELIVERY_STATUS_LABEL, item.status) }}
               </span>
             </div>
-            <div class="taskEarning">预计收入 ¥{{ formatMoney(item.courierEarning ?? item.fee) }}</div>
+            <div class="taskEarning">预计收入 ¥{{ formatMoney(item.courierEarning) }}</div>
             <div class="taskAddress">
               <span>取货</span>
               <strong>{{ item.pickupAddress || item.merchantAddress || '—' }}</strong>
@@ -147,7 +148,7 @@
               <li><span>联系电话</span><strong>{{ detailItem.contactPhone || '—' }}</strong></li>
               <li>
                 <span>预计收入</span>
-                <strong>¥{{ formatMoney(detailItem.courierEarning ?? detailItem.fee) }}</strong>
+                <strong>¥{{ formatMoney(detailItem.courierEarning) }}</strong>
               </li>
               <li><span>接单时间</span><strong>{{ detailItem.acceptedAt || '—' }}</strong></li>
               <li><span>超时时间</span><strong>{{ detailItem.timeoutAt || '—' }}</strong></li>
@@ -184,7 +185,7 @@
           <div class="modalBody">
             <p class="hint">
               订单 {{ completeTarget.orderNo || completeTarget.orderId }}
-              · 预计收入 ¥{{ formatMoney(completeTarget.courierEarning ?? completeTarget.fee) }}
+              · 预计收入 ¥{{ formatMoney(completeTarget.courierEarning) }}
             </p>
             <p v-if="completeError" class="error">{{ completeError }}</p>
             <div class="field">
@@ -246,7 +247,7 @@ const completeForm = reactive({
 })
 
 function formatMoney(value?: number) {
-  if (value === undefined || value === null) return '0.00'
+  if (value === undefined || value === null) return '—'
   return Number(value).toFixed(2)
 }
 
@@ -341,7 +342,7 @@ async function startDeliveryFromDetail() {
 async function submitComplete() {
   if (!completeTarget.value) return
   const target = completeTarget.value
-  const earning = Number(target.courierEarning ?? target.fee ?? 0)
+  const earning = target.courierEarning
   actionId.value = target.id
   completeError.value = ''
   const proofImageUrls = completeForm.proofUrls.filter((url) => url.trim()).slice(0, 5)

@@ -72,6 +72,12 @@
           <tr v-if="loading">
             <td colspan="8" class="emptyCell">加载中...</td>
           </tr>
+          <tr v-else-if="loadError">
+            <td colspan="8" class="emptyCell errorCell">
+              <p>{{ loadError }}</p>
+              <button type="button" class="retryBtn" @click="loadData(currentPage)">重新加载</button>
+            </td>
+          </tr>
           <tr v-else-if="!list.length">
             <td colspan="8" class="emptyCell">暂无数据</td>
           </tr>
@@ -147,7 +153,15 @@
               </div>
             </div>
             <div class="field">
-              <label class="label">{{ auditForm.auditResult === AUDIT_RESULT.REJECTED ? '拒绝原因' : '备注' }}</label>
+              <label class="label">
+                {{
+                  auditForm.auditResult === AUDIT_RESULT.REJECTED
+                    ? '拒绝原因'
+                    : auditForm.auditResult === AUDIT_RESULT.APPROVED
+                      ? '备注'
+                      : '审核说明'
+                }}
+              </label>
               <textarea
                 v-model="auditForm.remark"
                 class="textarea"
@@ -190,6 +204,7 @@ const FETCH_PAGE_SIZE = 100
 const FETCH_MAX_PAGES = 10
 
 const loading = ref(true)
+const loadError = ref('')
 const list = ref<AdminCoinWithdrawalItem[]>([])
 const currentPage = ref(1)
 const total = ref(0)
@@ -205,7 +220,7 @@ const endDate = ref('')
 
 const auditModalOpen = ref(false)
 const auditTarget = ref<AdminCoinWithdrawalItem | null>(null)
-const auditForm = ref({ auditResult: AUDIT_RESULT.APPROVED, remark: '' })
+const auditForm = ref({ auditResult: '', remark: '' })
 const formSubmitting = ref(false)
 const formError = ref('')
 
@@ -466,7 +481,7 @@ async function loadSummary() {
     apiSummary = normalizeSummary(await coinWithdrawalAdminApi.summary())
   } catch (e) {
     console.error(e)
-    summaryHint.value = '汇总接口异常，已按列表估算看板'
+    summaryHint.value = '统计暂不可用，当前数据根据提现列表估算'
   }
 
   if (apiSummary && !isSummaryEmpty(apiSummary)) {
@@ -477,7 +492,7 @@ async function loadSummary() {
   try {
     summary.value = await buildSummaryFromList()
     if (!summaryHint.value) {
-      summaryHint.value = '汇总接口返回全 0，已按列表兜底'
+      summaryHint.value = '统计结果为空，当前数据根据提现列表估算'
     }
   } catch (e) {
     console.error(e)
@@ -495,6 +510,7 @@ async function loadSummary() {
 
 async function loadData(page = currentPage.value) {
   loading.value = true
+  loadError.value = ''
   try {
     const term = appliedKeyword.value.trim()
     const baseParams = {
@@ -538,9 +554,7 @@ async function loadData(page = currentPage.value) {
     totalPages.value = res.pagination?.totalPages ?? 1
   } catch (e) {
     console.error(e)
-    list.value = []
-    total.value = 0
-    totalPages.value = 1
+    loadError.value = formatApiError(e, '物业币提现审批记录加载失败，请重试')
   } finally {
     loading.value = false
   }
@@ -571,7 +585,7 @@ function changePage(page: number) {
 
 function openAuditModal(item: AdminCoinWithdrawalItem) {
   auditTarget.value = item
-  auditForm.value = { auditResult: AUDIT_RESULT.APPROVED, remark: '' }
+  auditForm.value = { auditResult: '', remark: '' }
   formError.value = ''
   auditModalOpen.value = true
 }
@@ -584,10 +598,22 @@ function closeAuditModal() {
 
 async function submitAudit() {
   if (!auditTarget.value) return
+  if (!auditForm.value.auditResult) {
+    formError.value = '请选择通过或拒绝'
+    return
+  }
   if (auditForm.value.auditResult === AUDIT_RESULT.REJECTED && !auditForm.value.remark.trim()) {
     formError.value = '拒绝时请填写拒绝原因'
     return
   }
+  const actionLabel = auditForm.value.auditResult === AUDIT_RESULT.APPROVED ? '通过' : '拒绝'
+  const confirmed = window.confirm(
+    `确认${actionLabel}「${applicantName(auditTarget.value)}」的物业币提现申请？\n` +
+      `兑换币额：${formatMoney(coinAmountOf(auditTarget.value))}\n` +
+      `兑现金额：¥${formatMoney(exchangeAmountOf(auditTarget.value))}\n` +
+      '提交后不可撤回。'
+  )
+  if (!confirmed) return
   formError.value = ''
   formSubmitting.value = true
   try {
@@ -620,12 +646,12 @@ onMounted(() => {
 .required { color: #e05c5c; }
 
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 8px; }
-.summaryHint { font-size: 12px; color: #d48806; margin: 0 0 16px; line-height: 1.5; }
 .statCard { background: #fff; border-radius: 12px; padding: 16px 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
 .statCard.green .value { color: #3aaf7d; }
 .statCard .label { font-size: 13px; color: #8c8c9a; margin-bottom: 8px; }
 .statCard .value { font-size: 22px; font-weight: 600; color: #1f1f2e; }
 .statCard .value.small { font-size: 16px; }
+.summaryHint { margin: 0 0 12px; padding: 10px 14px; border-radius: 8px; background: #fffbe6; color: #8c6d1f; font-size: 13px; }
 
 .table { background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); overflow: hidden; }
 .toolbar { display: flex; align-items: center; gap: 12px; padding: 16px 24px; border-bottom: 1px solid #f0f0f3; flex-wrap: wrap; }
@@ -645,6 +671,8 @@ onMounted(() => {
 .content tbody td { padding: 16px 24px; color: #1f1f2e; border-bottom: 1px solid #f0f0f3; vertical-align: middle; }
 .content tbody tr:last-child td { border-bottom: none; }
 .emptyCell { text-align: center; padding: 24px; color: #8c8c9a; }
+.errorCell { color: #e05c5c; }
+.retryBtn { margin-top: 10px; padding: 7px 14px; border-radius: 7px; border: 1px solid #e05c5c; background: #fff; color: #e05c5c; cursor: pointer; }
 .dataRow { transition: background 0.15s; }
 .dataRow:hover { background: #fafafc; }
 .name { font-weight: 500; }

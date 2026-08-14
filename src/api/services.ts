@@ -73,6 +73,8 @@ import type {
   PropertyCompanyCommunity,
   PropertyCompanyUpdatePayload,
   ArrearsReminderPayload,
+  ArrearsReminderPreviewPayload,
+  ArrearsReminderPreviewResult,
   ArrearsReminderResult,
   AdminConversationItem,
   AdminChatMessageItem,
@@ -83,6 +85,9 @@ import type {
   ResidentCreatePayload,
   ResidentUpdatePayload,
   ResidentStatusPayload,
+  RoleAccountCreatePayload,
+  RoleAccountCreateResult,
+  RoleAccountDeleteResult,
   FamilyMemberItem,
   ResidentMerchantApplicationItem,
   ResidentMerchantDepositItem,
@@ -142,6 +147,10 @@ import type {
   AdminWithdrawalAuditPayload,
   AdminWithdrawalAuditResult,
   MerchantWithdrawalSummary,
+  AdminRoleWithdrawalItem,
+  AdminRoleWithdrawalAuditPayload,
+  AdminRoleWithdrawalAuditResult,
+  RoleWithdrawalSummary,
   CoinWithdrawalSummary,
   AdminCoinWithdrawalItem,
   AdminCoinWithdrawalAuditPayload,
@@ -348,6 +357,27 @@ export const residentApi = {
 
   }
 
+}
+
+/**
+ * §31.2 业务角色账号直建 / 直删
+ * Roles: property_admin、platform_admin
+ * role: merchant | activity_leader | technician | courier
+ */
+export const roleAccountApi = {
+  create(payload: RoleAccountCreatePayload) {
+    return request<RoleAccountCreateResult>('/admin/role-accounts', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+
+  /** 硬删除账号（含关联店铺）；id 为 res_ 前缀 */
+  remove(id: string) {
+    return request<RoleAccountDeleteResult>(`/admin/role-accounts/${id}`, {
+      method: 'DELETE'
+    })
+  }
 }
 
 export const familyApi = {
@@ -1079,8 +1109,10 @@ export const distributionApi = {
     params: {
       startDate?: string
       endDate?: string
+      /** summary | detail | byProperty | byCoordinator | bySector */
       dimension?: string
       propertyCompanyId?: string
+      coordinatorId?: string
     } = {},
     options: { adminPath?: boolean } = {}
   ) {
@@ -1088,12 +1120,17 @@ export const distributionApi = {
     return request<DistributionStats>(`${path}${buildQuery(params)}`)
   },
 
-  /** 下单/结算前试算：前端只展示返回份额，不本地重算 */
+  /**
+   * 分账试算，不落库。
+   * 已存在订单应只传 orderId，由后端读取不可变快照；管理端假设试算传完整商品/配送参数。
+   */
   calculate(params: {
-    merchantId: string
-    totalAmount: number
-    /** B 方案：配送费单独分账；不传则后端可能按旧口径把整单当商品价 */
+    orderId?: string
+    merchantId?: string
+    productAmount?: number
+    originalDeliveryFee?: number
     deliveryFee?: number
+    deliverySubsidySponsor?: string
     pointUsed?: number
     coinUsed?: number
     propertyCompanyId?: string
@@ -1412,6 +1449,37 @@ export const adminMerchantWithdrawalApi = {
   summary(params: { propertyCompanyId?: string } = {}) {
     return request<MerchantWithdrawalSummary>(
       `/admin/merchant-withdrawals/summary${buildQuery(params)}`
+    )
+  }
+}
+
+/** 管理端 - 配送员/多角色提现审核（v5.5 §70.5–70.7） */
+export const adminRoleWithdrawalApi = {
+  list(params: {
+    page?: number
+    pageSize?: number
+    withdrawalType?: string
+    auditStatus?: string
+    keyword?: string
+    startDate?: string
+    endDate?: string
+    propertyCompanyId?: string
+  } = {}) {
+    return request<PageResult<AdminRoleWithdrawalItem>>(
+      `/admin/role-withdrawals${buildQuery(params)}`
+    )
+  },
+
+  summary(params: { propertyCompanyId?: string } = {}) {
+    return request<RoleWithdrawalSummary>(
+      `/admin/role-withdrawals/summary${buildQuery(params)}`
+    )
+  },
+
+  audit(id: string, payload: AdminRoleWithdrawalAuditPayload) {
+    return request<AdminRoleWithdrawalAuditResult>(
+      `/admin/role-withdrawals/${id}/audit`,
+      { method: 'POST', body: JSON.stringify(payload) }
     )
   }
 }
@@ -1841,23 +1909,8 @@ export const platformShareApi = {
     return request<PlatformEarningsBalance>(
       `/admin/platform-earnings/balance${buildQuery(params)}`
     )
-  },
-
-  /** @deprecated CBK 真分账下平台侧无提现；保留接口定义以免旧环境报错 */
-  async earningsWithdrawals(params: { page?: number; pageSize?: number; status?: string } = {}) {
-    const raw = await request<unknown>(
-      `/admin/platform-earnings/withdrawals${buildQuery(params)}`
-    )
-    return normalizePageResult<RoleWithdrawalItem>(raw, params.page || 1, params.pageSize || 20)
-  },
-
-  /** @deprecated CBK 真分账下勿调用 */
-  createEarningsWithdrawal(payload: RoleWithdrawalPayload) {
-    return request<RoleWithdrawalItem>('/admin/platform-earnings/withdrawals', {
-      method: 'POST',
-      body: JSON.stringify(payload)
-    })
   }
+  // CBK 真分账下平台侧无提现：勿再封装 /admin/platform-earnings/withdrawals
 }
 
 /** 快递负责人管理 */
@@ -2481,7 +2534,15 @@ export const arrearsReportApi = {
     return res.blob()
   },
 
-  /** POST /admin/property-fees/arrears-reminder — v3.9 催缴通知 */
+  /** POST /admin/property-fees/arrears-reminder/preview — v5.3 催缴快照 */
+  previewReminder(payload: ArrearsReminderPreviewPayload) {
+    return request<ArrearsReminderPreviewResult>('/admin/property-fees/arrears-reminder/preview', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+
+  /** POST /admin/property-fees/arrears-reminder — v5.3 统一催缴通知 */
   sendReminder(payload: ArrearsReminderPayload) {
     return request<ArrearsReminderResult>('/admin/property-fees/arrears-reminder', {
       method: 'POST',

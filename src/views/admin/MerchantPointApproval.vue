@@ -47,6 +47,12 @@
           <tr v-if="loading">
             <td colspan="7" class="emptyCell">加载中...</td>
           </tr>
+          <tr v-else-if="loadError">
+            <td colspan="7" class="emptyCell errorCell">
+              <p>{{ loadError }}</p>
+              <button type="button" class="retryBtn" @click="loadData(currentPage)">重新加载</button>
+            </td>
+          </tr>
           <tr v-else-if="!list.length">
             <td colspan="7" class="emptyCell">暂无数据</td>
           </tr>
@@ -116,8 +122,16 @@
               </div>
             </div>
             <div class="field">
-              <label class="label">{{ auditForm.auditResult === 'rejected' ? '拒绝原因' : '备注' }}</label>
-              <textarea v-model="auditForm.remark" class="textarea" rows="3" maxlength="200" :placeholder="auditForm.auditResult === 'rejected' ? '请填写拒绝原因（必填）' : '备注（选填）'" />
+              <label class="label">
+                {{ auditForm.auditResult === 'rejected' ? '拒绝原因' : auditForm.auditResult === 'approved' ? '备注' : '审核说明' }}
+              </label>
+              <textarea
+                v-model="auditForm.remark"
+                class="textarea"
+                rows="3"
+                maxlength="200"
+                :placeholder="auditForm.auditResult === 'rejected' ? '请填写拒绝原因（必填）' : '备注（选填）'"
+              />
             </div>
             <p v-if="formError" class="error">{{ formError }}</p>
             <div class="modalFooter">
@@ -138,7 +152,7 @@ import { computed, onMounted, ref } from 'vue'
 import IconSvg from '../../components/IconSvg.vue'
 import { adminMerchantPointPurchaseApi } from '../../api/services'
 import type { AdminMerchantPointPurchaseItem } from '../../api/types'
-import { ApiError } from '../../api/request'
+import { ApiError, formatApiError } from '../../api/request'
 import {
   POINT_PURCHASE_AUDIT_STATUS,
   POINT_PURCHASE_AUDIT_STATUS_LABEL,
@@ -158,6 +172,7 @@ const NAME_SEARCH_PAGE_SIZE = 100
 const NAME_SEARCH_MAX_PAGES = 10
 
 const loading = ref(true)
+const loadError = ref('')
 const list = ref<AdminMerchantPointPurchaseItem[]>([])
 const currentPage = ref(1)
 const total = ref(0)
@@ -171,7 +186,7 @@ const endDate = ref('')
 
 const auditModalOpen = ref(false)
 const auditTarget = ref<AdminMerchantPointPurchaseItem | null>(null)
-const auditForm = ref({ auditResult: 'approved', remark: '' })
+const auditForm = ref({ auditResult: '', remark: '' })
 const formSubmitting = ref(false)
 const formError = ref('')
 
@@ -218,6 +233,7 @@ function isTerminalPurchase(item: AdminMerchantPointPurchaseItem) {
 
 async function loadData(page = currentPage.value) {
   loading.value = true
+  loadError.value = ''
   try {
     const term = appliedKeyword.value.trim()
     const isNameSearch = Boolean(term && !isLikelyMerchantId(term))
@@ -263,9 +279,7 @@ async function loadData(page = currentPage.value) {
     totalPages.value = res.pagination?.totalPages ?? 1
   } catch (e) {
     console.error(e)
-    list.value = []
-    total.value = 0
-    totalPages.value = 1
+    loadError.value = formatApiError(e, '积分审批记录加载失败，请重试')
   } finally {
     loading.value = false
   }
@@ -296,7 +310,7 @@ function changePage(page: number) {
 
 function openAuditModal(item: AdminMerchantPointPurchaseItem) {
   auditTarget.value = item
-  auditForm.value = { auditResult: 'approved', remark: '' }
+  auditForm.value = { auditResult: '', remark: '' }
   formError.value = ''
   auditModalOpen.value = true
 }
@@ -309,10 +323,22 @@ function closeAuditModal() {
 
 async function submitAudit() {
   if (!auditTarget.value) return
+  if (!auditForm.value.auditResult) {
+    formError.value = '请选择通过或拒绝'
+    return
+  }
   if (auditForm.value.auditResult === 'rejected' && !auditForm.value.remark.trim()) {
     formError.value = '拒绝时请填写拒绝原因'
     return
   }
+  const actionLabel = auditForm.value.auditResult === 'approved' ? '通过' : '拒绝'
+  const confirmed = window.confirm(
+    `确认${actionLabel}商家「${auditTarget.value.merchantName || auditTarget.value.merchantId}」的积分购买申请？\n` +
+      `购买积分：${auditTarget.value.pointAmount}\n` +
+      `支付金额：¥${formatMoney(auditTarget.value.payAmount)}\n` +
+      '提交后不可撤回。'
+  )
+  if (!confirmed) return
   formError.value = ''
   formSubmitting.value = true
   try {
@@ -362,6 +388,8 @@ onMounted(() => {
 .content tbody td { padding: 16px 24px; color: #1f1f2e; border-bottom: 1px solid #f0f0f3; vertical-align: middle; }
 .content tbody tr:last-child td { border-bottom: none; }
 .emptyCell { text-align: center; padding: 24px; color: #8c8c9a; }
+.errorCell { color: #e05c5c; }
+.retryBtn { margin-top: 10px; padding: 7px 14px; border-radius: 7px; border: 1px solid #e05c5c; background: #fff; color: #e05c5c; cursor: pointer; }
 .dataRow { transition: background 0.15s; }
 .dataRow:hover { background: #fafafc; }
 

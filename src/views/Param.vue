@@ -12,7 +12,7 @@
       <button
         v-if="!isMobile"
         class="btnSave"
-        :disabled="loading || saving || !companyId || pointShareOverLimit"
+        :disabled="loading || saving || !companyId || pointShareSaveBlocked"
         @click="handleSave"
       >
         {{ saving ? '保存中...' : '保存全局设置' }}
@@ -39,7 +39,7 @@
           <h2 class="sectionTitle">分账</h2>
           <p class="sectionDesc">
             商品价进平台盘（我们公司 / 物业 / 管理盘）；管理盘内再按统筹 : 板块 : 个体 = 4 : 3 : 3 拆分。
-            配送费单独分给我们公司与配送员。
+            配送结算基数单独分给我们公司与配送员；满额减免由明确承担方补贴，不从商品平台盘扣除。
             <template v-if="!canEditPlatformFinance">当前账号仅可查看分成比例。</template>
           </p>
         </div>
@@ -231,8 +231,8 @@
             <div class="header">
               <div class="icon orange"><IconSvg name="delivery" /></div>
               <div class="headerText">
-                <span>配送费分账</span>
-                <span class="headerSub">仅我们公司与配送员；商家自设面向用户的配送费</span>
+                <span>配送链路分账</span>
+                <span class="headerSub">按配送结算基数分配，仅我们公司与配送员参与</span>
               </div>
             </div>
 
@@ -268,7 +268,7 @@
             </div>
 
             <p class="cardFoot">
-              配送费抽成请到
+              配送结算基数抽成请到
               <RouterLink v-if="isPlatformAdmin" class="inlineLink" :to="{ name: 'platform-share-config' }">
                 平台分成配置
               </RouterLink>
@@ -336,7 +336,9 @@
               <div class="icon purple"><IconSvg name="points" /></div>
               <div class="headerText">
                 <span>积分分成比例</span>
-                <span class="headerSub">四项合计 ≤ 30%，保存时提交价格审批</span>
+                <span class="headerSub">
+                  四项合计必须为 100%，{{ isPlatformAdmin ? '保存后直接生效' : '保存时提交价格审批' }}
+                </span>
               </div>
             </div>
             <div class="shareGrid">
@@ -347,9 +349,10 @@
                     v-model.number="pointShare.residentPercent"
                     type="number"
                     min="0"
-                    max="30"
+                    max="100"
                     step="0.1"
                     class="input"
+                    :class="{ inputError: pointShareInvalid }"
                   />
                   <span class="unit">%</span>
                 </div>
@@ -361,9 +364,10 @@
                     v-model.number="pointShare.merchantPercent"
                     type="number"
                     min="0"
-                    max="30"
+                    max="100"
                     step="0.1"
                     class="input"
+                    :class="{ inputError: pointShareInvalid }"
                   />
                   <span class="unit">%</span>
                 </div>
@@ -375,9 +379,10 @@
                     v-model.number="pointShare.coinPercent"
                     type="number"
                     min="0"
-                    max="30"
+                    max="100"
                     step="0.1"
                     class="input"
+                    :class="{ inputError: pointShareInvalid }"
                   />
                   <span class="unit">%</span>
                 </div>
@@ -389,28 +394,34 @@
                     v-model.number="pointShare.sharedPercent"
                     type="number"
                     min="0"
-                    max="30"
+                    max="100"
                     step="0.1"
                     class="input"
+                    :class="{ inputError: pointShareInvalid }"
                   />
                   <span class="unit">%</span>
                 </div>
               </div>
             </div>
-            <div class="bar" :class="{ barDanger: pointShareOverLimit }">
+            <div class="bar" :class="{ barDanger: pointShareInvalid }">
               <div
                 class="fill"
-                :class="{ fillDanger: pointShareOverLimit }"
-                :style="{ width: `${Math.min((pointShareTotalPercent / 30) * 100, 100)}%` }"
+                :class="{ fillDanger: pointShareInvalid }"
+                :style="{ width: `${Math.min(pointShareTotalPercent, 100)}%` }"
               />
             </div>
-            <p class="shareTotal" :class="{ error: pointShareOverLimit }">
-              合计 {{ pointShareTotalPercent.toFixed(1) }}% / 上限 30%
-              <span v-if="pointShareOverLimit">（已超限）</span>
+            <p class="shareTotal" :class="{ error: pointShareInvalid }">
+              合计 {{ pointShareTotalPercent.toFixed(1) }}% / 必须为 100%
+              <span v-if="pointShareInvalid">（请调整后再提交）</span>
             </p>
-            <p v-if="pointShareDirty && !pointShareOverLimit" class="sharePendingHint">
-              已修改：点「保存全局设置」将提交价格审批，生效前仍显示原值。
-              <RouterLink class="inlineLink" :to="{ name: 'price-approvals' }">价格审批</RouterLink>
+            <p v-if="pointShareDirty && !pointShareInvalid" class="sharePendingHint">
+              <template v-if="isPlatformAdmin">
+                已修改：点「保存全局设置」后直接生效。
+              </template>
+              <template v-else>
+                已修改：点「保存全局设置」将提交价格审批，生效前仍显示原值。
+                <RouterLink class="inlineLink" :to="{ name: 'price-approvals' }">价格审批</RouterLink>
+              </template>
             </p>
             <div class="shareActions">
               <button
@@ -705,7 +716,7 @@
     <div v-if="isMobile" class="mobileSaveBar" :class="{ mobileSaveBarInShell: inMobileShell }">
       <button
         class="btnSave"
-        :disabled="loading || saving || !companyId || pointShareOverLimit"
+        :disabled="loading || saving || !companyId || pointShareSaveBlocked"
         @click="handleSave"
       >
         {{ saving ? '保存中...' : '保存全局设置' }}
@@ -727,7 +738,7 @@ import {
 import { ApiError } from '../api/request'
 import { useAuthStore } from '../stores/auth'
 import type { PropertyCompanyConfig, PropertyCompanyDetail, PropertyCompanyItem } from '../api/types'
-import { COIN_ISSUE_MODE, COIN_ISSUE_MODE_OPTIONS, COIN_USE_CONDITION, COIN_USE_CONDITION_OPTIONS, PRICE_APPROVAL_ITEM_TYPE, USER_ROLE } from '../constants/enums'
+import { API_ERROR_CODE, COIN_ISSUE_MODE, COIN_ISSUE_MODE_OPTIONS, COIN_USE_CONDITION, COIN_USE_CONDITION_OPTIONS, PRICE_APPROVAL_ITEM_TYPE, USER_ROLE } from '../constants/enums'
 import { useInMobileShell } from '../composables/useInMobileShell'
 
 const auth = useAuthStore()
@@ -770,7 +781,7 @@ const withdrawSaving = ref(false)
 const withdrawError = ref('')
 const withdrawSuccess = ref('')
 
-/** v3.9 积分分成比例（表单用百分比，提交转 0–0.30）；变更走价格审批 */
+/** v5.3 积分分成比例（表单用百分比，四项合计必须为 100%）；变更走价格审批 */
 const pointShare = reactive({
   residentPercent: 0,
   merchantPercent: 0,
@@ -792,7 +803,18 @@ const pointShareTotalPercent = computed(
     Number(pointShare.coinPercent || 0) +
     Number(pointShare.sharedPercent || 0)
 )
-const pointShareOverLimit = computed(() => pointShareTotalPercent.value > 30.0001)
+const pointShareInvalid = computed(() => {
+  const values = [
+    pointShare.residentPercent,
+    pointShare.merchantPercent,
+    pointShare.coinPercent,
+    pointShare.sharedPercent
+  ].map((value) => Number(value))
+  return (
+    values.some((value) => !Number.isFinite(value) || value < 0 || value > 100) ||
+    Math.abs(pointShareTotalPercent.value - 100) > 0.01
+  )
+})
 
 function ratesClose(a: number, b: number) {
   return Math.abs(Number(a || 0) - Number(b || 0)) < 0.0001
@@ -805,6 +827,7 @@ const pointShareDirty = computed(
     !ratesClose(pointShare.coinPercent, pointShareSaved.coinPercent) ||
     !ratesClose(pointShare.sharedPercent, pointShareSaved.sharedPercent)
 )
+const pointShareSaveBlocked = computed(() => pointShareDirty.value && pointShareInvalid.value)
 
 const config = reactive({
   pointToFeeRatePercent: 1,
@@ -1270,13 +1293,38 @@ async function saveWithdrawSettings() {
 
 async function handleSave() {
   const id = companyId.value
-  if (!id || saving.value || pointShareOverLimit.value) return
+  if (!id || saving.value || pointShareSaveBlocked.value) return
   saving.value = true
   saveError.value = ''
   saveSuccess.value = ''
   const expectedExchange = toNonNegativeNumber(config.pointExchangeRate, 100)
   const expectedPerKg = toNonNegativeNumber(config.deliveryPerKgFee)
+  const shareMessages: string[] = []
   try {
+    // v5.3：平台管理员直接修改；物业管理员提交价格审批。
+    // 两种方式都先于其他配置保存，避免旧比例非 100% 时阻断整个请求。
+    if (pointShareDirty.value) {
+      try {
+        if (isPlatformAdmin.value) {
+          await propertyCompanyApi.update(id, mapPointShareToPayload())
+          Object.assign(pointShareSaved, { ...pointShare })
+          shareMessages.push('积分分成比例已直接生效')
+        } else {
+          await submitPointShareApproval(id)
+          shareMessages.push('积分分成比例已提交价格审批，待领导通过后生效')
+        }
+      } catch (e) {
+        const actionLabel = isPlatformAdmin.value ? '积分分成修改' : '积分分成审批提交'
+        saveError.value =
+          e instanceof ApiError && e.errorCode === API_ERROR_CODE.INVALID_SHARE_RATE_TOTAL
+            ? `${actionLabel}失败：业主、商家、物业币和共享四项合计必须为 100%`
+            : e instanceof ApiError
+              ? `${actionLabel}失败：${e.message}`
+              : `${actionLabel}失败`
+        return
+      }
+    }
+
     // PUT /admin/property-coin/mall-rules 仅 property_admin；平台管理员走物业配置接口
     if (isPropertyAdmin.value) {
       try {
@@ -1311,23 +1359,6 @@ async function handleSave() {
     } catch (e) {
       console.warn('property-company exchange/perKg update failed', e)
     }
-    const shareMessages: string[] = []
-    if (pointShareDirty.value) {
-      try {
-        await submitPointShareApproval(id)
-        shareMessages.push('积分分成比例已提交价格审批，待领导通过后生效')
-      } catch (e) {
-        saveError.value =
-          e instanceof ApiError
-            ? `其他配置已保存，但分成审批提交失败：${e.message}`
-            : '其他配置已保存，但分成审批提交失败'
-        if (isPlatformAdmin.value) {
-          auth.setPropertyCompanyId(id)
-        }
-        await loadDetail({ silent: true })
-        return
-      }
-    }
     if (isPlatformAdmin.value) {
       auth.setPropertyCompanyId(id)
     }
@@ -1344,7 +1375,14 @@ async function handleSave() {
         : '配置已保存'
     }
   } catch (e) {
-    saveError.value = e instanceof ApiError ? e.message : '保存失败，请稍后重试'
+    if (shareMessages.length) {
+      saveSuccess.value = shareMessages.join('；')
+      saveError.value = e instanceof ApiError
+        ? `积分分成调整已完成，但其他配置保存失败：${e.message}`
+        : '积分分成调整已完成，但其他配置暂未保存，请重试'
+    } else {
+      saveError.value = e instanceof ApiError ? e.message : '保存失败，请稍后重试'
+    }
   } finally {
     saving.value = false
   }
@@ -1533,6 +1571,7 @@ onMounted(async () => {
 .card .fillDanger { background: #e05c5c !important; }
 .shareTotal { margin: 0; font-size: 13px; color: #8c8c9a; }
 .shareTotal.error { color: #e05c5c; }
+.input.inputError { border-color: #e05c5c; background: #fff7f7; }
 .sharePendingHint { margin: 8px 0 0; font-size: 12px; color: #d48806; line-height: 1.5; }
 .shareActions { margin-top: 12px; }
 .btnSecondary {

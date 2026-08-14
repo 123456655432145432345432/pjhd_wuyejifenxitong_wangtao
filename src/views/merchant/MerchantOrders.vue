@@ -212,8 +212,14 @@
               <section class="section">
                 <h4 class="sectionTitle">费用与支付</h4>
                 <ul class="infoGrid">
-                  <li><span>商品合计</span><strong>¥{{ formatMoney(detail.totalAmount) }}</strong></li>
-                  <li><span>配送费</span><strong>¥{{ formatMoney(detail.deliveryFee) }}</strong></li>
+                  <li><span>商品金额</span><strong>¥{{ formatMoney(detail.productAmount) }}</strong></li>
+                  <li><span>原配送费</span><strong>¥{{ formatMoney(detail.originalDeliveryFee) }}</strong></li>
+                  <li><span>满额配送费减免</span><strong>¥{{ formatMoney(detail.deliveryWaiverAmount) }}</strong></li>
+                  <li><span>用户实际配送费</span><strong>¥{{ formatMoney(detail.deliveryFee) }}</strong></li>
+                  <li><span>应付总额</span><strong>¥{{ formatMoney(detail.totalAmount) }}</strong></li>
+                  <li><span>减免承担方</span><strong>{{ sponsorLabel(detail.deliverySubsidySponsor) }}</strong></li>
+                  <li><span>配送补贴</span><strong>¥{{ formatMoney(detail.deliverySubsidyAmount) }}</strong></li>
+                  <li><span>配送结算基数</span><strong>¥{{ formatMoney(detail.deliverySettlementBase) }}</strong></li>
                   <li><span>支付方式</span><strong>{{ paymentMethodLabel(detail.paymentMethod) }}</strong></li>
                   <li><span>积分抵扣</span><strong>{{ detail.pointUsed ?? 0 }} 积分</strong></li>
                   <li><span>物业币</span><strong>¥{{ formatMoney(detail.coinUsed) }}</strong></li>
@@ -222,22 +228,19 @@
               </section>
 
               <section class="section">
-                <h4 class="sectionTitle">分账预览（B方案·账面试算）</h4>
-                <p class="calcHint">调用 /distribution/calculate（含配送费），仅供预览，非已到账。</p>
+                <h4 class="sectionTitle">分账预览（账面试算）</h4>
+                <p class="calcHint">
+                  按订单 ID 调用 GET /distribution/calculate，由后端读取下单快照；前端不重算正式金额。
+                </p>
                 <p v-if="calcLoading" class="muted">试算中...</p>
                 <p v-else-if="calcError" class="error">{{ calcError }}</p>
                 <template v-else-if="calcResult">
                   <ul class="infoGrid">
-                    <li v-if="calcResult.productAmount != null">
-                      <span>商品价</span>
-                      <strong>¥{{ formatMoney(calcResult.productAmount) }}</strong>
-                    </li>
-                    <li v-if="calcResult.deliveryFee != null">
-                      <span>配送费</span>
-                      <strong>¥{{ formatMoney(calcResult.deliveryFee) }}</strong>
-                    </li>
+                    <li><span>商品金额</span><strong>¥{{ formatMoney(calcResult.productAmount) }}</strong></li>
                     <li><span>抽佣比例</span><strong>{{ formatRate(calcResult.commissionRate) }}</strong></li>
-                    <li><span>预计商家份额</span><strong>¥{{ formatMoney(calcResult.merchantShare) }}</strong></li>
+                    <li><span>商家商品实得</span><strong>¥{{ formatMoney(calcResult.merchantGoodsShare) }}</strong></li>
+                    <li><span>商家配送补贴</span><strong>¥{{ formatMoney(calcResult.merchantDeliverySubsidy) }}</strong></li>
+                    <li><span>商家最终实得</span><strong>¥{{ formatMoney(calcResult.merchantShare) }}</strong></li>
                     <li>
                       <span>抽佣基础额</span>
                       <strong>¥{{ formatMoney(calcResult.commissionBaseAmount) }}</strong>
@@ -248,8 +251,12 @@
                       <span>实际可分配平台盘</span>
                       <strong>¥{{ formatMoney(calcResult.distributableAmount) }}</strong>
                     </li>
-                    <li><span>我们公司</span><strong>¥{{ formatMoney(calcResult.platformShare) }}</strong></li>
+                    <li><span>成本击穿差额</span><strong>¥{{ formatMoney(calcResult.deficitAmount) }}</strong></li>
+                    <li><span>击穿承担方</span><strong>{{ sponsorLabel(calcResult.deficitSponsor) }}</strong></li>
+                    <li><span>商家调整额</span><strong>¥{{ formatMoney(calcResult.merchantAdjustmentAmount) }}</strong></li>
+                    <li><span>公司商品收入</span><strong>¥{{ formatMoney(calcResult.platformShare) }}</strong></li>
                     <li><span>物业</span><strong>¥{{ formatMoney(calcResult.propertyShare) }}</strong></li>
+                    <li><span>管理盘</span><strong>¥{{ formatMoney(calcResult.managementPoolAmount) }}</strong></li>
                     <li v-if="calcResult.coordinatorShare != null">
                       <span>统筹</span>
                       <strong>¥{{ formatMoney(calcResult.coordinatorShare) }}</strong>
@@ -262,17 +269,20 @@
                       <span>个体负责人</span>
                       <strong>¥{{ formatMoney(calcResult.individualLeaderShare) }}</strong>
                     </li>
-                    <li v-if="calcResult.platformDeliveryShare != null">
-                      <span>配送费·我们公司</span>
-                      <strong>¥{{ formatMoney(calcResult.platformDeliveryShare) }}</strong>
-                    </li>
-                    <li>
-                      <span>配送费·配送员</span>
-                      <strong>¥{{ formatMoney(calcResult.courierShare) }}</strong>
-                    </li>
+                  </ul>
+                  <h5 class="sectionTitle">配送分账</h5>
+                  <ul class="infoGrid">
+                    <li><span>原配送费</span><strong>¥{{ formatMoney(calcResult.originalDeliveryFee) }}</strong></li>
+                    <li><span>用户配送费</span><strong>¥{{ formatMoney(calcResult.deliveryFee) }}</strong></li>
+                    <li><span>补贴承担方</span><strong>{{ sponsorLabel(calcResult.deliverySubsidySponsor) }}</strong></li>
+                    <li><span>配送补贴</span><strong>¥{{ formatMoney(calcResult.deliverySubsidyAmount) }}</strong></li>
+                    <li><span>配送结算基数</span><strong>¥{{ formatMoney(calcResult.deliverySettlementBase) }}</strong></li>
+                    <li><span>公司配送收入</span><strong>¥{{ formatMoney(calcResult.platformDeliveryShare) }}</strong></li>
+                    <li><span>配送员收入</span><strong>¥{{ formatMoney(calcResult.courierEarning) }}</strong></li>
                   </ul>
                   <p class="calcHint">
-                    商品价 → 商家 vs 平台盘（我们公司/物业/统筹·板块·个体）；配送费单独拆给我们公司与配送员。
+                    商品分账与配送分账相互独立。满额减免时配送员收入仍按配送结算基数计算；
+                    配送员正式收入只读取 courierEarning。
                   </p>
                 </template>
                 <p v-else class="muted">暂无试算结果</p>
@@ -366,6 +376,7 @@ import { distributionApi, merchantPortalApi } from '../../api/services'
 import type { DeliveryTaskItem, DistributionCalculateResult, OrderItem } from '../../api/types'
 import { ApiError, formatApiError } from '../../api/request'
 import {
+  DELIVERY_SUBSIDY_SPONSOR_LABEL,
   getEnumLabel,
   ORDER_STATUS,
   ORDER_STATUS_LABEL,
@@ -433,6 +444,10 @@ function statusClass(order: OrderItem) {
 
 function paymentMethodLabel(method?: string) {
   return getEnumLabel(PAYMENT_METHOD_LABEL, method, method || '—')
+}
+
+function sponsorLabel(sponsor?: string) {
+  return getEnumLabel(DELIVERY_SUBSIDY_SPONSOR_LABEL, sponsor, sponsor || '—')
 }
 
 function itemsSummary(order: OrderItem) {
@@ -520,29 +535,15 @@ async function openDetail(id: string) {
 }
 
 async function loadCalculatePreview(order: OrderItem) {
-  let merchantId = order.merchantId
-  if (!merchantId) {
-    try {
-      const me = await merchantPortalApi.my()
-      merchantId = me?.id
-    } catch {
-      /* ignore */
-    }
-  }
-  const totalAmount = Number(order.totalAmount)
-  if (!merchantId || !Number.isFinite(totalAmount) || totalAmount <= 0) {
-    calcError.value = '缺少商家或金额，无法试算'
+  if (!order.id) {
+    calcError.value = '缺少订单 ID，无法按订单快照试算'
     return
   }
   calcLoading.value = true
   calcError.value = ''
   try {
     calcResult.value = await distributionApi.calculate({
-      merchantId,
-      totalAmount,
-      deliveryFee: order.deliveryFee != null ? Number(order.deliveryFee) : undefined,
-      pointUsed: order.pointUsed != null ? Number(order.pointUsed) : undefined,
-      coinUsed: order.coinUsed != null ? Number(order.coinUsed) : undefined
+      orderId: order.id
     })
   } catch (e) {
     calcResult.value = null
@@ -811,6 +812,7 @@ onMounted(() => load(1))
 .section { margin-bottom: 20px; }
 .sectionTitle { font-size: 14px; font-weight: 600; color: #1f1f2e; margin-bottom: 12px; }
 .calcHint { margin: 0 0 10px; font-size: 12px; color: #8a6d1d; }
+.deficitAmt { color: #c45c26 !important; }
 .infoGrid { list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 10px 20px; }
 .infoGrid li { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #f7f7f9; }
 .infoGrid span { color: #8c8c9a; flex-shrink: 0; }

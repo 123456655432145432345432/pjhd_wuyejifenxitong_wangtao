@@ -53,7 +53,7 @@
               </option>
             </select>
             <div class="consumptionInput">
-              <label class="consumptionLabel">消费额</label>
+              <label class="consumptionLabel">商品金额（不含配送费）</label>
               <input
                 v-model.number="consumptionAmount"
                 type="number"
@@ -70,41 +70,42 @@
           <span v-if="profitDisplay.periodLabel"> · {{ profitDisplay.periodLabel }}</span>
           <span v-if="profitDisplay.propertyName"> · {{ profitDisplay.propertyName }}</span>
           <span v-if="profitDisplay.totalOrders"> · {{ profitDisplay.totalOrders }} 笔订单</span>
+          <span v-if="profitDisplay.calculationVersion"> · {{ profitDisplay.calculationVersion }}</span>
         </p>
         <div v-if="profitLoading" class="profitLoading">加载盈利数据中...</div>
         <div v-else-if="profitError" class="profitError">{{ profitError }}</div>
         <div v-else class="body">
           <div class="step">
             <div class="stepIcon"><IconSvg name="money" /></div>
-            <div class="stepLabel">消费额</div>
-            <div class="stepValue">{{ profitDisplay.revenue }}</div>
+            <div class="stepLabel">商品金额</div>
+            <div class="stepValue">{{ profitDisplay.productAmount }}</div>
             <div v-if="profitDisplay.revenueGrowth" class="stepHint">较上期 ↑{{ profitDisplay.revenueGrowth }}</div>
           </div>
           <div class="arrow">→</div>
-          <div class="step" v-if="profitDisplay.commission !== '¥0'">
-            <div class="stepIcon down"><IconSvg name="trend" /></div>
-            <div class="stepLabel">抽佣</div>
-            <div class="stepValue">{{ profitDisplay.commission }}</div>
-            <div class="stepHint">占比 {{ profitDisplay.commissionPct }}%</div>
-          </div>
-          <div class="arrow" v-if="profitDisplay.commission !== '¥0'">→</div>
           <div class="step">
             <div class="stepIcon down"><IconSvg name="trend" /></div>
-            <div class="stepLabel">配送费</div>
-            <div class="stepValue">{{ profitDisplay.deliveryFee }}</div>
-            <div class="stepHint">{{ profitDisplay.deliveryFeeAmount }}</div>
+            <div class="stepLabel">抽佣基础额</div>
+            <div class="stepValue">{{ profitDisplay.commissionBaseAmount }}</div>
+            <div class="stepHint">商品金额 × 抽佣率</div>
           </div>
           <div class="arrow">→</div>
           <div class="step">
             <div class="stepIcon down"><IconSvg name="trend" /></div>
-            <div class="stepLabel">兑换成本</div>
-            <div class="stepValue">{{ profitDisplay.exchangeCost }}</div>
+            <div class="stepLabel">商品平台盘</div>
+            <div class="stepValue">{{ profitDisplay.distributableAmount }}</div>
             <div class="stepHint">{{ profitDisplay.exchangeCostDetail }}</div>
           </div>
           <div class="arrow">→</div>
           <div class="step">
+            <div class="stepIcon"><IconSvg name="money" /></div>
+            <div class="stepLabel">配送结算基数</div>
+            <div class="stepValue">{{ profitDisplay.deliverySettlementBase }}</div>
+            <div class="stepHint">独立配送链，不进入商品抽佣</div>
+          </div>
+          <div class="arrow">→</div>
+          <div class="step">
             <div class="stepIcon up"><IconSvg name="chart" /></div>
-            <div class="stepLabel">盈利空间</div>
+            <div class="stepLabel">公司净收入</div>
             <div class="stepValue">{{ profitDisplay.profitSpace }}</div>
             <div class="stepHint">{{ profitDisplay.profitSpaceAmount }}</div>
             <div v-if="profitDisplay.profitGrowth" class="stepHint">较上期 ↑{{ profitDisplay.profitGrowth }}</div>
@@ -115,8 +116,8 @@
               <div v-if="index > 0" class="resultDivider" />
               <div class="resultItem">
                 <div class="resultLabel">{{ item.label }}</div>
-                <div class="resultValue">{{ item.percent }}</div>
-                <div class="resultHint">{{ item.amount }}</div>
+                <div class="resultValue">{{ item.value }}</div>
+                <div class="resultHint">{{ item.hint }}</div>
               </div>
             </div>
           </div>
@@ -498,7 +499,36 @@
                     <span class="detailValue">{{ row.value }}</span>
                   </div>
                 </div>
-                <p class="formHint">配送费、满额免配送由商家端自行设置，物业只读查看；配送相关成本从商家费用中扣除，物业不做干预。分成/营收等来自商家详情接口；积分兑换比例取商家挂接配置（物业可在参数配置中调整），后端未返回时显示「—」。</p>
+                <p class="formHint">分成/营收等来自后端详情接口；后端未返回时显示「—」。配送减免配置在下方单独编辑，正式结算使用下单快照。</p>
+              </section>
+              <section class="readonlyBlock">
+                <h4 class="detailSectionTitle">配送费与满额减免</h4>
+                <div class="fieldRow">
+                  <div class="field">
+                    <label class="label">基础配送费（元）</label>
+                    <input v-model.number="editForm.deliveryFee" type="number" min="0" step="0.01" class="input" />
+                  </div>
+                  <div class="field">
+                    <label class="label">满额门槛（元）</label>
+                    <input v-model.number="editForm.freeDeliveryThreshold" type="number" min="0.01" step="0.01" class="input" :disabled="!editForm.freeDeliveryEnabled" />
+                  </div>
+                </div>
+                <label class="checkLabel">
+                  <input v-model="editForm.freeDeliveryEnabled" type="checkbox" />
+                  启用满额配送费减免
+                </label>
+                <div v-if="editForm.freeDeliveryEnabled" class="field">
+                  <label class="label">默认补贴承担方</label>
+                  <select v-model="editForm.freeDeliverySponsor" class="input">
+                    <option v-for="option in DELIVERY_SUBSIDY_SPONSOR_OPTIONS" :key="option.value" :value="option.value">
+                      {{ option.label }}
+                    </option>
+                  </select>
+                  <p class="formHint">满额判断按商品优惠后小计，不含配送费，并在积分、物业币抵扣前完成。</p>
+                  <p v-if="editForm.freeDeliverySponsor === DELIVERY_SUBSIDY_SPONSOR.MERCHANT" class="formHint warning">
+                    满额减免默认由商家承担。满足条件时，商家商品结算收入将扣除本单配送补贴。
+                  </p>
+                </div>
               </section>
               <div class="field">
                 <label class="label">商家名称</label>
@@ -918,6 +948,8 @@ import {
   USER_ROLE,
   DELIVERY_SCOPE_LABEL,
   DISTANCE_TYPE_LABEL,
+  DELIVERY_SUBSIDY_SPONSOR,
+  DELIVERY_SUBSIDY_SPONSOR_OPTIONS,
   getEnumLabel
 } from '../constants/enums'
 import { useAuthStore } from '../stores/auth'
@@ -1051,6 +1083,8 @@ const editForm = ref({
   address: '',
   deliveryFee: '' as string | number,
   freeDeliveryThreshold: '' as string | number,
+  freeDeliveryEnabled: false,
+  freeDeliverySponsor: DELIVERY_SUBSIDY_SPONSOR.MERCHANT as string,
   rankOrder: undefined as number | undefined,
   coverUrls: [] as string[],
   videoUrl: ''
@@ -1169,8 +1203,6 @@ const editReadonlyRows = computed(() => {
   const d = editSnapshot.value
   if (!d) return []
   return [
-    { label: '配送费', value: d.deliveryFee !== undefined && d.deliveryFee !== null && d.deliveryFee !== '' ? `¥${formatMoney(Number(d.deliveryFee))}` : '未设置' },
-    { label: '满额免配送', value: d.freeDeliveryThreshold !== undefined && d.freeDeliveryThreshold !== null && d.freeDeliveryThreshold !== '' ? `¥${formatMoney(Number(d.freeDeliveryThreshold))}` : '未设置' },
     { label: '分成比例', value: d.commissionRate !== undefined && d.commissionRate !== null ? `${formatPercent(d.commissionRate)}%` : '—（接口未返回）' },
     { label: '积分兑换比例', value: d.pointExchangeRate !== undefined && d.pointExchangeRate !== null ? `1元=${d.pointExchangeRate}积分` : '—（接口未返回）' },
     { label: '返现比例', value: d.coinRebateRate !== undefined ? `${formatPercent(d.coinRebateRate)}%` : '—（接口未返回）' },
@@ -1476,6 +1508,8 @@ async function openEditModal(id: string) {
       address: data.address || '',
       deliveryFee: data.deliveryFee ?? '',
       freeDeliveryThreshold: data.freeDeliveryThreshold ?? '',
+      freeDeliveryEnabled: Boolean(data.freeDeliveryEnabled),
+      freeDeliverySponsor: data.freeDeliverySponsor || DELIVERY_SUBSIDY_SPONSOR.MERCHANT,
       rankOrder: data.rankOrder,
       coverUrls: data.coverUrls?.length ? [...data.coverUrls] : [],
       videoUrl: data.videoUrl || ''
@@ -1497,6 +1531,13 @@ function closeEditModal() {
 async function submitEdit() {
   if (!editingId.value) return
   resetFormError()
+  if (
+    editForm.value.freeDeliveryEnabled &&
+    (!Number(editForm.value.freeDeliveryThreshold) || Number(editForm.value.freeDeliveryThreshold) <= 0)
+  ) {
+    formError.value = '启用满额减免时，门槛必须大于 0'
+    return
+  }
   formSubmitting.value = true
   try {
     const coverUrls = editForm.value.coverUrls.filter((s) => s.trim())
@@ -1506,6 +1547,13 @@ async function submitEdit() {
       contactPhone: editForm.value.contactPhone.trim() || undefined,
       businessHours: editForm.value.businessHours.trim() || undefined,
       address: editForm.value.address.trim() || undefined,
+      deliveryFee: editForm.value.deliveryFee === '' ? undefined : Number(editForm.value.deliveryFee),
+      freeDeliveryThreshold:
+        editForm.value.freeDeliveryThreshold === ''
+          ? undefined
+          : Number(editForm.value.freeDeliveryThreshold),
+      freeDeliveryEnabled: editForm.value.freeDeliveryEnabled,
+      freeDeliverySponsor: editForm.value.freeDeliverySponsor,
       rankOrder: editForm.value.rankOrder,
       coverUrls: coverUrls.length ? coverUrls : undefined,
       videoUrl: editForm.value.videoUrl.trim() || undefined
@@ -2053,6 +2101,8 @@ onMounted(async () => {
   font-size: 14px;
 }
 .formHint { font-size: 12px; color: #8c8c9a; margin: 0 0 12px; line-height: 1.5; }
+.formHint.warning { color: #b45309; }
+.checkLabel { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; font-size: 13px; color: #5c5c66; }
 .field .input:disabled { background: #f5f5f7; color: #8c8c9a; cursor: not-allowed; }
 .loadingText { text-align: center; color: #8c8c9a; padding: 24px 0; }
 .detailGrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px 24px; margin-bottom: 8px; }

@@ -34,6 +34,7 @@ export const adminMenus: Menu[] = [
   { name: '送货管理', icon: 'delivery', route: 'delivery' },
   { name: '配送价格区间', icon: 'wallet', route: 'delivery-price-ranges' },
   { name: '快递负责人', icon: 'people', route: 'courier-managers' },
+  { name: '业务角色账号', icon: 'people', route: 'role-accounts' },
   { name: '欠费报表', icon: 'chart', route: 'arrears-report' },
   { name: '楼宇结构', icon: 'home', route: 'room-structure' },
   { name: '建设积分', icon: 'points', route: 'community-points' },

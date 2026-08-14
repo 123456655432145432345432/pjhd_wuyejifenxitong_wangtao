@@ -12,19 +12,32 @@ const API_BASE_URL =
 
 export class ApiError extends Error {
   code: number
+  errorCode?: string
   errors?: Array<{ field: string; message: string; value?: unknown }>
 
-  constructor(code: number, message: string, errors?: ApiError['errors']) {
+  constructor(code: number, message: string, errors?: ApiError['errors'], errorCode?: string) {
     super(message)
     this.code = code
     this.errors = errors
+    this.errorCode = errorCode
   }
 }
 
 /** 提现等业务常见错误码兜底文案（后端已返回 message 时仍优先用后端） */
 const KNOWN_ERROR_MESSAGES: Record<number, string> = {
   94003: '可提现余额不足',
-  94005: '当前账号已被阻止提现'
+  94005: '当前账号已被阻止提现',
+  97006: '商品平台盘一级比例合计必须为 100%',
+  97007: '配送费抽成比例不合法',
+  97008: '满额门槛必须大于 0',
+  97009: '订单金额快照已失效，请重新预览',
+  97010: '订单已经完成分账',
+  97011: '配送已经完成结算',
+  97012: '配送补贴承担方不合法',
+  97013: '商家预计收入不足以覆盖配送补贴',
+  97014: '分账金额不守恒',
+  97015: '退款冲正已处理',
+  97016: '分账比例不合法'
 }
 
 /** 优先拼接后端 errors[].message，否则回退 message / 已知错误码文案 */
@@ -164,13 +177,18 @@ async function tryRefreshToken() {
 
 function handleAuthFailure(json: ApiResponse<unknown>, res: Response) {
   onUnauthorized()
-  throw new ApiError(json.code || res.status, json.message || '登录已过期，请重新登录')
+  throw new ApiError(
+    json.code || res.status,
+    json.message || '登录已过期，请重新登录',
+    undefined,
+    json.errorCode
+  )
 }
 
 function handleForbidden(json: ApiResponse<unknown>, res: Response) {
   const message = json.message || '您无权执行此操作'
   onForbidden(message)
-  throw new ApiError(json.code || res.status, message)
+  throw new ApiError(json.code || res.status, message, undefined, json.errorCode)
 }
 
 export type RequestAuthOptions = {
@@ -227,7 +245,7 @@ export async function request<T>(
 
   if (json.code !== 0) {
     const errors = (json as ApiResponse<T> & { errors?: ApiError['errors'] }).errors
-    throw new ApiError(json.code, json.message || '请求失败', errors)
+    throw new ApiError(json.code, json.message || '请求失败', errors, json.errorCode)
   }
 
   return json.data

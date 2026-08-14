@@ -60,7 +60,6 @@ const PROPERTY_COMPANY_CONFIG_KEYS: (keyof PropertyCompanyConfig)[] = [
   'coinFreezeDefault',
   'deliveryBaseFee',
   'deliveryCourierShareRate',
-  'deliveryCourierPerOrder',
   'withdrawalFeeRate',
   'pointToFeeRate',
   'twoYearClearEnabled',
@@ -389,22 +388,14 @@ export function mapProfitSpaceDisplay(data: MerchantProfitSpace | null) {
   const breakdown = data?.breakdown || {}
   const revenue = metrics.totalRevenue ?? 0
   const commission = metrics.totalCommission ?? 0
-  const deliveryFee = metrics.totalDeliveryFee ?? 0
   const pointCost = metrics.totalPointCost ?? 0
   const coinCost = metrics.totalCoinCost ?? 0
   const exchangeCost = pointCost + coinCost
-  const netProfit = metrics.netProfit ?? Math.max(revenue - commission - deliveryFee - pointCost - coinCost, 0)
-  const profitMargin = metrics.profitMargin ?? (revenue > 0 ? netProfit / revenue : 0)
-
-  const propertyShare = breakdown.propertyShare ?? 0    // 已为百分比（如 2.945）
-  const coordinatorShare = breakdown.coordinatorShare ?? 0
-  const sectorLeaderShare = breakdown.sectorLeaderShare ?? 0
-  const individualLeaderShare = breakdown.individualLeaderShare ?? 0
-  const platformShare = breakdown.platformShare ?? 0
+  const netProfit = metrics.netProfit
+  const profitMargin =
+    metrics.profitMargin ?? (revenue > 0 && netProfit != null ? netProfit / revenue : 0)
 
   const pctOfRevenue = (value: number) => (revenue > 0 ? formatPercent(value / revenue) : 0)
-  const sharePercent = (pct: number) => `${pct}%`
-  const shareAmount = (pct: number) => `¥${formatMoney((netProfit * pct) / 100)}`
 
   const periodLabels: Record<string, string> = {
     week: '本周',
@@ -416,10 +407,10 @@ export function mapProfitSpaceDisplay(data: MerchantProfitSpace | null) {
   const dateRange = data?.startDate && data?.endDate ? `${data.startDate} ~ ${data.endDate}` : ''
   const periodLabel = [periodPrefix, dateRange].filter(Boolean).join(' · ')
 
-  const mapShare = (label: string, pct: number) => ({
+  const mapShare = (label: string, amount?: number, hint = '后端结算金额') => ({
     label,
-    percent: sharePercent(pct),       // API 已返回百分比，直接展示
-    amount: shareAmount(pct)          // 根据百分比反算实际金额
+    value: amount == null ? '—' : `¥${formatMoney(amount)}`,
+    hint
   })
 
   return {
@@ -432,22 +423,32 @@ export function mapProfitSpaceDisplay(data: MerchantProfitSpace | null) {
     commissionRate: `¥${formatMoney(commission)}`,
     commissionPct: pctOfRevenue(commission),
     revenue: `¥${formatMoney(revenue)}`,
-    deliveryFee: `${pctOfRevenue(deliveryFee)}%`,
-    deliveryFeeAmount: `¥${formatMoney(deliveryFee)}`,
-    exchangeCost: `${pctOfRevenue(exchangeCost)}%`,
+    productAmount: breakdown.productAmount == null ? '—' : `¥${formatMoney(breakdown.productAmount)}`,
+    commissionBaseAmount:
+      breakdown.commissionBaseAmount == null ? '—' : `¥${formatMoney(breakdown.commissionBaseAmount)}`,
+    distributableAmount:
+      breakdown.distributableAmount == null ? '—' : `¥${formatMoney(breakdown.distributableAmount)}`,
+    deliverySettlementBase:
+      breakdown.deliverySettlementBase == null ? '—' : `¥${formatMoney(breakdown.deliverySettlementBase)}`,
+    deliveryFeeAmount:
+      breakdown.deliveryFee == null ? '—' : `¥${formatMoney(breakdown.deliveryFee)}`,
+    exchangeCost: `¥${formatMoney(exchangeCost)}`,
     exchangeCostDetail: `积分 ¥${formatMoney(pointCost)} + 物业币 ¥${formatMoney(coinCost)}`,
-    profitSpace: `${formatPercent(profitMargin)}%`,
-    profitSpaceAmount: `¥${formatMoney(netProfit)}`,
-    propertyShare: sharePercent(propertyShare),
-    propertyShareAmount: shareAmount(propertyShare),
-    coordinatorShare: sharePercent(coordinatorShare),
-    coordinatorShareAmount: shareAmount(coordinatorShare),
+    profitSpace: netProfit == null ? '—' : `¥${formatMoney(netProfit)}`,
+    profitSpaceAmount: `净利率 ${formatPercent(profitMargin)}%`,
+    calculationVersion: breakdown.calculationVersion || '',
     shareBreakdown: [
-      mapShare('物业收益', propertyShare),
-      mapShare('统筹/周总收益', coordinatorShare),
-      mapShare('片区负责人', sectorLeaderShare),
-      mapShare('个人负责人', individualLeaderShare),
-      mapShare('我们公司/平台收益', platformShare)
+      mapShare('商家商品实得', breakdown.merchantGoodsShare, '商品链'),
+      mapShare('商家配送补贴', breakdown.merchantDeliverySubsidy, '商家承担时扣减'),
+      mapShare('商家最终实得', breakdown.merchantShare, '后端最终口径'),
+      mapShare('公司商品收入', breakdown.platformShare, '商品平台盘'),
+      mapShare('物业商品收入', breakdown.propertyShare, '商品平台盘'),
+      mapShare('管理盘', breakdown.managementPoolAmount, '统筹 + 板块 + 个体'),
+      mapShare('统筹实得', breakdown.coordinatorShare, '管理盘级联'),
+      mapShare('板块负责人', breakdown.sectorLeaderShare, '管理盘级联'),
+      mapShare('个体负责人', breakdown.individualLeaderShare, '管理盘级联'),
+      mapShare('公司配送收入', breakdown.platformDeliveryShare, '配送链'),
+      mapShare('配送员收入', breakdown.courierEarning, '配送链正式字段')
     ],
     revenueGrowth: data?.comparison?.revenueGrowthRate !== undefined
       ? `${formatPercent(data.comparison.revenueGrowthRate)}%`

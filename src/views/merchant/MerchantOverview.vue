@@ -38,6 +38,18 @@
           <div class="label">可提现余额</div>
           <div class="value">¥{{ formatMoney(shop.withdrawableAmount) }}</div>
         </div>
+        <div class="statCard">
+          <div class="label">待结算金额</div>
+          <div class="value">¥{{ formatMoney(shop.pendingAmount) }}</div>
+        </div>
+        <div class="statCard">
+          <div class="label">冻结金额</div>
+          <div class="value">¥{{ formatMoney(shop.frozenAmount) }}</div>
+        </div>
+        <div class="statCard">
+          <div class="label">应收/待偿</div>
+          <div class="value">¥{{ formatMoney(shop.receivableAmount) }}</div>
+        </div>
         <div class="statCard purple">
           <div class="label">在售商品</div>
           <div class="value">{{ shop.products?.length ?? 0 }}</div>
@@ -58,7 +70,9 @@
             <div><dt>地址</dt><dd>{{ shop.address || '—' }}</dd></div>
             <div><dt>营业时间</dt><dd>{{ shop.businessHours || '—' }}</dd></div>
             <div><dt>配送费</dt><dd>¥{{ formatMoney(shop.deliveryFee) }}</dd></div>
+            <div><dt>满额减免</dt><dd>{{ shop.freeDeliveryEnabled ? '已启用' : '未启用' }}</dd></div>
             <div><dt>免配送门槛</dt><dd>{{ shop.freeDeliveryThreshold != null ? `¥${formatMoney(shop.freeDeliveryThreshold)}` : '—' }}</dd></div>
+            <div><dt>默认承担方</dt><dd>{{ sponsorLabel(shop.freeDeliverySponsor) }}</dd></div>
             <div><dt>配送方式</dt><dd>{{ getEnumLabel(DELIVERY_SCOPE_LABEL, shop.deliveryScope, '—') }}</dd></div>
             <div><dt>配送距离</dt><dd>{{ getEnumLabel(DISTANCE_TYPE_LABEL, shop.distanceType, '—') }}</dd></div>
           </dl>
@@ -77,6 +91,37 @@
                 <label class="label">营业时间</label>
                 <input v-model="form.businessHours" class="input" maxlength="50" placeholder="08:00-22:00" />
               </div>
+            </div>
+            <div class="field">
+              <label class="checkLabel">
+                <input v-model="form.freeDeliveryEnabled" type="checkbox" />
+                启用满额配送费减免
+              </label>
+            </div>
+            <div v-if="form.freeDeliveryEnabled" class="field">
+              <label class="label">默认补贴承担方</label>
+              <select v-model="form.freeDeliverySponsor" class="input">
+                <option
+                  v-for="option in DELIVERY_SUBSIDY_SPONSOR_OPTIONS"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+              <p class="riskHint">满额判断只看商品优惠后小计，不含配送费，且在积分、物业币抵扣前判断。</p>
+              <p v-if="form.freeDeliverySponsor === DELIVERY_SUBSIDY_SPONSOR.MERCHANT" class="riskHint warn">
+                满额减免默认由商家承担。满足条件时，商家商品结算收入将扣除本单配送补贴。
+              </p>
+            </div>
+            <div v-if="form.freeDeliveryEnabled" class="estimateBox">
+              <strong>最低门槛订单估算</strong>
+              <span>预计商家商品实得：¥{{ formatMoney(thresholdEstimate.goodsShare) }}</span>
+              <span>预计配送补贴：¥{{ formatMoney(thresholdEstimate.subsidy) }}</span>
+              <span :class="{ danger: thresholdEstimate.finalShare < 0 }">
+                预计商家最终实得：¥{{ formatMoney(thresholdEstimate.finalShare) }}
+              </span>
+              <small>仅为输入预览，正式金额以后端试算和订单快照为准。</small>
             </div>
             <div class="field">
               <label class="label">店铺地址</label>
@@ -126,7 +171,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { merchantPortalApi } from '../../api/services'
 import type { MyMerchantDetail } from '../../api/types'
 import { ApiError } from '../../api/request'
@@ -134,6 +179,9 @@ import {
   getEnumLabel,
   DELIVERY_SCOPE_LABEL,
   DISTANCE_TYPE_LABEL,
+  DELIVERY_SUBSIDY_SPONSOR,
+  DELIVERY_SUBSIDY_SPONSOR_LABEL,
+  DELIVERY_SUBSIDY_SPONSOR_OPTIONS,
   MERCHANT_AUDIT_STATUS_LABEL,
   MERCHANT_LEVEL_LABEL,
   MERCHANT_SOURCE_LABEL
@@ -158,6 +206,8 @@ const form = reactive({
   businessHours: '',
   deliveryFee: undefined as number | undefined,
   freeDeliveryThreshold: undefined as number | undefined,
+  freeDeliveryEnabled: false,
+  freeDeliverySponsor: DELIVERY_SUBSIDY_SPONSOR.MERCHANT as string,
   coverUrls: [] as string[],
   videoUrl: ''
 })
@@ -166,6 +216,21 @@ function formatMoney(value?: number | string | null) {
   if (value === undefined || value === null || value === '') return '0.00'
   return Number(value).toFixed(2)
 }
+
+function sponsorLabel(value?: string) {
+  return getEnumLabel(DELIVERY_SUBSIDY_SPONSOR_LABEL, value, value || '—')
+}
+
+const thresholdEstimate = computed(() => {
+  const threshold = Math.max(0, Number(form.freeDeliveryThreshold) || 0)
+  const commissionRate = Math.min(1, Math.max(0, Number(shop.value?.commissionRate) || 0))
+  const goodsShare = threshold * (1 - commissionRate)
+  const subsidy =
+    form.freeDeliverySponsor === DELIVERY_SUBSIDY_SPONSOR.MERCHANT
+      ? Math.max(0, Number(form.deliveryFee) || 0)
+      : 0
+  return { goodsShare, subsidy, finalShare: goodsShare - subsidy }
+})
 
 function syncFormFromShop(data: MyMerchantDetail) {
   form.name = data.name || ''
@@ -176,6 +241,8 @@ function syncFormFromShop(data: MyMerchantDetail) {
   form.deliveryFee = data.deliveryFee != null ? Number(data.deliveryFee) : undefined
   form.freeDeliveryThreshold =
     data.freeDeliveryThreshold != null ? Number(data.freeDeliveryThreshold) : undefined
+  form.freeDeliveryEnabled = Boolean(data.freeDeliveryEnabled)
+  form.freeDeliverySponsor = data.freeDeliverySponsor || DELIVERY_SUBSIDY_SPONSOR.MERCHANT
   form.coverUrls = Array.isArray(data.coverUrls) ? [...data.coverUrls] : []
   form.videoUrl = data.videoUrl || ''
 }
@@ -215,6 +282,10 @@ async function save() {
     saveError.value = '店铺名称不能为空'
     return
   }
+  if (form.freeDeliveryEnabled && (!form.freeDeliveryThreshold || form.freeDeliveryThreshold <= 0)) {
+    saveError.value = '启用满额减免时，门槛必须大于 0'
+    return
+  }
 
   saving.value = true
   saveError.value = ''
@@ -229,6 +300,8 @@ async function save() {
       businessHours: form.businessHours.trim() || undefined,
       deliveryFee: form.deliveryFee,
       freeDeliveryThreshold: form.freeDeliveryThreshold,
+      freeDeliveryEnabled: form.freeDeliveryEnabled,
+      freeDeliverySponsor: form.freeDeliverySponsor,
       coverUrls: coverUrls.length ? coverUrls : undefined,
       videoUrl: form.videoUrl.trim() || undefined
     })
@@ -281,6 +354,12 @@ onMounted(load)
 .fieldRow { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .label { font-size: 13px; color: #8c8c9a; }
 .input, .textarea { padding: 8px 12px; border: 1px solid #e8e8ec; border-radius: 8px; font-size: 14px; box-sizing: border-box; width: 100%; }
+.checkLabel { display: flex; align-items: center; gap: 8px; font-size: 14px; color: #3a3a48; }
+.riskHint { margin: 0; font-size: 12px; color: #8c8c9a; line-height: 1.5; }
+.riskHint.warn { color: #b45309; }
+.estimateBox { display: grid; gap: 6px; padding: 12px; border: 1px solid #fde68a; border-radius: 8px; background: #fffbeb; font-size: 13px; }
+.estimateBox small { color: #8c8c9a; }
+.estimateBox .danger { color: #cf1322; font-weight: 600; }
 .textarea { resize: vertical; min-height: 160px; }
 .readonlyRow { display: flex; flex-wrap: wrap; gap: 12px; font-size: 13px; color: #8c8c9a; padding-top: 4px; }
 @media (max-width: 960px) {

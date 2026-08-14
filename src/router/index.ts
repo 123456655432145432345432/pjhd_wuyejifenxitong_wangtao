@@ -16,7 +16,7 @@ import Dashboard from '../views/Dashboard.vue'
 import Permission from '../views/Permission.vue'
 import Merchant from '../views/Merchant.vue'
 import MerchantPointApproval from '../views/admin/MerchantPointApproval.vue'
-import MerchantWithdrawalApproval from '../views/admin/MerchantWithdrawalApproval.vue'
+import WithdrawalApproval from '../views/admin/WithdrawalApproval.vue'
 import CoinWithdrawalApproval from '../views/admin/CoinWithdrawalApproval.vue'
 import PropertyContact from '../views/admin/PropertyContact.vue'
 import PlatformShareConfig from '../views/admin/PlatformShareConfig.vue'
@@ -34,6 +34,7 @@ import SettlementAccount from '../views/admin/SettlementAccount.vue'
 import DistributionRecords from '../views/admin/DistributionRecords.vue'
 import DistributionStats from '../views/admin/DistributionStats.vue'
 import RegionalLeaders from '../views/admin/RegionalLeaders.vue'
+import RoleAccounts from '../views/admin/RoleAccounts.vue'
 import CommunityForum from '../views/admin/CommunityForum.vue'
 import ResidentMerchants from '../views/admin/ResidentMerchants.vue'
 import MerchantAdSettings from '../views/admin/MerchantAdSettings.vue'
@@ -166,7 +167,7 @@ const routes = [
       {
         path: 'merchant/withdrawal-approval',
         name: 'merchant-withdrawal-approval',
-        component: MerchantWithdrawalApproval,
+        component: WithdrawalApproval,
         meta: { title: '提现审批', roles: ADMIN_ROLE_LIST }
       },
       {
@@ -270,6 +271,12 @@ const routes = [
         name: 'courier-managers',
         component: CourierManagers,
         meta: { title: '快递负责人', roles: ADMIN_ROLE_LIST }
+      },
+      {
+        path: 'role-accounts',
+        name: 'role-accounts',
+        component: RoleAccounts,
+        meta: { title: '业务角色账号', roles: ADMIN_ROLE_LIST }
       },
       {
         path: 'delivery-price-ranges',

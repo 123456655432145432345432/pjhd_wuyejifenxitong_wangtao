@@ -228,6 +228,7 @@ import { priceApprovalApi, propertyCompanyApi } from '../../api/services'
 import type { PriceApprovalItem, PropertyCompanyItem } from '../../api/types'
 import { ApiError } from '../../api/request'
 import {
+  API_ERROR_CODE,
   getEnumLabel,
   PRICE_APPROVAL_ITEM_TYPE,
   PRICE_APPROVAL_ITEM_TYPE_LABEL,
@@ -548,7 +549,9 @@ async function submitAudit() {
     closeAudit()
     await load(page.value)
   } catch (e) {
-    if (e instanceof ApiError && (e.code === 20004 || e.code === 403)) {
+    if (e instanceof ApiError && e.errorCode === API_ERROR_CODE.INVALID_SHARE_RATE_TOTAL) {
+      formError.value = '审批未生效：业主、商家、物业币和共享积分分成比例合计必须为 100%'
+    } else if (e instanceof ApiError && (e.code === 20004 || e.code === 403)) {
       formError.value = '无审批权限（仅物业领导可审批）'
     } else if (e instanceof ApiError && e.code === 60003) {
       formError.value = '该申请已审批过'

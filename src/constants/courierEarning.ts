@@ -1,10 +1,11 @@
 /**
- * B 方案：配送费单独分账 —— 我们公司抽成，余额归配送员；无保底。
+ * B 方案输入预览：配送结算基数单独分账 —— 我们公司抽成，余额归配送员。
+ * 正式金额必须读取后端 platformDeliveryShare / courierEarning。
  * 平台盘只从商品价计提，配送员不参与平台盘二次分。
  */
 
 /** 平台从配送费抽取比例默认值（platformDeliveryShareRate） */
-export const DEFAULT_PLATFORM_DELIVERY_SHARE_RATE = 0.1
+export const DEFAULT_PLATFORM_DELIVERY_SHARE_RATE = 0
 
 function roundMoney(value: number) {
   return Math.round(value * 100) / 100
@@ -36,5 +37,5 @@ export function calcCourierEarningFromDeliveryFee(
 
 export function formatCourierPlanBHint() {
   const pct = (DEFAULT_PLATFORM_DELIVERY_SHARE_RATE * 100).toFixed(0)
-  return `配送员收入来自配送费（我们公司抽成默认 ${pct}%，余额归配送员，无保底）；与分成明细 courierShare / 任务 courierEarning 同一笔，不从平台盘切。`
+  return `配送员收入按配送结算基数计算（我们公司抽成默认 ${pct}%，余额归配送员）；正式金额只读取 courierEarning，不使用 courierShare，也不从商品平台盘扣除。`
 }

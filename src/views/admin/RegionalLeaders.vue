@@ -45,7 +45,14 @@
             <td>{{ formatShare(item.shareRate) }}</td>
             <td>
               <button class="linkBtn" @click="openEditRegional(item)">编辑</button>
-              <button class="linkBtn danger" @click="removeRegional(item)">删除</button>
+              <button
+                class="linkBtn danger"
+                :disabled="!item.residentId"
+                :title="item.residentId ? '停用该负责人账号' : '缺少住户账号标识，请联系后端补充 residentId'"
+                @click="removeRegional(item)"
+              >
+                停用账号
+              </button>
             </td>
           </tr>
         </tbody>
@@ -64,7 +71,14 @@
             <td>{{ formatShare(item.shareRate) }}</td>
             <td>
               <button class="linkBtn" @click="openEditProject(item)">编辑</button>
-              <button class="linkBtn danger" @click="removeProject(item)">删除</button>
+              <button
+                class="linkBtn danger"
+                :disabled="!item.residentId"
+                :title="item.residentId ? '停用该负责人账号' : '缺少住户账号标识，请联系后端补充 residentId'"
+                @click="removeProject(item)"
+              >
+                停用账号
+              </button>
             </td>
           </tr>
         </tbody>
@@ -143,7 +157,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import ResidentSearchSelect from '../../components/ResidentSearchSelect.vue'
-import { projectLeaderApi, regionalLeaderApi, sectorLeaderAdminApi } from '../../api/services'
+import { projectLeaderApi, regionalLeaderApi, residentApi, sectorLeaderAdminApi } from '../../api/services'
 import { ApiError } from '../../api/request'
 import type { ProjectLeaderItem, RegionalLeaderItem, ResidentItem, SectorLeaderDetail } from '../../api/types'
 import { rateToFormPercent, resolveResidentDisplayName } from '../../api/mappers'
@@ -452,9 +466,19 @@ async function submit() {
 }
 
 async function removeRegional(item: RegionalLeaderItem) {
-  if (!confirm(`确认删除区域负责人「${item.name}」？`)) return
+  if (!item.residentId) {
+    error.value = '该区域负责人缺少 residentId，无法安全停用；请联系后端补充账号标识'
+    return
+  }
+  if (
+    !confirm(
+      `确认停用区域负责人「${item.name || item.phone || '未命名账号'}」？\n` +
+        '账号将无法继续登录，历史业务数据仍会保留。'
+    )
+  ) return
   try {
-    await regionalLeaderApi.remove(item.id)
+    error.value = ''
+    await residentApi.remove(item.residentId)
     await load()
     await loadRegionalOptions()
   } catch (e) {
@@ -463,9 +487,19 @@ async function removeRegional(item: RegionalLeaderItem) {
 }
 
 async function removeProject(item: ProjectLeaderItem) {
-  if (!confirm(`确认删除项目负责人「${item.name}」？`)) return
+  if (!item.residentId) {
+    error.value = '该项目负责人缺少 residentId，无法安全停用；请联系后端补充账号标识'
+    return
+  }
+  if (
+    !confirm(
+      `确认停用项目负责人「${item.name || item.phone || '未命名账号'}」？\n` +
+        '账号将无法继续登录，历史业务数据仍会保留。'
+    )
+  ) return
   try {
-    await projectLeaderApi.remove(item.id)
+    error.value = ''
+    await residentApi.remove(item.residentId)
     await load()
   } catch (e) {
     error.value = e instanceof ApiError ? e.message : '删除失败'
@@ -503,6 +537,7 @@ onMounted(async () => {
 }
 .linkBtn { border: none; background: none; color: #5c5c9e; cursor: pointer; margin-right: 8px; }
 .linkBtn.danger { color: #e05c5c; }
+.linkBtn:disabled { color: #b8b8c2; cursor: not-allowed; }
 .hint, .error, .fieldHint { color: #8c8c9a; }
 .fieldHint { margin: 6px 0 0; font-size: 12px; }
 .error { color: #e05c5c; }

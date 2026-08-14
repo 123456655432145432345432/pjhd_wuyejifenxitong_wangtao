@@ -42,7 +42,7 @@
           <ul class="tips">
             <li>在抢单大厅查看待配送订单并抢单</li>
             <li>接单后先「开始配送」，送达后上传凭证并完成配送</li>
-            <li>完成配送后预计收入立即计入可提现；可提现以钱包余额为准</li>
+            <li>完成配送后预计收入入账；可提现余额只读钱包 withdrawableAmount，勿本地加减</li>
             <li>注意订单超时时间，及时完成配送</li>
           </ul>
         </div>
@@ -60,7 +60,7 @@
                 {{ item.merchantName || '—' }} → {{ item.deliveryAddress || '—' }}
               </div>
               <div class="taskMeta">
-                预计收入 ¥{{ formatMoney(item.courierEarning ?? item.fee) }}
+                预计收入 ¥{{ formatMoney(item.courierEarning) }}
                 · {{ item.acceptedAt || item.createdAt || '—' }}
               </div>
             </li>
@@ -140,7 +140,7 @@ async function loadStats() {
     )
     todayCompletedCount.value = todayCompleted.length
     todayEarnings.value = todayCompleted.reduce(
-      (sum, item) => sum + Number(item.courierEarning ?? item.fee ?? 0),
+      (sum, item) => sum + Number(item.courierEarning ?? 0),
       0
     )
     recentTasks.value = recentRes.list || []

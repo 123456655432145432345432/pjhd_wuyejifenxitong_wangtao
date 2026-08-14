@@ -1216,6 +1216,74 @@ export const DELIVERY_SCOPE_OPTIONS = [
   { value: DELIVERY_SCOPE.OUT_COMMUNITY, label: '小区外' }
 ]
 
+/** 满额配送费减免承担方（商品分账 B 方案） */
+export const DELIVERY_SUBSIDY_SPONSOR = {
+  NONE: 'none',
+  MERCHANT: 'merchant',
+  PROPERTY: 'property',
+  PLATFORM: 'platform',
+  UNKNOWN: 'unknown'
+} as const
+
+export const DELIVERY_SUBSIDY_SPONSOR_LABEL: Record<string, string> = {
+  [DELIVERY_SUBSIDY_SPONSOR.NONE]: '无补贴',
+  [DELIVERY_SUBSIDY_SPONSOR.MERCHANT]: '商家承担',
+  [DELIVERY_SUBSIDY_SPONSOR.PROPERTY]: '物业承担',
+  [DELIVERY_SUBSIDY_SPONSOR.PLATFORM]: '平台承担',
+  [DELIVERY_SUBSIDY_SPONSOR.UNKNOWN]: '历史数据未知'
+}
+
+export const DELIVERY_SUBSIDY_SPONSOR_OPTIONS = [
+  { value: DELIVERY_SUBSIDY_SPONSOR.MERCHANT, label: '商家承担' },
+  { value: DELIVERY_SUBSIDY_SPONSOR.PROPERTY, label: '物业承担' },
+  { value: DELIVERY_SUBSIDY_SPONSOR.PLATFORM, label: '平台承担' }
+]
+
+/** [ENUM] 配送费减免原因 */
+export const WAIVER_REASON = {
+  THRESHOLD: 'threshold',
+  CAMPAIGN: 'campaign',
+  MANUAL: 'manual',
+  NONE: 'none',
+  UNKNOWN: 'unknown'
+} as const
+
+export const WAIVER_REASON_LABEL: Record<string, string> = {
+  [WAIVER_REASON.THRESHOLD]: '满额减免',
+  [WAIVER_REASON.CAMPAIGN]: '活动减免',
+  [WAIVER_REASON.MANUAL]: '人工减免',
+  [WAIVER_REASON.NONE]: '未减免',
+  [WAIVER_REASON.UNKNOWN]: '未知'
+}
+
+/** [ENUM] 分账记录状态 */
+export const DISTRIBUTION_RECORD_STATUS = {
+  PENDING: 'pending',
+  DISTRIBUTED: 'distributed',
+  REVERSED: 'reversed',
+  PARTIALLY_REVERSED: 'partially_reversed'
+} as const
+
+export const DISTRIBUTION_RECORD_STATUS_LABEL: Record<string, string> = {
+  [DISTRIBUTION_RECORD_STATUS.PENDING]: '待分账',
+  [DISTRIBUTION_RECORD_STATUS.DISTRIBUTED]: '已分账',
+  [DISTRIBUTION_RECORD_STATUS.REVERSED]: '已冲正',
+  [DISTRIBUTION_RECORD_STATUS.PARTIALLY_REVERSED]: '部分冲正'
+}
+
+/** [ENUM] 配送结算状态 */
+export const DELIVERY_SETTLEMENT_STATUS = {
+  PENDING: 'pending',
+  SETTLED: 'settled',
+  REVERSED: 'reversed'
+} as const
+
+export const DELIVERY_SETTLEMENT_STATUS_LABEL: Record<string, string> = {
+  [DELIVERY_SETTLEMENT_STATUS.PENDING]: '待结算',
+  [DELIVERY_SETTLEMENT_STATUS.SETTLED]: '已结算',
+  [DELIVERY_SETTLEMENT_STATUS.REVERSED]: '已冲正'
+}
+
 /** 资料奖励 scope */
 export const PROFILE_REWARD_SCOPE = {
   PROPERTY_COMPANY: 'property_company',
@@ -1259,14 +1327,36 @@ export const BILLING_CYCLE_OPTIONS = Object.entries(BILLING_CYCLE_LABEL).map(([v
 export const WITHDRAWAL_TYPE = {
   MERCHANT: 'merchant',
   INDIVIDUAL_LEADER: 'individual_leader',
-  COURIER: 'courier'
+  COURIER: 'courier',
+  COORDINATOR: 'coordinator',
+  SECTOR_LEADER: 'sector_leader'
 } as const
 
 export const WITHDRAWAL_TYPE_LABEL: Record<string, string> = {
   merchant: '商家',
   individual_leader: '个体负责人',
-  courier: '快递员'
+  courier: '配送员',
+  coordinator: '统筹',
+  sector_leader: '板块负责人'
 }
+
+/** GET /admin/role-withdrawals 的角色提现筛选（商家提现使用独立接口） */
+export const ROLE_WITHDRAWAL_TYPE_OPTIONS = [
+  { value: '', label: '全部角色' },
+  { value: WITHDRAWAL_TYPE.COURIER, label: WITHDRAWAL_TYPE_LABEL[WITHDRAWAL_TYPE.COURIER] },
+  {
+    value: WITHDRAWAL_TYPE.INDIVIDUAL_LEADER,
+    label: WITHDRAWAL_TYPE_LABEL[WITHDRAWAL_TYPE.INDIVIDUAL_LEADER]
+  },
+  {
+    value: WITHDRAWAL_TYPE.COORDINATOR,
+    label: WITHDRAWAL_TYPE_LABEL[WITHDRAWAL_TYPE.COORDINATOR]
+  },
+  {
+    value: WITHDRAWAL_TYPE.SECTOR_LEADER,
+    label: WITHDRAWAL_TYPE_LABEL[WITHDRAWAL_TYPE.SECTOR_LEADER]
+  }
+]
 
 /** 公告内容类型（三期） */
 export const ANNOUNCEMENT_CONTENT_TYPE = {
@@ -1440,3 +1530,21 @@ export const FILE_CATEGORY_LABEL: Record<string, string> = {
   proof: '送达凭证',
   community: '社区论坛'
 }
+
+/** v5.3 催缴通知发送渠道 */
+export const ARREARS_REMINDER_CHANNEL = {
+  IN_APP: 'in_app',
+  WECHAT: 'wechat'
+} as const
+
+export const ARREARS_REMINDER_TEMPLATE = {
+  PROPERTY_FEE: 'property_fee_arrears_reminder_v1'
+} as const
+
+/** v5.3 后端稳定业务错误标识 */
+export const API_ERROR_CODE = {
+  INVALID_SHARE_RATE_TOTAL: 'INVALID_SHARE_RATE_TOTAL',
+  WECHAT_TEMPLATE_NOT_CONFIGURED: 'WECHAT_TEMPLATE_NOT_CONFIGURED',
+  PREVIEW_EXPIRED: 'PREVIEW_EXPIRED',
+  ARREARS_REMINDER_DUPLICATE: 'ARREARS_REMINDER_DUPLICATE'
+} as const

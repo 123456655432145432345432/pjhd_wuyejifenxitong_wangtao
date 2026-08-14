@@ -7,7 +7,11 @@
       </div>
       <div class="headerActions">
         <button class="btnSecondary" :disabled="!report || loading" @click="printReport">打印</button>
-        <button class="btnWarn" :disabled="loading || reminding" @click="openReminderModal">
+        <button
+          class="btnWarn"
+          :disabled="!report || loading || reminding || Number(report?.totalCount || 0) === 0"
+          @click="openReminderModal"
+        >
           催缴通知
         </button>
         <button class="btnPrimary" :disabled="loading || exporting" @click="exportCsv">
@@ -90,8 +94,18 @@
             <button type="button" class="modalClose" @click="reminderOpen = false">&times;</button>
           </div>
           <div class="modalBody">
+            <div v-if="previewLoading" class="hint">正在计算本次发送人数...</div>
+            <div v-else-if="reminderPreview" class="reminderSummary">
+              <div><span>发送范围</span><strong>{{ reminderScopeText }}</strong></div>
+              <div><span>本次发送</span><strong>{{ reminderPreview.inAppEligibleCount }} 户</strong></div>
+              <div><span>欠费总额</span><strong>¥{{ formatMoney(reminderPreview.totalArrearsAmount) }}</strong></div>
+              <div><span>已去重记录</span><strong>{{ reminderPreview.duplicateResidentCount }} 条</strong></div>
+            </div>
             <p class="hint">
-              将向当前报表中的欠费住户发送催缴：优先写入官方会话（不依赖微信绑定，便于测试）；同时尝试批量推送接口（已绑微信的可收到实时推送）。
+              催缴通知仅发送到住户端的物业聊天模块，不会发送微信提醒。
+            </p>
+            <p v-if="reminderPreview" class="previewExpiry">
+              发送范围已锁定，有效期至 {{ formatPreviewExpiry(reminderPreview.expiresAt) }}
             </p>
             <div class="field">
               <label class="label">标题</label>
@@ -107,13 +121,28 @@
               />
             </div>
             <p v-if="reminderError" class="error">{{ reminderError }}</p>
+            <button
+              v-if="reminderError && !previewLoading"
+              type="button"
+              class="btnSecondary"
+              @click="loadReminderPreview"
+            >
+              重新预览
+            </button>
           </div>
           <div class="modalFooter">
             <button type="button" class="btnSecondary" @click="reminderOpen = false">取消</button>
             <button
               type="button"
               class="btnWarn"
-              :disabled="reminding || !reminderForm.title || !reminderForm.content"
+              :disabled="
+                previewLoading ||
+                reminding ||
+                !reminderPreview?.previewToken ||
+                reminderPreview.inAppEligibleCount === 0 ||
+                !reminderForm.title ||
+                !reminderForm.content
+              "
               @click="sendReminder"
             >
               {{ reminding ? '发送中...' : '确认发送' }}
@@ -128,11 +157,22 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { adminMessageApi, arrearsReportApi, propertyCompanyApi } from '../../api/services'
+import { arrearsReportApi, propertyCompanyApi } from '../../api/services'
 import { formatMoney } from '../../api/mappers'
 import { ApiError } from '../../api/request'
-import type { ArrearsReport, ArrearsReportItem, PropertyCompanyCommunity, PropertyCompanyItem } from '../../api/types'
-import { USER_ROLE } from '../../constants/enums'
+import type {
+  ArrearsReminderPreviewResult,
+  ArrearsReport,
+  ArrearsReportItem,
+  PropertyCompanyCommunity,
+  PropertyCompanyItem
+} from '../../api/types'
+import {
+  API_ERROR_CODE,
+  ARREARS_REMINDER_CHANNEL,
+  ARREARS_REMINDER_TEMPLATE,
+  USER_ROLE
+} from '../../constants/enums'
 import { useAuthStore } from '../../stores/auth'
 
 const auth = useAuthStore()
@@ -149,12 +189,21 @@ const error = ref('')
 const report = ref<ArrearsReport | null>(null)
 
 const reminderOpen = ref(false)
+const previewLoading = ref(false)
+const reminderPreview = ref<ArrearsReminderPreviewResult | null>(null)
+const reminderRequestId = ref('')
 const reminding = ref(false)
 const reminderError = ref('')
 const reminderSuccess = ref('')
 const reminderForm = reactive({
   title: '物业费催缴通知',
   content: '您有未缴纳的物业费，请尽快缴纳，以免产生违约金。'
+})
+
+const reminderScopeText = computed(() => {
+  const communityName =
+    communities.value.find((item) => item.id === communityId.value)?.name || '全部小区'
+  return building.value ? `${communityName} · ${building.value}栋` : communityName
 })
 
 function formatPeriod(item: ArrearsReportItem) {
@@ -225,72 +274,85 @@ async function exportCsv() {
   }
 }
 
-function openReminderModal() {
+async function openReminderModal() {
   reminderError.value = ''
   reminderSuccess.value = ''
   reminderOpen.value = true
+  reminderRequestId.value = `arrears_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+  await loadReminderPreview()
 }
 
-function uniqueArrearsResidentIds(): string[] {
-  const ids = (report.value?.items || [])
-    .map((item) => item.residentId)
-    .filter((id): id is string => !!id)
-  return [...new Set(ids)]
+async function loadReminderPreview() {
+  previewLoading.value = true
+  reminderError.value = ''
+  reminderPreview.value = null
+  try {
+    reminderPreview.value = await arrearsReportApi.previewReminder({
+      propertyCompanyId: propertyCompanyId.value || auth.propertyCompanyId || undefined,
+      communityId: communityId.value || undefined,
+      building: building.value || undefined,
+      templateCode: ARREARS_REMINDER_TEMPLATE.PROPERTY_FEE
+    })
+  } catch (e) {
+    reminderError.value = e instanceof ApiError ? e.message : '催缴人数预览失败，请重试'
+  } finally {
+    previewLoading.value = false
+  }
+}
+
+function formatPreviewExpiry(value: string) {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN')
 }
 
 async function sendReminder() {
-  if (reminding.value || !reminderForm.title || !reminderForm.content) return
+  if (
+    reminding.value ||
+    !reminderPreview.value?.previewToken ||
+    !reminderForm.title ||
+    !reminderForm.content
+  ) return
+  const confirmed = window.confirm(
+    `确认发送物业费催缴通知？\n` +
+      `范围：${reminderScopeText.value}\n` +
+      `本次将向 ${reminderPreview.value.inAppEligibleCount} 户发送，欠费总额 ¥${formatMoney(reminderPreview.value.totalArrearsAmount)}\n` +
+      '通知仅进入住户端物业聊天模块，发送后无法撤回。'
+  )
+  if (!confirmed) return
   reminding.value = true
   reminderError.value = ''
   reminderSuccess.value = ''
   try {
-    // 1) 官方会话补发：不依赖 wechatBound，方便测试未绑定微信的住户
-    const residentIds = uniqueArrearsResidentIds()
-    let chatOk = 0
-    let chatFail = 0
-    const chatBody = `${reminderForm.title}\n\n${reminderForm.content}`
-    for (const residentId of residentIds) {
-      try {
-        await adminMessageApi.send(residentId, { content: chatBody })
-        chatOk += 1
-      } catch {
-        chatFail += 1
-      }
-    }
-
-    // 2) 仍走批量催缴接口（已绑微信可收到推送；未绑定仍会计入 skipped）
-    let pushOk = 0
-    let pushSkip = 0
-    let pushError = ''
-    try {
-      const result = await arrearsReportApi.sendReminder({
-        propertyCompanyId: propertyCompanyId.value || auth.propertyCompanyId || undefined,
-        title: reminderForm.title,
-        content: reminderForm.content
-      })
-      pushOk = result.notifiedCount ?? 0
-      pushSkip = result.skippedCount ?? 0
-    } catch (e) {
-      pushError = e instanceof ApiError ? e.message : '批量推送失败'
-    }
-
-    if (residentIds.length === 0 && pushError) {
-      reminderError.value = pushError
-      return
-    }
+    const result = await arrearsReportApi.sendReminder({
+      previewToken: reminderPreview.value.previewToken,
+      propertyCompanyId: propertyCompanyId.value || auth.propertyCompanyId || undefined,
+      communityId: communityId.value || undefined,
+      building: building.value || undefined,
+      templateCode: reminderPreview.value.templateCode || ARREARS_REMINDER_TEMPLATE.PROPERTY_FEE,
+      channels: [ARREARS_REMINDER_CHANNEL.IN_APP],
+      requestId: reminderRequestId.value,
+      title: reminderForm.title,
+      content: reminderForm.content
+    })
 
     reminderOpen.value = false
-    const parts = [
-      `官方会话成功 ${chatOk} 户` + (chatFail ? `、失败 ${chatFail} 户` : ''),
-      `批量推送成功 ${pushOk} 户、跳过 ${pushSkip} 户`
-    ]
-    if (pushError) parts.push(`（批量接口：${pushError}）`)
-    if (residentIds.length === 0) {
-      parts.unshift('当前报表无明细，仅走了批量接口')
-    }
-    reminderSuccess.value = `催缴已发送：${parts.join('；')}`
+    const inAppSuccess = result.channels?.inApp?.successCount ?? result.notifiedCount
+    reminderSuccess.value =
+      `催缴批次 ${result.batchId} 已处理：成功 ${inAppSuccess} 户` +
+      (result.skippedCount ? `，跳过 ${result.skippedCount} 户` : '') +
+      (result.failedCount ? `，失败 ${result.failedCount} 户` : '')
   } catch (e) {
-    reminderError.value = e instanceof ApiError ? e.message : '发送失败'
+    if (e instanceof ApiError && e.errorCode === API_ERROR_CODE.PREVIEW_EXPIRED) {
+      reminderPreview.value = null
+      reminderError.value = '发送范围已过期，请重新预览后再发送'
+    } else if (
+      e instanceof ApiError &&
+      e.errorCode === API_ERROR_CODE.ARREARS_REMINDER_DUPLICATE
+    ) {
+      reminderError.value = '该催缴批次已经提交，请勿重复发送'
+    } else {
+      reminderError.value = e instanceof ApiError ? e.message : '发送失败'
+    }
   } finally {
     reminding.value = false
   }
@@ -392,6 +454,13 @@ onMounted(async () => {
 .modalTitle { margin: 0; font-size: 16px; }
 .modalClose { border: none; background: none; font-size: 22px; cursor: pointer; color: #8c8c9a; }
 .modalBody { padding: 16px 20px; }
+.reminderSummary {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px;
+}
+.reminderSummary div { padding: 10px; border-radius: 8px; background: #fafafc; }
+.reminderSummary span { display: block; margin-bottom: 4px; color: #8c8c9a; font-size: 12px; }
+.reminderSummary strong { color: #1f1f2e; font-size: 14px; }
+.previewExpiry { margin: 8px 0 12px; color: #5c5c66; font-size: 12px; }
 .modalFooter {
   display: flex; justify-content: flex-end; gap: 10px;
   padding: 12px 20px 16px; border-top: 1px solid #f0f0f3;
@@ -401,6 +470,10 @@ onMounted(async () => {
 .textarea {
   width: 100%; box-sizing: border-box; padding: 10px 12px;
   border: 1px solid #e8e8ec; border-radius: 8px; resize: vertical; font: inherit;
+}
+
+@media (max-width: 640px) {
+  .reminderSummary { grid-template-columns: 1fr; }
 }
 
 @media print {

@@ -31,7 +31,8 @@
     </div>
 
     <p class="ledgerHint">
-      卡片金额来自后端 summary（含总订单额 / 商家实得），前端不重算比例。配送员收入按 B 方案与可提现同源（配送费 − 我们公司抽成，无保底）。
+      商品分账与配送分账分别统计；“—”表示后端尚未返回该统计字段，前端不通过明细分页自行累加。
+      公司商品收入 platformShare 与公司配送收入 platformDeliveryShare 不得合并。
     </p>
 
     <div v-if="loading" class="loading">加载中...</div>
@@ -39,24 +40,56 @@
     <template v-else-if="stats">
       <div class="stats">
         <div class="statCard">
-          <div class="label">总订单额</div>
-          <div class="value">¥{{ formatMoney(stats.summary?.totalOrderAmount) }}</div>
+          <div class="label">商品金额</div>
+          <div class="value">{{ formatOptionalMoney(stats.summary?.productAmount) }}</div>
         </div>
-        <div class="statCard green">
-          <div class="label">商家实得</div>
-          <div class="value">¥{{ formatMoney(stats.summary?.merchantAmount) }}</div>
+        <div class="statCard">
+          <div class="label">订单总额（含配送费）</div>
+          <div class="value">{{ formatOptionalMoney(stats.summary?.totalOrderAmount) }}</div>
         </div>
         <div class="statCard purple">
           <div class="label">可分配/平台盘总额</div>
           <div class="value">¥{{ formatMoney(stats.summary?.totalDistributableAmount) }}</div>
         </div>
-        <div class="statCard orange">
-          <div class="label">平台服务费</div>
-          <div class="value">¥{{ formatMoney(stats.summary?.platformAmount) }}</div>
+        <div class="statCard">
+          <div class="label">商家商品收入</div>
+          <div class="value">{{ formatOptionalMoney(stats.summary?.merchantGoodsAmount) }}</div>
+        </div>
+        <div class="statCard">
+          <div class="label">商家配送补贴</div>
+          <div class="value">{{ formatOptionalMoney(stats.summary?.merchantDeliverySubsidyAmount) }}</div>
+        </div>
+        <div class="statCard">
+          <div class="label">商家最终实得</div>
+          <div class="value">{{ formatOptionalMoney(stats.summary?.merchantAmount) }}</div>
+        </div>
+        <div class="statCard">
+          <div class="label">公司商品收入</div>
+          <div class="value">{{ formatOptionalMoney(stats.summary?.platformAmount) }}</div>
+        </div>
+        <div class="statCard">
+          <div class="label">公司配送收入</div>
+          <div class="value">{{ formatOptionalMoney(stats.summary?.platformDeliveryAmount) }}</div>
+        </div>
+        <div class="statCard">
+          <div class="label">配送员收入</div>
+          <div class="value">{{ formatOptionalMoney(stats.summary?.courierAmount) }}</div>
+        </div>
+        <div class="statCard">
+          <div class="label">成本击穿</div>
+          <div class="value">{{ formatOptionalMoney(stats.summary?.deficitAmount) }}</div>
+        </div>
+        <div class="statCard">
+          <div class="label">冲正金额</div>
+          <div class="value">{{ formatOptionalMoney(stats.summary?.reversalAmount) }}</div>
         </div>
         <div class="statCard">
           <div class="label">物业分成</div>
           <div class="value">¥{{ formatMoney(stats.summary?.propertyAmount) }}</div>
+        </div>
+        <div class="statCard">
+          <div class="label">管理盘合计</div>
+          <div class="value">{{ formatOptionalMoney(stats.summary?.managementPoolAmount) }}</div>
         </div>
         <div class="statCard green">
           <div class="label">统筹分成</div>
@@ -69,10 +102,6 @@
         <div class="statCard">
           <div class="label">个体分成</div>
           <div class="value">¥{{ formatMoney(stats.summary?.individualLeaderAmount) }}</div>
-        </div>
-        <div class="statCard">
-          <div class="label">配送员收入</div>
-          <div class="value">¥{{ formatMoney(stats.summary?.courierAmount) }}</div>
         </div>
       </div>
 
@@ -141,18 +170,24 @@ const endDate = ref('')
 const propertyCompanyId = ref(auth.propertyCompanyId || '')
 
 function formatMoney(value?: number) {
-  if (value === undefined || value === null) return '0.00'
+  if (value === undefined || value === null || Number.isNaN(Number(value))) return '0.00'
   return Number(value).toFixed(2)
+}
+
+function formatOptionalMoney(value?: number) {
+  if (value === undefined || value === null || Number.isNaN(Number(value))) return '—'
+  return `¥${Number(value).toFixed(2)}`
 }
 
 async function load() {
   loading.value = true
   error.value = ''
+  // detail：与 summary 同填 5 项，并返回 byProperty / byCoordinator / bySector
   const params = {
     startDate: startDate.value || undefined,
     endDate: endDate.value || undefined,
     propertyCompanyId: propertyCompanyId.value || auth.propertyCompanyId || undefined,
-    dimension: 'summary'
+    dimension: 'detail'
   }
   try {
     stats.value = await distributionApi.stats(params, { adminPath: useAdminPath.value })
@@ -181,7 +216,7 @@ onMounted(load)
 .title { font-size: 24px; font-weight: 600; color: #1f1f2e; margin-bottom: 8px; }
 .desc { font-size: 14px; color: #8c8c9a; }
 .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
-.ledgerHint { margin: 0 0 16px; font-size: 13px; color: #8a6d1d; }
+.ledgerHint { margin: 0 0 16px; font-size: 13px; color: #8a6d1d; line-height: 1.5; }
 .input { padding: 8px 12px; border: 1px solid #e8e8ec; border-radius: 8px; background: #fff; font-size: 14px; min-width: 160px; }
 .dateInput { padding: 6px 4px; width: 132px; box-sizing: border-box; line-height: 1.2; }
 .dateInput.empty { color: transparent; }
@@ -197,7 +232,6 @@ onMounted(load)
 .statCard { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
 .statCard.purple .value { color: #5c5c9e; }
 .statCard.green .value { color: #3aaf7d; }
-.statCard.orange .value { color: #e6953a; }
 .statCard .label { font-size: 13px; color: #8c8c9a; margin-bottom: 8px; }
 .statCard .value { font-size: 22px; font-weight: 600; }
 .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }

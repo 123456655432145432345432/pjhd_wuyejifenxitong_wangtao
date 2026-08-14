@@ -5,8 +5,30 @@
         <h1 class="title">提现记录</h1>
         <p class="desc">个体负责人账面分成提现（待结算/可提现口径，手续费以服务端返回为准）</p>
       </div>
-      <button class="btnPrimary" @click="openApply">申请提现</button>
+      <button class="btnPrimary" :disabled="withdrawalBlocked" @click="openApply">申请提现</button>
     </div>
+
+    <div class="stats">
+      <div class="statCard green">
+        <div class="label">可提现余额</div>
+        <div class="value">¥{{ formatMoney(withdrawableAmount) }}</div>
+      </div>
+      <div v-if="totalEarnings != null" class="statCard">
+        <div class="label">累计收益</div>
+        <div class="value">¥{{ formatMoney(totalEarnings) }}</div>
+      </div>
+      <div v-if="pendingWithdrawalAmount != null" class="statCard">
+        <div class="label">处理中</div>
+        <div class="value">¥{{ formatMoney(pendingWithdrawalAmount) }}</div>
+      </div>
+      <div v-if="totalWithdrawn != null" class="statCard">
+        <div class="label">已提现</div>
+        <div class="value">¥{{ formatMoney(totalWithdrawn) }}</div>
+      </div>
+    </div>
+    <p v-if="withdrawalBlocked" class="blockHint">
+      当前账号已被阻止提现，请及时缴纳物业费或联系管理人员。
+    </p>
 
     <div class="panel">
       <div v-if="loading" class="hint">加载中...</div>
@@ -42,6 +64,7 @@
             <button class="modalClose" @click="modalOpen = false">&times;</button>
           </div>
           <div class="modalBody">
+            <p class="hintInline">可提现余额 ¥{{ formatMoney(withdrawableAmount) }}</p>
             <div class="field">
               <label class="label">提现金额 (元)</label>
               <input v-model.number="amount" type="number" min="0" step="0.01" class="input" />
@@ -49,7 +72,7 @@
             <p v-if="formError" class="error">{{ formError }}</p>
             <div class="modalFooter">
               <button class="btnSecondary" @click="modalOpen = false">取消</button>
-              <button class="btnPrimary" :disabled="submitting" @click="submit">
+              <button class="btnPrimary" :disabled="submitting || withdrawalBlocked" @click="submit">
                 {{ submitting ? '提交中...' : '提交申请' }}
               </button>
             </div>
@@ -61,12 +84,14 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { individualLeaderPortalApi } from '../../api/services'
 import type { RoleWithdrawalItem } from '../../api/types'
 import { ApiError } from '../../api/request'
 import { getEnumLabel, WITHDRAWAL_AUDIT_STATUS_LABEL } from '../../constants/enums'
+import { useIndividualLeaderPortalStore } from '../../stores/individualLeaderPortal'
 
+const portal = useIndividualLeaderPortalStore()
 const loading = ref(false)
 const error = ref('')
 const list = ref<RoleWithdrawalItem[]>([])
@@ -75,6 +100,12 @@ const modalOpen = ref(false)
 const amount = ref(0)
 const submitting = ref(false)
 const formError = ref('')
+
+const withdrawableAmount = computed(() => portal.detail?.withdrawableAmount)
+const totalEarnings = computed(() => portal.detail?.totalEarnings)
+const totalWithdrawn = computed(() => portal.detail?.totalWithdrawn)
+const pendingWithdrawalAmount = computed(() => portal.detail?.pendingWithdrawalAmount)
+const withdrawalBlocked = computed(() => portal.detail?.withdrawalBlocked === true)
 
 function formatMoney(val?: number) {
   if (val === undefined || val === null) return '0.00'
@@ -85,6 +116,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
+    await portal.loadMy(true)
     const res = await individualLeaderPortalApi.withdrawals({ page: 1, pageSize: 50 })
     list.value = res.list || []
   } catch (e) {
@@ -95,14 +127,24 @@ async function load() {
 }
 
 function openApply() {
+  if (withdrawalBlocked.value) return
   amount.value = 0
   formError.value = ''
   modalOpen.value = true
 }
 
 async function submit() {
+  if (withdrawalBlocked.value) {
+    formError.value = '当前账号已被阻止提现'
+    return
+  }
   if (!amount.value || amount.value <= 0) {
     formError.value = '请输入有效提现金额'
+    return
+  }
+  const available = Number(withdrawableAmount.value)
+  if (Number.isFinite(available) && amount.value > available) {
+    formError.value = '提现金额不能超过可提现余额'
     return
   }
   submitting.value = true
@@ -126,14 +168,22 @@ onMounted(load)
 .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; gap: 16px; flex-wrap: wrap; }
 .title { font-size: 24px; font-weight: 600; color: #1f1f2e; margin-bottom: 8px; }
 .desc { font-size: 14px; color: #8c8c9a; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.statCard { background: #fff; border-radius: 12px; padding: 16px 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+.statCard.green .value { color: #3aaf7d; }
+.statCard .label { font-size: 13px; color: #8c8c9a; margin-bottom: 8px; }
+.statCard .value { font-size: 22px; font-weight: 600; color: #1f1f2e; }
+.blockHint { margin: -8px 0 16px; font-size: 13px; color: #e05c5c; }
 .panel { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
 .table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .table th, .table td { padding: 12px 16px; text-align: left; border-bottom: 1px solid #f0f0f3; }
 .table th { color: #8c8c9a; font-weight: 500; background: #fafafc; }
 .btnPrimary { padding: 10px 18px; border-radius: 8px; background: #5c5c9e; color: #fff; border: none; cursor: pointer; }
+.btnPrimary:disabled { opacity: 0.55; cursor: not-allowed; }
 .btnSecondary { padding: 10px 18px; border-radius: 8px; border: 1px solid #e8e8ec; background: #fff; cursor: pointer; }
 .hint, .error { font-size: 14px; color: #8c8c9a; text-align: center; padding: 24px 0; }
 .error { color: #e05c5c; }
+.hintInline { margin: 0 0 12px; font-size: 13px; color: #5c5c66; }
 .modalOverlay { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; padding: 24px; }
 .modal { background: #fff; border-radius: 12px; width: min(400px, 100%); }
 .modalHeader { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-bottom: 1px solid #f0f0f3; }

@@ -2,6 +2,7 @@ import type { AuditResult } from '../constants/enums'
 
 export interface ApiResponse<T = unknown> {
   code: number
+  errorCode?: string
   message: string
   data: T
   timestamp?: string
@@ -121,6 +122,45 @@ export interface ResidentCreatePayload {
   floor?: string
   unit?: string
   room?: string
+}
+
+/** §31.2 业务角色账号直建：merchant / activity_leader / technician / courier */
+export type RoleAccountRole = 'merchant' | 'activity_leader' | 'technician' | 'courier'
+
+export interface RoleAccountCreatePayload {
+  role: RoleAccountRole | string
+  name: string
+  phone: string
+  password: string
+  /** 平台管理员必填；物业管理员可不传（后端用当前物业） */
+  propertyCompanyId?: string
+  communityId?: string
+  /** merchant 建议填 */
+  category?: string
+  description?: string
+  businessHours?: string
+  address?: string
+  coverUrls?: string[]
+  deliveryFee?: number
+  commissionRate?: number
+  pointExchangeRate?: number
+}
+
+export interface RoleAccountCreateResult {
+  residentId: string
+  name?: string
+  phone?: string
+  role?: string
+  propertyCompanyId?: string
+  /** role=merchant 时返回 */
+  merchantId?: string | null
+  status?: string
+}
+
+export interface RoleAccountDeleteResult {
+  residentId: string
+  deleted: boolean
+  message?: string
 }
 
 export interface ResidentUpdatePayload {
@@ -247,6 +287,8 @@ export interface MerchantItem {
   address?: string
   deliveryFee?: string | number
   freeDeliveryThreshold?: string | number
+  freeDeliveryEnabled?: boolean
+  freeDeliverySponsor?: string
   coverUrls?: string[]
   videoUrl?: string | null
   qrCodeUrl?: string
@@ -274,6 +316,8 @@ export interface MerchantUpdatePayload {
   address?: string
   deliveryFee?: number | string
   freeDeliveryThreshold?: number | string
+  freeDeliveryEnabled?: boolean
+  freeDeliverySponsor?: string
   /** 配送范围：in_community / out_community / both（§76） */
   deliveryScope?: string
   /** 商家配送距离：any / radius / district / city */
@@ -385,11 +429,30 @@ export interface MerchantProfitSpace {
     profitMargin?: number
   }
   breakdown?: {
+    productAmount?: number
+    commissionBaseAmount?: number
+    merchantGoodsShare?: number
+    merchantDeliverySubsidy?: number
+    merchantShare?: number
+    distributableAmount?: number
     propertyShare?: number
+    managementPoolAmount?: number
     coordinatorShare?: number
+    sectorGrossAmount?: number
     sectorLeaderShare?: number
     individualLeaderShare?: number
     platformShare?: number
+    deficitAmount?: number
+    deficitSponsor?: string | null
+    originalDeliveryFee?: number
+    deliveryFee?: number
+    deliveryWaiverAmount?: number
+    deliverySubsidySponsor?: string
+    deliverySubsidyAmount?: number
+    deliverySettlementBase?: number
+    platformDeliveryShare?: number
+    courierEarning?: number
+    calculationVersion?: string
   }
   comparison?: {
     lastPeriodRevenue?: number
@@ -563,7 +626,6 @@ export interface DeliveryRule {
   name?: string
   baseFee?: number
   perKgFee?: number
-  courierPerOrder?: number
   propertyCompanyId?: string
   /** 默认 both（§76.2） */
   deliveryScope?: string
@@ -585,7 +647,6 @@ export interface DeliveryRuleUpsertPayload {
   name?: string
   baseFee?: number
   perKgFee?: number
-  courierPerOrder?: number
   propertyCompanyId?: string
   /** 默认 both */
   deliveryScope?: string
@@ -690,7 +751,6 @@ export interface PropertyCompanyConfig {
   coinMallMinAmount?: number
   deliveryBaseFee?: number
   deliveryCourierShareRate?: number
-  deliveryCourierPerOrder?: number
   withdrawalFeeRate?: number
   pointToFeeRate?: number
   twoYearClearEnabled?: boolean
@@ -894,7 +954,23 @@ export interface OrderItem {
   productSummary?: string
   items?: OrderLineItem[]
   totalAmount?: number
+  /** 商品优惠后成交小计，不含配送费 */
+  productAmount?: number
+  /** 减免前按配送规则计算的配送费 */
+  originalDeliveryFee?: number
   deliveryFee?: number
+  deliveryWaiverAmount?: number
+  deliverySubsidySponsor?: string
+  deliverySubsidyAmount?: number
+  deliverySettlementBase?: number
+  freeDeliveryEligible?: boolean
+  waiverReason?: string
+  freeDeliveryThresholdSnapshot?: number
+  merchantGoodsShare?: number
+  merchantDeliverySubsidy?: number
+  merchantShare?: number
+  distributionStatus?: string
+  calculationVersion?: string
   paymentMethod?: string
   pointUsed?: number
   coinUsed?: number
@@ -933,12 +1009,15 @@ export interface MyMerchantDetail {
   coverUrls?: string[]
   videoUrl?: string | null
   merchantLevel?: string
+  commissionRate?: number
   category?: string
   businessHours?: string
   contactPhone?: string
   address?: string
   deliveryFee?: number
   freeDeliveryThreshold?: number
+  freeDeliveryEnabled?: boolean
+  freeDeliverySponsor?: string
   /** 配送范围：in_community / out_community / both（§76） */
   deliveryScope?: string
   /** 商家配送距离：any / radius / district / city */
@@ -951,6 +1030,12 @@ export interface MyMerchantDetail {
   totalRevenue?: number
   /** 可提现余额（§A1） */
   withdrawableAmount?: number
+  /** 待结算金额（v5.4） */
+  pendingAmount?: number
+  /** 冻结金额（v5.4） */
+  frozenAmount?: number
+  /** 应收/待偿金额（v5.4） */
+  receivableAmount?: number
   /** 累计已提现成功 */
   totalWithdrawn?: number
   /** 是否被阻止提现 */
@@ -1133,7 +1218,13 @@ export interface CourierDeliveryItem {
   deliveryAddress?: string
   contactPhone?: string
   fee?: number
+  originalDeliveryFee?: number
+  deliverySubsidySponsor?: string
+  deliverySubsidyAmount?: number
+  deliverySettlementBase?: number
+  platformDeliveryShare?: number
   courierEarning?: number
+  settlementStatus?: string
   status?: string
   timeoutMinutes?: number
   acceptedAt?: string
@@ -1166,28 +1257,58 @@ export interface DistributionRecordItem {
   productAmount?: number
   /** 配送费（B 方案单独分给我们公司 / 配送员） */
   deliveryFee?: number
+  originalDeliveryFee?: number
+  deliveryWaiverAmount?: number
+  deliverySubsidySponsor?: string
+  deliverySubsidyAmount?: number
+  deliverySettlementBase?: number
   /** 抽佣比例（如 0.20 = 商品价中平台盘 20%） */
   commissionRate?: number
   pointCost?: number
   coinCost?: number
+  /** 抽佣基础额 = (totalAmount − deliveryFee) × commissionRate，未扣成本 */
+  commissionBaseAmount?: number
   /**
-   * 可分配/平台盘金额（以后端返回为准，前端不重算）
-   * B 方案：≈ 商品价 × commissionRate − 积分/币成本；不含配送费
+   * 可分配/平台盘金额（以后端返回为准）
+   * = (totalAmount − deliveryFee) × commissionRate − pointCost − coinCost；击穿兜底 0
    */
   distributableAmount?: number
+  /**
+   * 平台盘被积分/物业币成本击穿的差额（若后端返回）；有值时 distributableAmount 应为 0
+   */
+  deficitAmount?: number
+  deficitSponsor?: string
+  /** 公司平台盘比例快照 */
+  platformShareRate?: number
+  /** 兼容旧字段，等价 commissionBaseAmount */
+  productCommission?: number
+  /** 商品实付 = productAmount - pointCost - coinCost */
+  productBase?: number
+  /** 未扣配送补贴前的商家商品收入 */
+  merchantGoodsShare?: number
+  /** 商家承担的配送补贴 */
+  merchantDeliverySubsidy?: number
+  /** 商家退款、补差或冲账调整额 */
+  merchantAdjustmentAmount?: number
+  /** 商家最终实得；可能已扣商家承担的配送补贴，前端不得重算 */
   merchantShare?: number
   /** 兼容旧字段名 */
   merchantAmount?: number
-  /** 平台盘内「我们公司」服务费 */
+  /** 公司在商品平台盘中的正式收入 */
   platformShare?: number
   platformAmount?: number
   propertyShare?: number
   propertyAmount?: number
-  /** 配送费中我们公司抽成（与平台盘 platformShare 不同链路） */
+  managementPoolAmount?: number
+  /** 板块毛额 = 管理盘 × 板块负责人比例 */
+  sectorGrossAmount?: number
+  /** 配送费中我们公司抽成（若有；与平台盘 platformShare 不同链路） */
   platformDeliveryShare?: number
-  /** B 方案：配送费余额归配送员（无保底）；与 courierEarning 合轨 */
+  /** @deprecated 不得作为配送员正式收入 */
   courierShare?: number
   courierAmount?: number
+  /** 配送员本单最终收入快照 */
+  courierEarning?: number
   coordinatorShare?: number
   coordinatorAmount?: number
   sectorLeaderShare?: number
@@ -1201,22 +1322,39 @@ export interface DistributionRecordItem {
   individualLeaderId?: string
   individualLeaderName?: string
   status?: string
+  calculationVersion?: string
   createdAt?: string
 }
 
 export interface DistributionStats {
   summary?: {
+    /** 有效：总可分配金额 */
     totalDistributableAmount?: number
-    /** 商家实得合计 = Σ 订单额 × (1 − 抽佣率)（v4.10） */
-    merchantAmount?: number
-    /** 总订单额合计 = Σ 订单额（v4.10） */
-    totalOrderAmount?: number
-    platformAmount?: number
-    courierAmount?: number
+    productAmount?: number
+    merchantGoodsAmount?: number
+    merchantDeliverySubsidyAmount?: number
+    platformDeliveryAmount?: number
+    managementPoolAmount?: number
+    deficitAmount?: number
+    reversalAmount?: number
+    /** 有效：物业公司总额 */
     propertyAmount?: number
+    /** 有效：协调员总额 */
     coordinatorAmount?: number
+    /** 有效：片区负责人总额 */
     sectorLeaderAmount?: number
+    /** 有效：个人负责人总额 */
     individualLeaderAmount?: number
+    /** 兼容字段：成本击穿差额合计 */
+    totalDeficitAmount?: number
+    /** 商家最终实得合计 */
+    merchantAmount?: number
+    /** 总订单额合计（含配送费） */
+    totalOrderAmount?: number
+    /** 公司商品平台盘收入合计 */
+    platformAmount?: number
+    /** 配送员收入合计 */
+    courierAmount?: number
   }
   byProperty?: Array<{ propertyCompanyId?: string; propertyName?: string; amount?: number }>
   byCoordinator?: Array<{ coordinatorId?: string; name?: string; amount?: number }>
@@ -1231,29 +1369,49 @@ export interface DistributionStats {
 
 /** GET /distribution/calculate 试算（无订单 id） */
 export interface DistributionCalculateResult {
+  merchantId?: string
+  orderId?: string
   totalAmount?: number
   /** 商品价；缺省时可按 totalAmount − deliveryFee 理解 */
   productAmount?: number
   deliveryFee?: number
+  originalDeliveryFee?: number
+  deliveryWaiverAmount?: number
+  deliverySubsidySponsor?: string
+  deliverySubsidyAmount?: number
+  deliverySettlementBase?: number
   commissionRate?: number
   pointCost?: number
   coinCost?: number
   /**
-   * 抽佣基础额 ≈ 商品价 × 抽佣率（尚未扣积分/币成本）
-   * 实际可分配平台盘 = commissionBaseAmount − pointCost − coinCost = distributableAmount
+   * 抽佣基础额 = (totalAmount − deliveryFee) × commissionRate（未扣成本）
    */
   commissionBaseAmount?: number
   distributableAmount?: number
+  /** 平台盘击穿差额（若返回） */
+  deficitAmount?: number
+  deficitSponsor?: string
+  merchantGoodsShare?: number
+  merchantDeliverySubsidy?: number
+  merchantAdjustmentAmount?: number
+  /** 后端返回的商家最终实得；前端不重算 */
   merchantShare?: number
+  /** 平台盘残差；可直接读 */
   platformShare?: number
   propertyShare?: number
-  /** 配送费中我们公司抽成 */
+  managementPoolAmount?: number
+  /** 配送费中我们公司抽成（若返回） */
   platformDeliveryShare?: number
-  /** B 方案：配送费 − 平台配送抽成 */
+  /** @deprecated 不得作为配送员正式收入 */
   courierShare?: number
+  courierEarning?: number
   coordinatorShare?: number
   sectorLeaderShare?: number
   individualLeaderShare?: number
+  coordinatorId?: string
+  sectorLeaderId?: string
+  individualLeaderId?: string
+  calculationVersion?: string
 }
 
 /** 物业分成账户余额（与公司账户 /admin/company-account 不同） */
@@ -1267,7 +1425,7 @@ export interface PlatformShareRates {
   propertyCompanyId?: string
   /** 平台盘内「我们公司」占比（B：与物业/管理三档之和约 100%） */
   platformShareRate?: number
-  /** 配送费中我们公司抽成比例（B：默认 0.1；余额归配送员） */
+  /** 配送费中我们公司抽成比例（B：默认 0；余额归配送员） */
   platformDeliveryShareRate?: number
   platformWithdrawalFeeShareRate?: number
   propertyShareRate?: number
@@ -1476,6 +1634,61 @@ export interface RoleWithdrawalPayload {
   amount: number
 }
 
+/** GET /admin/role-withdrawals 列表项（v5.5 §70.5） */
+export interface AdminRoleWithdrawalItem {
+  id: string
+  withdrawalType: string
+  applicantId?: string
+  applicantName?: string
+  residentId?: string
+  residentName?: string
+  residentPhone?: string
+  propertyCompanyId?: string
+  amount?: number
+  feeRate?: number
+  feeAmount?: number
+  actualAmount?: number
+  auditStatus?: string
+  auditorId?: string
+  auditedAt?: string
+  completedAt?: string
+  disburseChannel?: string
+  disburseStatus?: string
+  transferProof?: string
+  rejectReason?: string
+  remark?: string
+  createdAt?: string
+}
+
+/** GET /admin/role-withdrawals/summary（v5.5 §70.6） */
+export interface RoleWithdrawalSummary {
+  pendingCount?: number
+  pendingAmount?: number
+  todayProcessedCount?: number
+  todayProcessedAmount?: number
+  approvedCount?: number
+  approvedAmount?: number
+}
+
+/** POST /admin/role-withdrawals/{id}/audit（v5.5 §70.7） */
+export interface AdminRoleWithdrawalAuditPayload {
+  auditResult: 'approved' | 'rejected' | 'completed'
+  transferProof?: string
+  rejectReason?: string
+  remark?: string
+}
+
+export interface AdminRoleWithdrawalAuditResult {
+  id: string
+  auditStatus?: string
+  transferProof?: string
+  disburseChannel?: string
+  disburseStatus?: string
+  auditedAt?: string
+  auditorId?: string
+  completedAt?: string
+}
+
 /** 板块负责人 - 个体负责人 */
 export interface IndividualLeaderItem {
   id: string
@@ -1483,6 +1696,16 @@ export interface IndividualLeaderItem {
   name?: string
   sector?: string
   commissionRate?: number
+  /** 累计收益（若后端返回） */
+  totalEarnings?: number
+  /** 可提现余额（GET /individual-leaders/my） */
+  withdrawableAmount?: number
+  /** 累计已提现成功 */
+  totalWithdrawn?: number
+  /** 处理中提现金额 */
+  pendingWithdrawalAmount?: number
+  /** 是否被阻止提现 */
+  withdrawalBlocked?: boolean
   status?: string
   createdAt?: string
 }
@@ -1534,6 +1757,8 @@ export interface MerchantDistributionPayload {
 export interface MerchantDeliveryFeePayload {
   merchantId: string
   freeDeliveryThreshold: number
+  freeDeliveryEnabled?: boolean
+  freeDeliverySponsor?: string
 }
 
 /** 统筹管理 */
@@ -2603,16 +2828,52 @@ export interface ArrearsReport {
   groupByBuilding?: Array<{ building?: string; totalAmount?: number; count?: number }>
 }
 
-/** POST /admin/property-fees/arrears-reminder */
-export interface ArrearsReminderPayload {
+/** POST /admin/property-fees/arrears-reminder/preview */
+export interface ArrearsReminderPreviewPayload {
   propertyCompanyId?: string
+  communityId?: string
+  building?: string
+  feeType?: string
+  templateCode?: string
+}
+
+export interface ArrearsReminderPreviewResult {
+  templateCode: string
+  previewToken: string
+  expiresAt: string
+  recipientCount: number
+  totalArrearsAmount: number
+  inAppEligibleCount: number
+  wechatEligibleCount: number
+  wechatIneligibleCount: number
+  duplicateResidentCount: number
+}
+
+/** POST /admin/property-fees/arrears-reminder */
+export interface ArrearsReminderPayload extends ArrearsReminderPreviewPayload {
+  previewToken: string
+  channels: string[]
+  requestId?: string
   title: string
   content: string
 }
 
+export interface ArrearsReminderChannelResult {
+  successCount: number
+  skippedCount?: number
+  failedCount: number
+}
+
 export interface ArrearsReminderResult {
+  batchId: string
+  recipientCount: number
   notifiedCount: number
   skippedCount: number
+  failedCount: number
+  channels: {
+    inApp: ArrearsReminderChannelResult
+    wechat?: ArrearsReminderChannelResult
+  }
 }
 
 /** §88 物业住户聊天 */

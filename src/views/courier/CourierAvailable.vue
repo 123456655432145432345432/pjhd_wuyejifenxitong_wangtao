@@ -3,7 +3,7 @@
     <div class="header">
       <div>
         <h1 class="title">抢单大厅</h1>
-        <p class="desc">查看待配送订单并抢单 · 共 {{ total }} 单可抢 · 预计收入 = 配送费 − 我们公司抽成</p>
+        <p class="desc">查看待配送订单并抢单 · 共 {{ total }} 单可抢 · 预计收入读取后端 courierEarning</p>
       </div>
       <button class="btnSecondary" :disabled="loading" @click="load(page)">刷新</button>
     </div>
@@ -16,8 +16,8 @@
         <div v-for="item in deliveries" :key="item.id" class="card">
           <div class="cardTop">
             <span class="orderNo">{{ item.orderNo || item.orderId }}</span>
-            <span class="earning" title="配送费−我们公司抽成，无保底；完成配送后计入可提现">
-              预计 +¥{{ formatMoney(item.courierEarning ?? item.fee) }}
+            <span class="earning" title="按配送结算基数计算；满额减免时由补贴保证配送收入">
+              预计 +¥{{ formatMoney(item.courierEarning) }}
             </span>
           </div>
           <div class="row"><span class="label">商家</span><span>{{ item.merchantName || '—' }}</span></div>

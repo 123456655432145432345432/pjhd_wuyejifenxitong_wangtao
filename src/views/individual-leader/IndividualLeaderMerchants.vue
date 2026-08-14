@@ -24,6 +24,7 @@
             <th>分类</th>
             <th>抽佣比例</th>
             <th>满额免配送</th>
+            <th>默认承担方</th>
             <th>状态</th>
             <th>操作</th>
           </tr>
@@ -34,6 +35,7 @@
             <td>{{ item.category || '—' }}</td>
             <td>{{ formatRate(item.commissionRate) }}</td>
             <td>{{ formatThreshold(item.freeDeliveryThreshold) }}</td>
+            <td>{{ item.freeDeliveryEnabled ? sponsorLabel(item.freeDeliverySponsor) : '未启用' }}</td>
             <td>{{ getEnumLabel(MERCHANT_STATUS_LABEL, item.status) }}</td>
             <td class="actions">
               <button class="linkBtn" @click="openDistribution(item)">设置抽佣</button>
@@ -52,6 +54,7 @@
             <span>分类：{{ item.category || '—' }}</span>
             <span>抽佣：{{ formatRate(item.commissionRate) }}</span>
             <span>满额免配送：{{ formatThreshold(item.freeDeliveryThreshold) }}</span>
+            <span>承担方：{{ item.freeDeliveryEnabled ? sponsorLabel(item.freeDeliverySponsor) : '未启用' }}</span>
           </div>
           <div class="cardActions">
             <button class="linkBtn" @click="openDistribution(item)">设置抽佣</button>
@@ -104,11 +107,28 @@
             <button class="modalClose" @click="closeDeliveryFee">&times;</button>
           </div>
           <div class="modalBody">
-            <p class="note">保存后立即生效，无需审批</p>
+            <p class="note">满额判断按商品优惠后小计，不含配送费，并在积分、物业币抵扣前完成。</p>
+            <div class="field">
+              <label class="label">
+                <input v-model="deliveryEnabled" type="checkbox" />
+                启用满额配送费减免
+              </label>
+            </div>
             <div class="field">
               <label class="label">满额免配送门槛 (元)</label>
-              <input v-model.number="deliveryThreshold" type="number" min="0" step="0.01" class="input" />
+              <input v-model.number="deliveryThreshold" type="number" min="0.01" step="0.01" class="input" :disabled="!deliveryEnabled" />
             </div>
+            <div class="field">
+              <label class="label">默认补贴承担方</label>
+              <select v-model="deliverySponsor" class="input" :disabled="!deliveryEnabled">
+                <option v-for="option in DELIVERY_SUBSIDY_SPONSOR_OPTIONS" :key="option.value" :value="option.value">
+                  {{ option.label }}
+                </option>
+              </select>
+            </div>
+            <p v-if="deliveryEnabled && deliverySponsor === DELIVERY_SUBSIDY_SPONSOR.MERCHANT" class="note">
+              满额减免默认由商家承担。满足条件时，商家商品结算收入将扣除本单配送补贴。
+            </p>
             <p v-if="deliveryError" class="error">{{ deliveryError }}</p>
             <div class="modalFooter">
               <button class="btnSecondary" @click="closeDeliveryFee">取消</button>
@@ -128,7 +148,13 @@ import { onMounted, ref } from 'vue'
 import { individualLeaderPortalApi, merchantApi } from '../../api/services'
 import type { MerchantItem } from '../../api/types'
 import { ApiError } from '../../api/request'
-import { getEnumLabel, MERCHANT_STATUS_LABEL } from '../../constants/enums'
+import {
+  DELIVERY_SUBSIDY_SPONSOR,
+  DELIVERY_SUBSIDY_SPONSOR_LABEL,
+  DELIVERY_SUBSIDY_SPONSOR_OPTIONS,
+  getEnumLabel,
+  MERCHANT_STATUS_LABEL
+} from '../../constants/enums'
 import { useIndividualLeaderPortalStore } from '../../stores/individualLeaderPortal'
 import { useIsMobile } from '../../composables/useIsMobile'
 
@@ -151,6 +177,8 @@ const distributionError = ref('')
 
 const deliveryTarget = ref<MerchantItem | null>(null)
 const deliveryThreshold = ref<number | undefined>(undefined)
+const deliveryEnabled = ref(false)
+const deliverySponsor = ref<string>(DELIVERY_SUBSIDY_SPONSOR.MERCHANT)
 const deliverySaving = ref(false)
 const deliveryError = ref('')
 
@@ -162,6 +190,10 @@ function formatRate(value?: number) {
 function formatThreshold(value?: string | number) {
   if (value == null || value === '') return '—'
   return `¥${Number(value).toFixed(2)}`
+}
+
+function sponsorLabel(value?: string) {
+  return getEnumLabel(DELIVERY_SUBSIDY_SPONSOR_LABEL, value, value || '—')
 }
 
 async function load(pageNo = 1) {
@@ -239,6 +271,8 @@ function openDeliveryFee(item: MerchantItem) {
     item.freeDeliveryThreshold != null && item.freeDeliveryThreshold !== ''
       ? Number(item.freeDeliveryThreshold)
       : undefined
+  deliveryEnabled.value = Boolean(item.freeDeliveryEnabled)
+  deliverySponsor.value = item.freeDeliverySponsor || DELIVERY_SUBSIDY_SPONSOR.MERCHANT
   deliveryError.value = ''
 }
 
@@ -249,8 +283,8 @@ function closeDeliveryFee() {
 
 async function submitDeliveryFee() {
   if (!deliveryTarget.value) return
-  if (deliveryThreshold.value == null || deliveryThreshold.value < 0) {
-    deliveryError.value = '请填写有效的满额免配送门槛'
+  if (deliveryEnabled.value && (deliveryThreshold.value == null || deliveryThreshold.value <= 0)) {
+    deliveryError.value = '启用满额减免时，门槛必须大于 0'
     return
   }
   deliverySaving.value = true
@@ -258,7 +292,9 @@ async function submitDeliveryFee() {
   try {
     await individualLeaderPortalApi.updateDeliveryFee({
       merchantId: deliveryTarget.value.id,
-      freeDeliveryThreshold: deliveryThreshold.value
+      freeDeliveryThreshold: Number(deliveryThreshold.value || 0),
+      freeDeliveryEnabled: deliveryEnabled.value,
+      freeDeliverySponsor: deliverySponsor.value
     })
     closeDeliveryFee()
     successMsg.value = '满额免配送已保存并立即生效'

@@ -3,7 +3,9 @@
     <div class="header">
       <div>
         <h1 class="title">分成明细</h1>
-        <p class="desc">订单账面分账记录（待结算口径，以后端返回份额为准）</p>
+        <p class="desc">
+          订单账面分账记录（GET /distribution/records 或管理端镜像）。以后端份额为准；注意取消订单的负数冲账。
+        </p>
       </div>
     </div>
 
@@ -72,7 +74,6 @@ const endDate = ref('')
 const orderId = ref('')
 const merchantId = ref('')
 const propertyCompanyId = ref(auth.propertyCompanyId || '')
-
 async function load(pageNo = 1) {
   loading.value = true
   error.value = ''

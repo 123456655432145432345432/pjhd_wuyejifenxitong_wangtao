@@ -64,6 +64,7 @@ const ADMIN_WORKBENCH_BASE: MobileWorkbenchSection[] = [
       { name: '权限配置', icon: 'permission', route: 'permission' },
       { name: '参数配置', icon: 'param', route: 'param' },
       { name: '快递负责人', icon: 'people', route: 'courier-managers' },
+      { name: '业务角色账号', icon: 'people', route: 'role-accounts' },
       { name: '公司账户', icon: 'money', route: 'company-account' },
       { name: '分成账户', icon: 'wallet', route: 'settlement-account' },
       { name: '分成明细', icon: 'history', route: 'distribution-records' },

@@ -4,8 +4,8 @@
       <div>
         <h1 class="title">平台收益</h1>
         <p class="desc">
-          CBK 真分账下，订单分成 / 配送费分成 / 提现手续费分成由扫呗直接划入平台账户（实时入账）。
-          本页为只读对账视图，不提供「从平台余额提现」。
+          查看订单、配送费和提现手续费带来的平台收益。
+          收益由支付渠道自动结算至平台账户，本页仅用于查询和对账。
         </p>
       </div>
       <button class="btnSecondary" :disabled="walletLoading" @click="refreshBalance">
@@ -15,7 +15,7 @@
 
     <div class="walletSummary">
       <div class="statCard green">
-        <div class="label">已入账余额（平台 CBK）</div>
+        <div class="label">平台账户已入账余额</div>
         <div class="value">{{ walletOk ? `¥${formatMoney(settledBalance)}` : '—' }}</div>
       </div>
       <div class="statCard">
@@ -36,11 +36,10 @@
       <span>构成：订单分成 ¥{{ formatMoney(distributionShare) }}</span>
       <span>配送费分成 ¥{{ formatMoney(deliveryShare) }}</span>
       <span>提现手续费分成 ¥{{ formatMoney(feeShare) }}</span>
-      <span v-if="wallet?.settleMode" class="modeTag">{{ wallet.settleMode }}</span>
     </div>
     <p v-if="walletError" class="bannerWarn">{{ walletError }}</p>
     <p v-if="!canWithdraw && walletOk" class="bannerInfo">
-      当前为 CBK 自动结算，收益已实时入账平台账户，管理端不提供申请提现。
+      当前收益由支付渠道自动结算至平台账户，无需在管理端申请提现。
     </p>
 
     <div class="tabs">
@@ -123,7 +122,7 @@
                 <td>{{ getEnumLabel(PLATFORM_EARNING_TYPE_LABEL, item.type) }}</td>
                 <td>{{ item.propertyName || item.propertyCompanyId || '—' }}</td>
                 <td class="num">¥{{ formatMoney(item.amount) }}</td>
-                <td>{{ item.orderId || item.withdrawalId || '—' }}</td>
+                <td class="idCell">{{ item.orderId || item.withdrawalId || '—' }}</td>
               </tr>
             </tbody>
           </table>
@@ -206,23 +205,20 @@ const totalEarned = computed(
     settledBalance.value
 )
 const settlementStatusText = computed(() => {
-  if (wallet.value?.settlementStatus) return String(wallet.value.settlementStatus)
-  if (wallet.value?.withdrawalBlocked) return '已阻止'
-  return 'CBK 自动结算·已实时入账平台账户'
+  if (wallet.value?.withdrawalBlocked) return '结算受限'
+  if (pendingAmount.value > 0) return '部分收益处理中'
+  return '自动结算正常'
 })
 const distributionShare = computed(() => toAmount(wallet.value?.distributionShare) ?? 0)
 const deliveryShare = computed(() => toAmount(wallet.value?.deliveryShare) ?? 0)
 const feeShare = computed(() => toAmount(wallet.value?.withdrawalFeeShare) ?? 0)
+/** CBK 真分账下恒为 false；仅作防御，页面不提供提现入口 */
 const canWithdraw = computed(() => wallet.value?.withdrawAvailable === true)
 
 function explainBalanceError(e: unknown, fallback: string) {
   const msg = formatApiError(e, fallback)
   if (/NoResourceFoundException|404|Not Found|no static resource/i.test(msg)) {
-    return (
-      `${msg}\n` +
-      `前端请求：GET /admin/platform-earnings/balance。` +
-      `若仍 404，请确认 CBK 对账接口已部署。`
-    )
+    return '平台收益对账服务暂不可用，请稍后重试或联系系统管理员'
   }
   return msg
 }
@@ -377,6 +373,11 @@ onMounted(async () => {
 }
 .table th { color: #8c8c9a; font-weight: 500; background: #fafafc; }
 .table td.num { white-space: nowrap; }
+.table td.idCell {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  word-break: break-all;
+}
 .pager { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 16px; }
 .pageBtn { padding: 6px 12px; border: 1px solid #e8e8ec; border-radius: 8px; background: #fff; cursor: pointer; }
 @media (max-width: 960px) {

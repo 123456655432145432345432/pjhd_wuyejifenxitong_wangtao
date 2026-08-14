@@ -4,8 +4,9 @@
       <div>
         <h1 class="title">提现记录</h1>
         <p class="desc">
-          配送收益提现。单笔收入来自订单配送费（我们公司抽成后余额归配送员，无保底），与分成明细「配送员收入」同一笔；
-          完成配送后入账，余额以接口返回为准。
+          配送收益提现。账户「实际可拿」只读
+          <code>withdrawableAmount</code>（<code>GET /courier-managers/my</code>），完成配送后以该接口刷新，禁止前端加减。
+          单笔预计收入见任务 <code>courierEarning</code>，入账后计入可提现。
         </p>
       </div>
       <button

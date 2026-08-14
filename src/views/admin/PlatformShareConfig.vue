@@ -4,11 +4,11 @@
       <div>
         <h1 class="title">平台分成配置</h1>
         <p class="desc">
-          平台管理员保留：平台盘三档比例、配送费抽成、提现手续费分成。
-          真实份额以「分成明细 / 分成统计」为准（账面待结算）；通道直分（CBK）未接入，勿承诺「付款即到账」。
+          配置订单收益、配送费和提现手续费在各参与方之间的分配比例。
+          订单完成后，平台收益由支付渠道自动结算；入账结果请到「平台收益」查看。
         </p>
       </div>
-      <button class="btnPrimary" :disabled="loading || saving || !canEdit" @click="handleSave">
+      <button class="btnPrimary" :disabled="loading || saving || !canEdit || Boolean(poolRateWarn)" @click="handleSave">
         {{ saving ? '保存中...' : '保存配置' }}
       </button>
     </div>
@@ -30,41 +30,39 @@
       <div v-if="!canEdit && !isPlatformAdmin" class="hint">仅平台管理员可修改平台分成比例</div>
 
       <div class="flowCard">
-        <div class="cardHead">现网分账口径（B 方案）</div>
+        <div class="cardHead">订单收益分配说明</div>
         <ol class="flowSteps">
           <li>
-            <strong>订单实付</strong> = 商品价格 + 配送费（用户实付口径 <code>totalAmount</code>）
+            <strong>用户实付金额</strong>由商品金额和配送费组成。
           </li>
           <li>
-            <strong>商品价线</strong>：按商家抽佣 <code>commissionRate</code> 拆成
-            <em>商家实得</em> 与 <em>平台盘</em>
-            （平台盘 ≈ 商品价 × 抽佣 − 积分/物业币成本 = <code>distributableAmount</code>）
+            <strong>商品金额</strong>先按商家抽佣比例分为商家收入和平台可分配收益；
+            积分或物业币抵扣成本会从平台可分配收益中扣除，不足部分由积分池承担。
           </li>
           <li>
-            <strong>平台盘二次分</strong>（本页 + 参数页）：
-            <em>我们公司 / 物业 / 管理（统筹→板块→个体）</em>；配送员<strong>不参与</strong>平台盘
+            <strong>平台可分配收益</strong>再分给我们公司、物业和管理团队
+            （统筹、板块、个体）；配送员不参与这部分分配。
           </li>
           <li>
-            <strong>配送费线</strong>：仅 <em>我们公司</em> 与 <em>配送员</em> 分；
-            平台抽 <code>platformDeliveryShareRate</code>，余额归配送员（无保底）
+            <strong>配送结算基数</strong>仅在我们公司和配送员之间分配；满额减免时由明确承担方补贴，配送员收入不会随用户配送费归零。
           </li>
         </ol>
         <p class="flowNote">
-          骑手收入与分成明细 <code>courierShare</code> / 任务 <code>courierEarning</code> 合轨，来源是配送费而非平台盘。
+          配送员的单笔收入以配送任务结算结果为准，累计可提现金额以配送员钱包余额为准。
         </p>
       </div>
 
       <p v-if="suggestOurCompany" class="bannerWarn">
-        当前「我们公司」为 0%。按 B 方案默认建议设为 10%（占平台盘）。
+        当前「我们公司」分配比例为 0%，建议确认是否符合实际经营规则。
         <button v-if="canEdit" type="button" class="linkBtn" @click="applyRecommendedOurCompany">应用推荐 10%</button>
       </p>
       <p v-if="poolRateWarn" class="bannerWarn">{{ poolRateWarn }}</p>
 
       <div class="grid">
         <div class="card">
-          <div class="cardHead">我们公司（平台盘内）</div>
+          <div class="cardHead">我们公司（平台可分配收益）</div>
           <p class="cardDesc">
-            落库 <code>platformShareRate</code>：平台盘三档之一（默认约 10%）。与配送费抽成是两条线。
+            从平台可分配收益中划给我们公司的比例；与配送费分配相互独立。
           </p>
           <div class="inputWrap">
             <input
@@ -80,10 +78,10 @@
           </div>
         </div>
         <div class="card">
-          <div class="cardHead">平台配送费抽成（我们公司）</div>
+          <div class="cardHead">配送结算基数抽成（我们公司）</div>
           <p class="cardDesc">
-            落库 <code>platformDeliveryShareRate</code>：从用户付的<strong>配送费</strong>中抽给我们公司，
-            默认 10%；余额归配送员。物业 / 统筹 / 板块 / 个体不参与配送费分账。
+            从配送结算基数中划给我们公司的比例，剩余部分归配送员；
+            物业、统筹、板块和个体负责人不参与配送费分配。
           </p>
           <div class="inputWrap">
             <input
@@ -100,7 +98,7 @@
         </div>
         <div class="card">
           <div class="cardHead">提现手续费分成</div>
-          <p class="cardDesc">独立链路：平台从提现手续费中抽取的比例，默认 100%。不参与订单两层分账。</p>
+          <p class="cardDesc">平台从提现手续费中获得的比例；该比例不影响订单收益或配送费分配。</p>
           <div class="inputWrap">
             <input
               v-model.number="form.platformWithdrawalFeeSharePercent"
@@ -117,15 +115,15 @@
       </div>
 
       <div class="card reference">
-        <div class="cardHead">平台盘三档 + 管理内拆分（只读物业侧）</div>
+        <div class="cardHead">平台收益与管理团队分配明细</div>
         <div class="refGrid">
           <div><span class="refLabel">我们公司</span><strong>{{ formatPercent(percentToRate(form.platformSharePercent)) }}</strong></div>
           <div><span class="refLabel">物业</span><strong>{{ formatPercent(rates.propertyShareRate) }}</strong></div>
-          <div><span class="refLabel">管理/统筹盘</span><strong>{{ formatPercent(rates.coordinatorShareRate) }}</strong></div>
-          <div><span class="refLabel">板块负责人（抽管理盘）</span><strong>{{ formatPercent(rates.sectorLeaderRate) }}</strong></div>
+          <div><span class="refLabel">管理团队</span><strong>{{ formatPercent(rates.coordinatorShareRate) }}</strong></div>
+          <div><span class="refLabel">板块负责人（从管理团队份额中分配）</span><strong>{{ formatPercent(rates.sectorLeaderRate) }}</strong></div>
           <div><span class="refLabel">个体负责人（抽板块）</span><strong>{{ formatPercent(rates.individualLeaderRate) }}</strong></div>
           <div>
-            <span class="refLabel">配送（B·配送费）</span>
+              <span class="refLabel">配送结算基数</span>
             <strong>
               公司 {{ formatPercent(percentToRate(form.platformDeliverySharePercent)) }} ·
               骑手 {{ formatPercent(1 - percentToRate(form.platformDeliverySharePercent)) }}
@@ -133,30 +131,30 @@
           </div>
         </div>
         <p class="note">
-          B 方案：平台盘三档（我们公司 + 物业 + 管理）之和应为 100%。
-          管理盘内部默认 统筹:板块:个体 = 4:3:3（级联字段 sector=60%、individual=50%）。
-          物业侧比例请在「参数配置 → 分账」查看（仅平台管理员可改）。
+          我们公司、物业和管理团队的比例合计必须为 100%。
+          管理团队份额再按统筹、板块、个体的规则继续分配。
+          物业及管理团队比例可在「参数配置 → 分账」查看。
         </p>
         <div class="preview">
-          <div class="previewTitle">示意：平台盘 100 元 + 配送费 1 元</div>
+          <div class="previewTitle">示例：商品平台盘 100 元 + 配送结算基数 1 元</div>
           <div class="refGrid previewSeven">
-            <div><span class="refLabel">我们公司（盘内）</span><strong>¥{{ formatMoney(poolPreview.ourCompany) }}</strong></div>
+            <div><span class="refLabel">我们公司</span><strong>¥{{ formatMoney(poolPreview.ourCompany) }}</strong></div>
             <div><span class="refLabel">物业</span><strong>¥{{ formatMoney(poolPreview.property) }}</strong></div>
-            <div><span class="refLabel">管理盘</span><strong>¥{{ formatMoney(poolPreview.management) }}</strong></div>
+            <div><span class="refLabel">管理团队</span><strong>¥{{ formatMoney(poolPreview.management) }}</strong></div>
             <div><span class="refLabel">统筹实得</span><strong>¥{{ formatMoney(poolPreview.coordinatorNet) }}</strong></div>
             <div><span class="refLabel">板块</span><strong>¥{{ formatMoney(poolPreview.sector) }}</strong></div>
             <div><span class="refLabel">个体</span><strong>¥{{ formatMoney(poolPreview.individual) }}</strong></div>
             <div>
-              <span class="refLabel">配送费·公司</span>
+              <span class="refLabel">配送链路·公司</span>
               <strong>¥{{ formatMoney(deliveryPreview.platform) }}</strong>
             </div>
             <div>
-              <span class="refLabel">配送费·配送员</span>
+              <span class="refLabel">配送链路·配送员</span>
               <strong>¥{{ formatMoney(deliveryPreview.courier) }}</strong>
             </div>
           </div>
           <p class="previewHint">
-            平台盘示意与配送费示意是两条独立账；实际合轨以分成明细为准。
+            商品平台盘与配送链路相互独立，实际金额以后端分成快照为准。
           </p>
         </div>
       </div>
@@ -210,9 +208,8 @@ const poolRateWarn = computed(() => {
   const property = Number(rates.propertyShareRate ?? 0)
   const management = Number(rates.coordinatorShareRate ?? 0)
   const sum = our + property + management
-  if (sum < 0.0001) return ''
   if (Math.abs(sum - 1) > 0.005) {
-    return `当前平台盘三档合计 ${(sum * 100).toFixed(2)}%，B 方案要求约为 100%（我们公司 + 物业 + 管理）。`
+    return `当前收益分配合计 ${(sum * 100).toFixed(2)}%，必须调整为 100%（我们公司 + 物业 + 管理团队）后才能保存。`
   }
   return ''
 })
@@ -308,6 +305,23 @@ async function handleSave() {
     saveError.value = '请选择物业公司'
     return
   }
+  if (poolRateWarn.value) {
+    saveError.value = poolRateWarn.value
+    return
+  }
+
+  const companyName =
+    propertyCompanies.value.find((item) => item.id === propertyCompanyId)?.name || propertyCompanyId
+  const confirmed = window.confirm(
+    `确认保存「${companyName}」的分成配置？\n` +
+      `我们公司：${Number(form.platformSharePercent).toFixed(1)}%\n` +
+      `物业：${formatPercent(rates.propertyShareRate)}\n` +
+      `管理团队：${formatPercent(rates.coordinatorShareRate)}\n` +
+      `配送费公司分成：${Number(form.platformDeliverySharePercent).toFixed(1)}%\n` +
+      `提现手续费分成：${Number(form.platformWithdrawalFeeSharePercent).toFixed(1)}%\n` +
+      '保存后将影响后续业务结算。'
+  )
+  if (!confirmed) return
 
   saving.value = true
   saveError.value = ''
