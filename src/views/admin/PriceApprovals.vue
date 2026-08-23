@@ -158,7 +158,11 @@
           <div class="modalBody">
             <div v-if="showCompanyFilter" class="field">
               <label class="label">物业公司 <em class="required">*</em></label>
-              <select v-model="createForm.propertyCompanyId" class="input fullInput">
+              <select
+                v-model="createForm.propertyCompanyId"
+                class="input fullInput"
+                @change="onCreateCompanyChange"
+              >
                 <option value="">请选择物业公司</option>
                 <option v-for="c in propertyCompanies" :key="c.id" :value="c.id">
                   {{ c.name || c.id }}
@@ -169,16 +173,40 @@
               <label class="label">审批类型</label>
               <select v-model="createForm.itemType" class="input fullInput" @change="onCreateTypeChange">
                 <option :value="PRICE_APPROVAL_ITEM_TYPE.PRODUCT_PRICE">商品价格</option>
-                <option :value="PRICE_APPROVAL_ITEM_TYPE.MERCHANT_AD">商家广告</option>
                 <option :value="PRICE_APPROVAL_ITEM_TYPE.MERCHANT_DISTRIBUTION">商家分成</option>
                 <option :value="PRICE_APPROVAL_ITEM_TYPE.PROPERTY_FEE_PRICE">物业费价格</option>
                 <option :value="PRICE_APPROVAL_ITEM_TYPE.RESIDENT_SHARE_RATE">积分分成比例</option>
                 <option :value="PRICE_APPROVAL_ITEM_TYPE.DELIVERY_FEE">配送费</option>
               </select>
             </div>
+            <div v-if="isProductType" class="field">
+              <label class="label">商家</label>
+              <select
+                v-model="createMerchantId"
+                class="input fullInput"
+                :disabled="itemOptionsLoading"
+                @change="onProductMerchantChange"
+              >
+                <option value="">{{ itemOptionsLoading ? '加载中...' : '请选择商家' }}</option>
+                <option v-for="opt in merchantOptions" :key="opt.id" :value="opt.id">
+                  {{ opt.label }}
+                </option>
+              </select>
+            </div>
             <div class="field">
               <label class="label">{{ itemIdLabel }}</label>
-              <input v-model.trim="createForm.itemId" class="input fullInput" :placeholder="itemIdPlaceholder" />
+              <select
+                v-model="createForm.itemId"
+                class="input fullInput"
+                :disabled="itemOptionsLoading || (isProductType && !createMerchantId)"
+                @change="onCreateItemChange"
+              >
+                <option value="">{{ itemSelectPlaceholder }}</option>
+                <option v-for="opt in itemOptions" :key="opt.id" :value="opt.id">
+                  {{ opt.label }}
+                </option>
+              </select>
+              <p v-if="optionHint" class="optionHint">{{ optionHint }}</p>
             </div>
             <div class="fieldRow">
               <div class="field">
@@ -222,11 +250,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import MobileCellText from '../../components/MobileCellText.vue'
-import { priceApprovalApi, propertyCompanyApi } from '../../api/services'
-import type { PriceApprovalItem, PropertyCompanyItem } from '../../api/types'
+import {
+  configApi,
+  merchantApi,
+  merchantPortalApi,
+  priceApprovalApi,
+  propertyCompanyApi,
+  residentApi
+} from '../../api/services'
+import type { MerchantItem, PriceApprovalItem, ProductItem, PropertyCompanyItem, ResidentItem } from '../../api/types'
 import { ApiError } from '../../api/request'
+import { normalizePageResult } from '../../utils/pageResult'
 import {
   API_ERROR_CODE,
   getEnumLabel,
@@ -246,6 +283,8 @@ import { useAuthStore } from '../../stores/auth'
 import { useIsMobile } from '../../composables/useIsMobile'
 
 const auth = useAuthStore()
+const route = useRoute()
+const router = useRouter()
 const { isMobile } = useIsMobile()
 const isPlatformAdmin = computed(() => checkPlatformAdmin(auth.profile))
 const canAudit = computed(() => canAuditPriceApproval(auth.profile))
@@ -289,16 +328,199 @@ const valuePlaceholder = computed(() => (isRateType.value ? '如 0.1 或 10' : '
 const itemIdLabel = computed(() => {
   switch (createForm.itemType) {
     case PRICE_APPROVAL_ITEM_TYPE.PRODUCT_PRICE:
-      return '商品 ID'
+      return '商品'
     case PRICE_APPROVAL_ITEM_TYPE.PROPERTY_FEE_PRICE:
-      return '住户 / 物业费规则 ID'
+      return '住户'
     case PRICE_APPROVAL_ITEM_TYPE.RESIDENT_SHARE_RATE:
-      return '物业公司 ID'
+      return '物业公司'
     default:
-      return '商家 / 规则 ID'
+      return '商家'
   }
 })
-const itemIdPlaceholder = computed(() => `请输入${itemIdLabel.value}`)
+const isProductType = computed(() => createForm.itemType === PRICE_APPROVAL_ITEM_TYPE.PRODUCT_PRICE)
+const itemSelectPlaceholder = computed(() => {
+  if (itemOptionsLoading.value) return '加载中...'
+  if (isProductType.value && !createMerchantId.value) return '请先选择商家'
+  return `请选择${itemIdLabel.value}`
+})
+
+type CreateItemOption = { id: string; label: string; oldAmount: string | number | '' }
+const itemOptions = ref<CreateItemOption[]>([])
+const merchantOptions = ref<CreateItemOption[]>([])
+const createMerchantId = ref('')
+const itemOptionsLoading = ref(false)
+const optionHint = ref('')
+
+function currentCompanyId() {
+  if (isPlatformAdmin.value) return createForm.propertyCompanyId || ''
+  return auth.propertyCompanyId || auth.profile?.propertyCompanyId || ''
+}
+
+function toOldAmount(value: unknown): string | number | '' {
+  if (value === undefined || value === null || value === '') return ''
+  const num = Number(value)
+  return Number.isNaN(num) ? '' : num
+}
+
+function fillOldAmount(value: unknown) {
+  createForm.oldAmount = toOldAmount(value)
+}
+
+function merchantToOption(item: MerchantItem, type = createForm.itemType): CreateItemOption {
+  return {
+    id: item.id,
+    label: item.name || item.id,
+    oldAmount:
+      type === PRICE_APPROVAL_ITEM_TYPE.MERCHANT_DISTRIBUTION
+        ? toOldAmount(item.commissionRate)
+        : toOldAmount(item.deliveryFee)
+  }
+}
+
+async function fetchMerchants() {
+  const companyId = currentCompanyId()
+  const res = await merchantApi.list({
+    page: 1,
+    pageSize: 100,
+    propertyCompanyId: companyId || undefined,
+    sort: '-createdAt'
+  })
+  return normalizePageResult<MerchantItem>(res).list
+}
+
+async function fetchProducts(merchantId: string) {
+  try {
+    const res = await merchantPortalApi.products({
+      merchantId,
+      page: 1,
+      pageSize: 100,
+      sort: '-createdAt'
+    })
+    const list = normalizePageResult<ProductItem>(res).list
+    if (list.length) return list
+  } catch {
+    // 管理端可能无商家门户商品权限，改走商家详情里的商品
+  }
+  const detail = await merchantApi.get(merchantId, currentCompanyId() || undefined) as MerchantItem & {
+    products?: ProductItem[]
+  }
+  return detail.products || []
+}
+
+async function fetchResidents() {
+  const companyId = currentCompanyId()
+  const res = await residentApi.list({
+    page: 1,
+    pageSize: 100,
+    propertyCompanyId: companyId || undefined,
+    sort: '+building,+floor,+unit,+room'
+  })
+  return normalizePageResult<ResidentItem>(res).list
+}
+
+async function loadItemOptions() {
+  itemOptions.value = []
+  merchantOptions.value = []
+  createMerchantId.value = ''
+  createForm.itemId = ''
+  createForm.oldAmount = ''
+  optionHint.value = ''
+  const type = createForm.itemType
+  const companyId = currentCompanyId()
+  itemOptionsLoading.value = true
+  try {
+    if (type === PRICE_APPROVAL_ITEM_TYPE.PRODUCT_PRICE) {
+      const merchants = await fetchMerchants()
+      merchantOptions.value = merchants.map((item) => merchantToOption(item))
+      optionHint.value = merchants.length ? '请先选商家，再选商品' : '该物业下暂无商家'
+    } else if (
+      type === PRICE_APPROVAL_ITEM_TYPE.MERCHANT_DISTRIBUTION ||
+      type === PRICE_APPROVAL_ITEM_TYPE.DELIVERY_FEE
+    ) {
+      const merchants = await fetchMerchants()
+      itemOptions.value = merchants.map((item) => merchantToOption(item, type))
+      optionHint.value = merchants.length ? '' : '该物业下暂无商家'
+    } else if (type === PRICE_APPROVAL_ITEM_TYPE.PROPERTY_FEE_PRICE) {
+      const residents = await fetchResidents()
+      itemOptions.value = residents.map((item) => ({
+        id: item.id,
+        label:
+          [item.name, item.phone, item.building, item.unit, item.room].filter(Boolean).join(' ') ||
+          item.id,
+        oldAmount: toOldAmount(item.arrearsAmount)
+      }))
+      optionHint.value = residents.length ? '' : '该物业下暂无住户'
+    } else if (type === PRICE_APPROVAL_ITEM_TYPE.RESIDENT_SHARE_RATE) {
+      if (isPlatformAdmin.value) {
+        if (!propertyCompanies.value.length) await loadPropertyCompanies()
+        itemOptions.value = propertyCompanies.value.map((item) => ({
+          id: item.id,
+          label: item.name || item.id,
+          oldAmount: ''
+        }))
+      } else if (companyId) {
+        itemOptions.value = [{ id: companyId, label: '当前物业公司', oldAmount: '' }]
+        createForm.itemId = companyId
+        await fillShareRateOldAmount(companyId)
+      }
+    }
+  } catch (e) {
+    itemOptions.value = []
+    merchantOptions.value = []
+    optionHint.value = e instanceof ApiError ? e.message : '选项加载失败'
+  } finally {
+    itemOptionsLoading.value = false
+  }
+}
+
+async function fillShareRateOldAmount(companyId: string) {
+  try {
+    const detail = await configApi.propertyCompany(companyId)
+    fillOldAmount(detail.residentPointShareRate)
+  } catch {
+    createForm.oldAmount = ''
+  }
+}
+
+async function onProductMerchantChange() {
+  createForm.itemId = ''
+  createForm.oldAmount = ''
+  itemOptions.value = []
+  if (!createMerchantId.value) return
+  itemOptionsLoading.value = true
+  optionHint.value = ''
+  try {
+    const products = await fetchProducts(createMerchantId.value)
+    itemOptions.value = products.map((item) => ({
+      id: item.id,
+      label: item.name || item.id,
+      oldAmount: toOldAmount(item.price)
+    }))
+    optionHint.value = products.length ? '' : '该商家暂无商品'
+  } catch (e) {
+    optionHint.value = e instanceof ApiError ? e.message : '商品加载失败'
+  } finally {
+    itemOptionsLoading.value = false
+  }
+}
+
+async function onCreateItemChange() {
+  const selected = itemOptions.value.find((item) => item.id === createForm.itemId)
+  if (!selected) {
+    createForm.oldAmount = ''
+    return
+  }
+  if (createForm.itemType === PRICE_APPROVAL_ITEM_TYPE.RESIDENT_SHARE_RATE) {
+    await fillShareRateOldAmount(selected.id)
+    return
+  }
+  fillOldAmount(selected.oldAmount)
+}
+
+async function onCreateCompanyChange() {
+  createForm.newAmount = ''
+  await loadItemOptions()
+}
 
 function canShowAudit(item: PriceApprovalItem) {
   return canAudit.value && item.status === PRICE_APPROVAL_STATUS.PENDING
@@ -339,8 +561,10 @@ function buildValueJson(raw: string | number) {
 }
 
 function onCreateTypeChange() {
+  createForm.itemId = ''
   createForm.oldAmount = ''
   createForm.newAmount = ''
+  void loadItemOptions()
 }
 
 function parseJsonObject(value?: string): Record<string, unknown> | null {
@@ -478,6 +702,7 @@ function openCreate() {
   createForm.reason = ''
   createError.value = ''
   createModalOpen.value = true
+  void loadItemOptions()
 }
 
 function closeCreate() {
@@ -487,6 +712,10 @@ function closeCreate() {
 async function submitCreate() {
   if (isPlatformAdmin.value && !createForm.propertyCompanyId) {
     createError.value = '请选择物业公司'
+    return
+  }
+  if (!createForm.itemId) {
+    createError.value = `请选择${itemIdLabel.value}`
     return
   }
   const newValue = buildValueJson(createForm.newAmount)
@@ -569,7 +798,21 @@ async function submitAudit() {
 onMounted(async () => {
   await loadPropertyCompanies()
   await load(1)
+  openCreateFromQuery()
 })
+
+watch(
+  () => route.query.create,
+  () => openCreateFromQuery()
+)
+
+function openCreateFromQuery() {
+  if (route.query.create !== '1' || !canCreate.value) return
+  openCreate()
+  const nextQuery = { ...route.query }
+  delete nextQuery.create
+  void router.replace({ name: 'price-approvals', query: nextQuery })
+}
 </script>
 
 <style scoped>
@@ -620,6 +863,7 @@ onMounted(async () => {
 .field { margin-bottom: 16px; }
 .fieldRow { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .formHint { margin: -8px 0 16px; font-size: 12px; color: #8c8c9a; line-height: 1.5; }
+.optionHint { margin: 6px 0 0; font-size: 12px; color: #8c8c9a; }
 .label { display: block; font-size: 13px; color: #5c5c66; margin-bottom: 8px; }
 .textarea { width: 100%; padding: 10px 12px; border: 1px solid #e8e8ec; border-radius: 8px; font-size: 14px; box-sizing: border-box; resize: vertical; font-family: inherit; }
 .modalFooter { display: flex; justify-content: flex-end; gap: 12px; margin-top: 8px; }
