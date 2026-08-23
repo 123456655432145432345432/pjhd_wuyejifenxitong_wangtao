@@ -134,15 +134,48 @@
             <button class="modalClose" @click="closeCommentModal">&times;</button>
           </div>
           <div class="modalBody">
-            <p class="hintInline">请输入要删除的评论 ID（也可在举报处理中删除评论）</p>
+            <p class="hintInline">从该帖已有评论中选择后删除。通过举报处理时，通过即会自动删除被举报评论。</p>
+            <div v-if="commentPost" class="auditInfo">
+              <div class="infoRow">
+                <span class="infoLabel">帖子</span>
+                <span>{{ commentPostExcerpt }}</span>
+              </div>
+              <div class="infoRow">
+                <span class="infoLabel">作者</span>
+                <span>{{ commentPost.authorName || commentPost.authorId || '—' }}</span>
+              </div>
+            </div>
             <div class="field">
-              <label class="label">评论 ID</label>
-              <input v-model.trim="commentId" class="input" placeholder="commentId" />
+              <label class="label">选择评论</label>
+              <p v-if="commentsLoading" class="fieldHint">正在加载该帖评论...</p>
+              <select
+                v-else
+                v-model="selectedCommentId"
+                class="input select commentSelect"
+                :disabled="!comments.length"
+              >
+                <option value="">{{ comments.length ? '请选择要删除的评论' : '该帖暂无评论' }}</option>
+                <option v-for="item in comments" :key="item.id" :value="item.id">
+                  {{ commentOptionLabel(item) }}
+                </option>
+              </select>
+            </div>
+            <div v-if="selectedComment" class="commentPreview">
+              <div class="commentMeta">
+                {{ selectedComment.authorName || '匿名' }}
+                <span v-if="selectedComment.replyToUserName"> · 回复 {{ selectedComment.replyToUserName }}</span>
+                <span v-if="selectedComment.createdAt"> · {{ selectedComment.createdAt }}</span>
+              </div>
+              <p class="commentText">{{ selectedComment.content || '（无文字）' }}</p>
             </div>
             <p v-if="formError" class="error">{{ formError }}</p>
             <div class="modalFooter">
               <button class="btnSecondary" @click="closeCommentModal">取消</button>
-              <button class="btnPrimary" :disabled="formSubmitting" @click="submitDeleteComment">
+              <button
+                class="btnPrimary"
+                :disabled="formSubmitting || commentsLoading || !selectedCommentId"
+                @click="submitDeleteComment"
+              >
                 {{ formSubmitting ? '删除中...' : '确认删除' }}
               </button>
             </div>
@@ -194,7 +227,7 @@
               <textarea v-model="handleRemark" class="textarea" rows="3" maxlength="200" placeholder="备注（选填）" />
             </div>
             <p v-if="reportTarget?.targetType === COMMUNITY_REPORT_TARGET.COMMENT" class="hintInline">
-              通过后如需删评论，可使用「删评论」并填写评论 ID：{{ reportTarget.targetId }}
+              选择「通过」后，被举报评论会自动删除，无需再手填评论 ID。
             </p>
             <p v-if="formError" class="error">{{ formError }}</p>
             <div class="modalFooter">
@@ -211,11 +244,12 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { communityForumAdminApi } from '../../api/services'
-import type { CommunityPostItem, ContentReportItem } from '../../api/types'
+import type { CommunityCommentItem, CommunityPostItem, ContentReportItem } from '../../api/types'
 import { ApiError } from '../../api/request'
 import {
+  COMMUNITY_COMMENT_STATUS,
   COMMUNITY_POST_STATUS,
   COMMUNITY_POST_STATUS_LABEL,
   COMMUNITY_POST_STATUS_OPTIONS,
@@ -246,7 +280,10 @@ const reportPage = ref(1)
 const reportTotalPages = ref(1)
 
 const commentModalOpen = ref(false)
-const commentId = ref('')
+const commentPost = ref<CommunityPostItem | null>(null)
+const comments = ref<CommunityCommentItem[]>([])
+const commentsLoading = ref(false)
+const selectedCommentId = ref('')
 const reportModalOpen = ref(false)
 const reportTarget = ref<ContentReportItem | null>(null)
 const reportAction = ref(COMMUNITY_REPORT_ACTION.ACCEPT)
@@ -254,8 +291,8 @@ const handleRemark = ref('')
 const formSubmitting = ref(false)
 const formError = ref('')
 
-async function loadPosts(page = postPage.value) {
-  loading.value = true
+async function loadPosts(page = postPage.value, silent = false) {
+  if (!silent) loading.value = true
   error.value = ''
   try {
     const res = await communityForumAdminApi.listPosts({
@@ -271,7 +308,7 @@ async function loadPosts(page = postPage.value) {
     error.value = e instanceof ApiError ? e.message : '帖子加载失败'
     posts.value = []
   } finally {
-    loading.value = false
+    if (!silent) loading.value = false
   }
 }
 
@@ -312,28 +349,85 @@ async function deletePost(item: CommunityPostItem) {
   }
 }
 
-function openDeleteComment(_item?: CommunityPostItem) {
-  commentId.value = ''
+const commentPostExcerpt = computed(() => {
+  const text = (commentPost.value?.content || '').replace(/\s+/g, ' ').trim()
+  if (!text) return commentPost.value?.id || '—'
+  return text.length > 80 ? `${text.slice(0, 80)}…` : text
+})
+
+const selectedComment = computed(
+  () => comments.value.find((item) => item.id === selectedCommentId.value) || null
+)
+
+function snippet(text: string, max = 36) {
+  const value = text.replace(/\s+/g, ' ').trim()
+  if (!value) return '（无文字）'
+  return value.length > max ? `${value.slice(0, max)}…` : value
+}
+
+function commentOptionLabel(item: CommunityCommentItem) {
+  const author = item.authorName || '匿名'
+  const reply = item.replyToUserName ? `回复${item.replyToUserName} · ` : item.parentId ? '回复 · ' : ''
+  const prefix = item.parentId ? '└ ' : ''
+  return `${prefix}${author}：${reply}${snippet(item.content || '')}`
+}
+
+async function loadPostComments(postId: string) {
+  commentsLoading.value = true
+  comments.value = []
+  selectedCommentId.value = ''
+  try {
+    const pageSize = 50
+    const first = await communityForumAdminApi.listComments(postId, { page: 1, pageSize })
+    const list = [...(first.list || [])]
+    const totalPages = Math.max(1, first.pagination?.totalPages ?? 1)
+    for (let page = 2; page <= totalPages; page++) {
+      const next = await communityForumAdminApi.listComments(postId, { page, pageSize })
+      list.push(...(next.list || []))
+    }
+    comments.value = list.filter(
+      (item) => item.id && item.status !== COMMUNITY_COMMENT_STATUS.DELETED
+    )
+  } catch (e) {
+    formError.value = e instanceof ApiError ? e.message : '评论列表加载失败'
+    comments.value = []
+  } finally {
+    commentsLoading.value = false
+  }
+}
+
+function openDeleteComment(item: CommunityPostItem) {
+  commentPost.value = item
+  comments.value = []
+  selectedCommentId.value = ''
   formError.value = ''
   commentModalOpen.value = true
+  void loadPostComments(item.id)
 }
 
 function closeCommentModal() {
   commentModalOpen.value = false
-  commentId.value = ''
+  commentPost.value = null
+  comments.value = []
+  selectedCommentId.value = ''
   formError.value = ''
 }
 
 async function submitDeleteComment() {
-  if (!commentId.value.trim()) {
-    formError.value = '请输入评论 ID'
+  if (!selectedCommentId.value) {
+    formError.value = '请选择要删除的评论'
     return
   }
+  const preview = snippet(selectedComment.value?.content || '', 40)
+  if (!confirm(`确认删除评论「${preview}」？`)) return
   formSubmitting.value = true
   formError.value = ''
   try {
-    await communityForumAdminApi.deleteComment(commentId.value.trim())
-    closeCommentModal()
+    await communityForumAdminApi.deleteComment(selectedCommentId.value)
+    const postId = commentPost.value?.id
+    selectedCommentId.value = ''
+    if (postId) await loadPostComments(postId)
+    await loadPosts(postPage.value, true)
   } catch (e) {
     formError.value = e instanceof ApiError ? e.message : '删评论失败'
   } finally {
@@ -399,6 +493,7 @@ onMounted(() => {
 .linkBtn:disabled { color: #c8c8d0; cursor: not-allowed; }
 .hint, .error { font-size: 14px; color: #8c8c9a; text-align: center; padding: 24px 0; }
 .error { color: #e05c5c; }
+.modalBody .error { text-align: left; padding: 0 0 8px; }
 .muted { color: #8c8c9a; font-size: 12px; margin-left: 4px; }
 .hintInline { margin: 0 0 12px; font-size: 13px; color: #5c5c66; }
 .pagination { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 12px; }
@@ -409,7 +504,12 @@ onMounted(() => {
 .btnPrimary:disabled { opacity: 0.6; cursor: not-allowed; }
 .btnSecondary { padding: 10px 18px; border-radius: 8px; border: 1px solid #e8e8ec; background: #fff; cursor: pointer; }
 .modalOverlay { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; padding: 24px; }
-.modal { background: #fff; border-radius: 12px; width: min(480px, 100%); }
+.modal { background: #fff; border-radius: 12px; width: min(560px, 100%); }
+.fieldHint { margin: 0 0 8px; font-size: 13px; color: #8c8c9a; }
+.commentSelect { width: 100%; min-width: 0; }
+.commentPreview { background: #fafafc; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; }
+.commentMeta { font-size: 12px; color: #8c8c9a; margin-bottom: 6px; }
+.commentText { margin: 0; font-size: 14px; color: #1f1f2e; line-height: 1.5; word-break: break-word; }
 .modalHeader { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-bottom: 1px solid #f0f0f3; }
 .modalTitle { font-size: 16px; font-weight: 600; margin: 0; }
 .modalClose { border: none; background: none; font-size: 24px; cursor: pointer; color: #8c8c9a; }

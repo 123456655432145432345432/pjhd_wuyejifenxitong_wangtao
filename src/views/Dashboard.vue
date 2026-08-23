@@ -179,20 +179,21 @@
               <p class="hint">从冻结记录列表中选择要解冻的账号</p>
             </div>
             <div class="field">
-              <label class="label">{{ coinModal === 'freeze' ? '冻结原因（选填）' : '解冻原因（选填）' }}</label>
+              <label class="label">{{ coinModal === 'freeze' ? '冻结原因' : '解冻原因' }} <span class="required">*</span></label>
               <textarea
                 v-model="coinForm.reason"
                 class="textarea"
                 rows="3"
                 maxlength="200"
-                :placeholder="coinModal === 'freeze' ? '请输入冻结原因' : '请输入解冻原因'"
+                required
+                :placeholder="coinModal === 'freeze' ? '请填写冻结原因' : '请填写解冻原因'"
               />
             </div>
             <p v-if="coinError" class="error">{{ coinError }}</p>
             <p v-if="coinSuccess" class="success">{{ coinSuccess }}</p>
             <div class="modalFooter">
               <button type="button" class="btnSecondary" @click="closeCoinModal">取消</button>
-              <button type="submit" class="btnPrimary" :disabled="coinSubmitting">
+              <button type="submit" class="btnPrimary" :disabled="coinSubmitting || !coinForm.reason.trim()">
                 {{ coinSubmitting ? '提交中...' : '确认' }}
               </button>
             </div>
@@ -265,6 +266,7 @@
             <button class="modalClose" @click="closeAuditModal">&times;</button>
           </div>
           <form class="modalBody" @submit.prevent="submitAuditModal">
+            <p class="auditHint">仅审核住户端「商家入驻」。业主商户（二级分销）请到侧栏「业主商户」。</p>
             <div class="field">
               <label class="label">选择商家</label>
               <PendingMerchantSelect
@@ -272,6 +274,10 @@
                 v-model="auditForm.merchantId"
                 @select="onMerchantSelect"
               />
+            </div>
+            <div v-if="auditForm.merchantId" class="field">
+              <label class="label">申请身份</label>
+              <div class="readonly">{{ getEnumLabel(ROLE_LABEL, auditForm.applyRole, auditForm.applyRole) }}</div>
             </div>
             <div class="field">
               <label class="label">审核结果</label>
@@ -296,6 +302,7 @@
                 placeholder="请填写拒绝原因"
                 required
               />
+              <p class="auditHint">拒绝后申请记录会物理删除，列表中不再保留驳回记录。</p>
             </div>
             <template v-if="auditForm.auditResult === AUDIT_RESULT.APPROVED">
               <div class="field">
@@ -306,16 +313,19 @@
                   </option>
                 </select>
               </div>
-              <div class="field">
+              <div v-if="auditForm.auditResult === AUDIT_RESULT.APPROVED && auditForm.applyRole === USER_ROLE.MERCHANT" class="field">
                 <label class="label">分类</label>
-                <input v-model="auditForm.category" type="text" class="input" maxlength="50" placeholder="如：外卖" />
+                <select v-model="auditForm.category" class="input">
+                  <option value="">不调整</option>
+                  <option v-for="opt in MERCHANT_CATEGORY_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                </select>
               </div>
               <div class="field">
                 <label class="label">营业时间</label>
                 <input v-model="auditForm.businessHours" type="text" class="input" maxlength="50" placeholder="如：08:00-22:00" />
               </div>
               <p class="auditHint">配送费、满额免配送由商家自行设置；配送成本从商家费用中扣除，审核时不做干预。</p>
-              <p class="auditHint">通过后将自动开通商家账号，请通知申请人重新登录商家端。</p>
+              <p class="auditHint">通过后将按申请身份开通对应账号，请通知申请人重新登录。</p>
             </template>
             <div class="field">
               <label class="label">备注（选填）</label>
@@ -428,9 +438,13 @@ import {
   ANNOUNCEMENT_TYPE,
   ANNOUNCEMENT_TYPE_OPTIONS,
   AUDIT_RESULT,
+  MERCHANT_CATEGORY_OPTIONS,
   MERCHANT_LEVEL,
   MERCHANT_LEVEL_OPTIONS,
   PROPERTY_COIN_SOURCE,
+  ROLE_LABEL,
+  USER_ROLE,
+  getEnumLabel,
   type AuditResult
 } from '../constants/enums'
 
@@ -492,6 +506,7 @@ const auditForm = ref<{
   merchantLevel: string
   category: string
   businessHours: string
+  applyRole: string
 }>({
   merchantId: '',
   auditResult: AUDIT_RESULT.APPROVED,
@@ -499,7 +514,8 @@ const auditForm = ref<{
   remark: '',
   merchantLevel: MERCHANT_LEVEL.PROPERTY_CERTIFIED,
   category: '',
-  businessHours: ''
+  businessHours: '',
+  applyRole: USER_ROLE.MERCHANT
 })
 
 const announcementModalOpen = ref(false)
@@ -619,7 +635,8 @@ function resetAuditForm() {
     remark: '',
     merchantLevel: MERCHANT_LEVEL.PROPERTY_CERTIFIED,
     category: '',
-    businessHours: ''
+    businessHours: '',
+    applyRole: USER_ROLE.MERCHANT
   }
   auditError.value = ''
   auditSuccess.value = ''
@@ -716,6 +733,7 @@ function onMerchantSelect(merchant: MerchantItem) {
   if (merchant.merchantLevel) {
     auditForm.value.merchantLevel = merchant.merchantLevel
   }
+  auditForm.value.applyRole = merchant.applyRole || merchant.intendedRole || USER_ROLE.MERCHANT
 }
 
 async function submitAuditModal() {
@@ -752,14 +770,16 @@ async function submitAuditModal() {
       payload.rejectReason = auditForm.value.rejectReason.trim()
     } else {
       payload.merchantLevel = auditForm.value.merchantLevel
+      payload.applyRole = auditForm.value.applyRole
+      payload.intendedRole = auditForm.value.applyRole
       if (auditForm.value.category.trim()) payload.category = auditForm.value.category.trim()
       if (auditForm.value.businessHours.trim()) payload.businessHours = auditForm.value.businessHours.trim()
     }
 
     const result = await merchantApi.audit(merchantId, payload)
     auditSuccess.value = auditForm.value.auditResult === AUDIT_RESULT.APPROVED
-      ? `已通过「${result.name}」的入驻申请，已自动开通商家账号。请通知申请人重新登录商家端`
-      : `已拒绝「${result.name}」的入驻申请`
+      ? `已通过「${result.name}」的入驻申请，已按申请身份开通账号。请通知申请人重新登录`
+      : `已拒绝「${result.name}」的入驻申请，记录已清除`
     await refreshOperationLogs()
     setTimeout(closeAuditModal, 1500)
   } catch (e) {
@@ -780,6 +800,10 @@ async function submitCoinModal() {
     coinError.value = '请选择冻结记录'
     return
   }
+  if (!reason) {
+    coinError.value = coinModal.value === 'freeze' ? '请填写冻结原因' : '请填写解冻原因'
+    return
+  }
 
   coinSubmitting.value = true
   coinError.value = ''
@@ -787,18 +811,16 @@ async function submitCoinModal() {
 
   try {
     if (coinModal.value === 'freeze') {
-      const payload: { amount: number; reason?: string } = {
-        amount: coinForm.value.amount
-      }
-      if (reason) payload.reason = reason
-      const result = await residentApi.freezeCoin(residentId, payload)
+      const result = await residentApi.freezeCoin(residentId, {
+        amount: coinForm.value.amount,
+        reason
+      })
       coinSuccess.value = `已成功冻结 ${result.residentName} 的物业币 ${result.amount} 元`
     } else {
-      const payload: { frozenRecordId: string; reason?: string } = {
-        frozenRecordId: coinForm.value.frozenRecordId.trim()
-      }
-      if (reason) payload.reason = reason
-      const result = await residentApi.unfreezeCoin(residentId, payload)
+      const result = await residentApi.unfreezeCoin(residentId, {
+        frozenRecordId: coinForm.value.frozenRecordId.trim(),
+        reason
+      })
       coinSuccess.value = `已成功解冻 ${result.unfrozenAmount} 元，当前余额 ${result.newBalance} 元`
     }
     await refreshOperationLogs()
@@ -1047,6 +1069,7 @@ onMounted(async () => {
 .modalBody { padding: 24px; }
 .field { margin-bottom: 16px; }
 .field .label { display: block; font-size: 13px; font-weight: 500; color: #5c5c66; margin-bottom: 8px; }
+.required { color: #e05c5c; }
 .field .input,
 .field .textarea {
   width: 100%;

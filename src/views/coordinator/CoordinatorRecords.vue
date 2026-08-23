@@ -3,7 +3,7 @@
     <div class="header">
       <div>
         <h1 class="title">分成明细</h1>
-        <p class="desc">查看后端订单快照中的商品分账与配送分账；负数记录表示取消或退款冲正。</p>
+        <p class="desc">查看每笔订单的商品分账和配送费分账。负数表示退款冲账。</p>
       </div>
     </div>
 

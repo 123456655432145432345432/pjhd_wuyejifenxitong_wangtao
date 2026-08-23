@@ -5,7 +5,7 @@
         <h1 class="title">平台收益</h1>
         <p class="desc">
           查看订单、配送费和提现手续费带来的平台收益。
-          收益由支付渠道自动结算至平台账户，本页仅用于查询和对账。
+          收益由微信支付分账结算至平台商户号，本页仅用于查询和对账。
         </p>
       </div>
       <button class="btnSecondary" :disabled="walletLoading" @click="refreshBalance">
@@ -39,7 +39,7 @@
     </div>
     <p v-if="walletError" class="bannerWarn">{{ walletError }}</p>
     <p v-if="!canWithdraw && walletOk" class="bannerInfo">
-      当前收益由支付渠道自动结算至平台账户，无需在管理端申请提现。
+      当前收益由微信支付分账结算至平台商户号，无需在管理端申请提现。
     </p>
 
     <div class="tabs">
@@ -212,7 +212,7 @@ const settlementStatusText = computed(() => {
 const distributionShare = computed(() => toAmount(wallet.value?.distributionShare) ?? 0)
 const deliveryShare = computed(() => toAmount(wallet.value?.deliveryShare) ?? 0)
 const feeShare = computed(() => toAmount(wallet.value?.withdrawalFeeShare) ?? 0)
-/** CBK 真分账下恒为 false；仅作防御，页面不提供提现入口 */
+/** 微信支付分账下恒为 false；仅作防御，页面不提供提现入口 */
 const canWithdraw = computed(() => wallet.value?.withdrawAvailable === true)
 
 function explainBalanceError(e: unknown, fallback: string) {

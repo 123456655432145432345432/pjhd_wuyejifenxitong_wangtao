@@ -5,7 +5,7 @@
         <h1 class="title">平台分成配置</h1>
         <p class="desc">
           配置订单收益、配送费和提现手续费在各参与方之间的分配比例。
-          订单完成后，平台收益由支付渠道自动结算；入账结果请到「平台收益」查看。
+          订单完成后，平台收益由微信支付分账结算；入账结果请到「平台收益」查看。
         </p>
       </div>
       <button class="btnPrimary" :disabled="loading || saving || !canEdit || Boolean(poolRateWarn)" @click="handleSave">

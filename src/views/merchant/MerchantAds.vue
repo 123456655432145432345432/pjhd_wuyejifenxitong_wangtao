@@ -330,7 +330,7 @@ const AdPricingFields = defineComponent({
                 value: MERCHANT_AD_PAYMENT_METHOD.POINT,
                 label: `商家积分（余额 ${props.pointBalance}）`
               },
-              { value: MERCHANT_AD_PAYMENT_METHOD.WECHAT, label: '微信支付（模拟）' },
+              { value: MERCHANT_AD_PAYMENT_METHOD.WECHAT, label: '微信支付' },
               { value: MERCHANT_AD_PAYMENT_METHOD.MOCK, label: '模拟支付' }
             ].map((opt) =>
               h('label', { class: ['payOption', opt.disabled ? 'disabled' : ''] }, [

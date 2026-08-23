@@ -37,6 +37,7 @@ import IconSvg from './IconSvg.vue'
 import { merchantApi } from '../api/services'
 import type { MerchantItem } from '../api/types'
 import { ApiError } from '../api/request'
+import { ROLE_LABEL, USER_ROLE, getEnumLabel } from '../constants/enums'
 
 const props = defineProps<{
   modelValue: string
@@ -57,13 +58,15 @@ const merchants = ref<MerchantItem[]>([])
 let debounceTimer: ReturnType<typeof setTimeout>
 
 function formatMeta(merchant: MerchantItem) {
-  const parts = [merchant.category || '未分类', '待审核']
+  const role = merchant.applyRole || merchant.intendedRole || USER_ROLE.MERCHANT
+  const parts = [getEnumLabel(ROLE_LABEL, role, role), merchant.category || '未分类', '待审核']
   if (merchant.address) parts.push(merchant.address)
   return parts.join(' · ')
 }
 
 function formatLabel(merchant: MerchantItem) {
-  return `${merchant.name} · ${merchant.category || '未分类'}`
+  const role = merchant.applyRole || merchant.intendedRole || USER_ROLE.MERCHANT
+  return `${merchant.name} · ${getEnumLabel(ROLE_LABEL, role, role)} · ${merchant.category || '未分类'}`
 }
 
 async function fetchMerchants() {

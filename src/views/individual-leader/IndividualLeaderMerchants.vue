@@ -40,6 +40,7 @@
             <td class="actions">
               <button class="linkBtn" @click="openDistribution(item)">设置抽佣</button>
               <button class="linkBtn" @click="openDeliveryFee(item)">满额配送</button>
+              <button class="linkBtn" @click="openDistance(item)">小区距离</button>
             </td>
           </tr>
         </tbody>
@@ -59,6 +60,7 @@
           <div class="cardActions">
             <button class="linkBtn" @click="openDistribution(item)">设置抽佣</button>
             <button class="linkBtn" @click="openDeliveryFee(item)">满额配送</button>
+            <button class="linkBtn" @click="openDistance(item)">小区距离</button>
           </div>
         </article>
       </div>
@@ -140,11 +142,18 @@
         </div>
       </div>
     </Teleport>
+    <MerchantDistanceModal
+      :open="distanceOpen"
+      :merchant-id="distanceMerchantId"
+      :merchant-name="distanceMerchantName"
+      @close="closeDistance"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import MerchantDistanceModal from '../../components/MerchantDistanceModal.vue'
 import { individualLeaderPortalApi, merchantApi } from '../../api/services'
 import type { MerchantItem } from '../../api/types'
 import { ApiError } from '../../api/request'
@@ -181,6 +190,9 @@ const deliveryEnabled = ref(false)
 const deliverySponsor = ref<string>(DELIVERY_SUBSIDY_SPONSOR.MERCHANT)
 const deliverySaving = ref(false)
 const deliveryError = ref('')
+const distanceOpen = ref(false)
+const distanceMerchantId = ref('')
+const distanceMerchantName = ref('')
 
 function formatRate(value?: number) {
   if (value == null) return '—'
@@ -263,6 +275,18 @@ async function submitDistribution() {
   } finally {
     distributionSaving.value = false
   }
+}
+
+function openDistance(item: MerchantItem) {
+  distanceMerchantId.value = item.id
+  distanceMerchantName.value = item.name
+  distanceOpen.value = true
+}
+
+function closeDistance() {
+  distanceOpen.value = false
+  distanceMerchantId.value = ''
+  distanceMerchantName.value = ''
 }
 
 function openDeliveryFee(item: MerchantItem) {

@@ -94,19 +94,18 @@
             <button type="button" class="modalClose" @click="reminderOpen = false">&times;</button>
           </div>
           <div class="modalBody">
-            <div v-if="previewLoading" class="hint">正在计算本次发送人数...</div>
-            <div v-else-if="reminderPreview" class="reminderSummary">
+            <div v-if="reminderPreview" class="reminderSummary">
               <div><span>发送范围</span><strong>{{ reminderScopeText }}</strong></div>
               <div><span>本次发送</span><strong>{{ reminderPreview.inAppEligibleCount }} 户</strong></div>
               <div><span>欠费总额</span><strong>¥{{ formatMoney(reminderPreview.totalArrearsAmount) }}</strong></div>
               <div><span>已去重记录</span><strong>{{ reminderPreview.duplicateResidentCount }} 条</strong></div>
             </div>
+            <div v-else-if="previewLoading" class="hint">正在计算本次发送人数...</div>
+            <p v-if="previewLoading && reminderPreview" class="hint">正在刷新发送范围...</p>
             <p class="hint">
               催缴通知仅发送到住户端的物业聊天模块，不会发送微信提醒。
             </p>
-            <p v-if="reminderPreview" class="previewExpiry">
-              发送范围已锁定，有效期至 {{ formatPreviewExpiry(reminderPreview.expiresAt) }}
-            </p>
+            <p v-if="reminderPreview" class="previewExpiry">{{ previewRemainingText }}</p>
             <div class="field">
               <label class="label">标题</label>
               <input v-model.trim="reminderForm.title" class="input full" maxlength="100" />
@@ -120,9 +119,10 @@
                 maxlength="1000"
               />
             </div>
+            <p v-if="reminderHint" class="hint">{{ reminderHint }}</p>
             <p v-if="reminderError" class="error">{{ reminderError }}</p>
             <button
-              v-if="reminderError && !previewLoading"
+              v-if="!previewLoading && !reminderPreview"
               type="button"
               class="btnSecondary"
               @click="loadReminderPreview"
@@ -155,13 +155,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { arrearsReportApi, propertyCompanyApi } from '../../api/services'
 import { formatMoney } from '../../api/mappers'
 import { ApiError } from '../../api/request'
 import type {
   ArrearsReminderPreviewResult,
+  ArrearsReminderResult,
   ArrearsReport,
   ArrearsReportItem,
   PropertyCompanyCommunity,
@@ -194,17 +195,115 @@ const reminderPreview = ref<ArrearsReminderPreviewResult | null>(null)
 const reminderRequestId = ref('')
 const reminding = ref(false)
 const reminderError = ref('')
+const reminderHint = ref('')
 const reminderSuccess = ref('')
 const reminderForm = reactive({
   title: '物业费催缴通知',
   content: '您有未缴纳的物业费，请尽快缴纳，以免产生违约金。'
 })
 
+const PREVIEW_REFRESH_BUFFER_MS = 30_000
+let previewKeepAliveTimer: ReturnType<typeof setTimeout> | null = null
+const previewNow = ref(Date.now())
+let previewNowTimer: ReturnType<typeof setInterval> | null = null
+
 const reminderScopeText = computed(() => {
   const communityName =
     communities.value.find((item) => item.id === communityId.value)?.name || '全部小区'
   return building.value ? `${communityName} · ${building.value}栋` : communityName
 })
+
+const PREVIEW_TTL_MS = 30 * 60 * 1000
+
+function parsePreviewExpiry(value?: string) {
+  if (!value) return null
+  const raw = value.trim()
+  const date = new Date(raw)
+  if (Number.isNaN(date.getTime())) return null
+  const remaining = date.getTime() - Date.now()
+  // v6.5 带 +08:00 时区。仅当被误标成 UTC（...Z）导致剩余时间远超 30 分钟时，按本地时间理解。
+  if (remaining > PREVIEW_TTL_MS + 5 * 60 * 1000 && /Z$/i.test(raw)) {
+    const local = new Date(raw.replace(/Z$/i, ''))
+    if (!Number.isNaN(local.getTime())) {
+      const localRemaining = local.getTime() - Date.now()
+      if (localRemaining > 0 && localRemaining <= PREVIEW_TTL_MS + 5 * 60 * 1000) {
+        return local
+      }
+    }
+  }
+  return date
+}
+
+function isPreviewStale(preview: ArrearsReminderPreviewResult | null, bufferMs = 0) {
+  if (!preview?.previewToken) return true
+  const expires = parsePreviewExpiry(preview.expiresAt)
+  if (!expires) return false
+  return expires.getTime() - Date.now() <= bufferMs
+}
+
+function isPreviewExpiredError(e: unknown) {
+  return (
+    e instanceof ApiError &&
+    (e.errorCode === API_ERROR_CODE.PREVIEW_EXPIRED || e.code === 97004)
+  )
+}
+
+function newReminderRequestId() {
+  return `arrears_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+}
+
+function isDuplicateReminderError(e: unknown) {
+  return (
+    e instanceof ApiError &&
+    (e.errorCode === API_ERROR_CODE.ARREARS_REMINDER_DUPLICATE || e.code === 97005)
+  )
+}
+
+function isWechatTemplateError(e: unknown) {
+  return (
+    e instanceof ApiError &&
+    (e.errorCode === API_ERROR_CODE.WECHAT_TEMPLATE_NOT_CONFIGURED || e.code === 97003)
+  )
+}
+
+const previewRemainingText = computed(() => {
+  void previewNow.value
+  const expires = parsePreviewExpiry(reminderPreview.value?.expiresAt)
+  if (!expires) return '发送范围已锁定，请尽快确认发送'
+  const ms = expires.getTime() - Date.now()
+  if (ms <= 0) return '发送范围即将刷新，请稍候再发送'
+  const minutes = Math.max(1, Math.ceil(ms / 60000))
+  if (minutes > 40) return '发送范围已锁定，请尽快确认发送'
+  return `发送范围已锁定，约 ${minutes} 分钟内有效`
+})
+
+function clearPreviewKeepAlive() {
+  if (previewKeepAliveTimer) {
+    clearTimeout(previewKeepAliveTimer)
+    previewKeepAliveTimer = null
+  }
+  if (previewNowTimer) {
+    clearInterval(previewNowTimer)
+    previewNowTimer = null
+  }
+}
+
+function schedulePreviewKeepAlive() {
+  clearPreviewKeepAlive()
+  if (!reminderOpen.value || !reminderPreview.value) return
+  previewNow.value = Date.now()
+  previewNowTimer = setInterval(() => {
+    previewNow.value = Date.now()
+  }, 30000)
+  const expires = parsePreviewExpiry(reminderPreview.value.expiresAt)
+  if (!expires) return
+  const delay = expires.getTime() - Date.now() - PREVIEW_REFRESH_BUFFER_MS
+  if (delay <= 0) return
+  previewKeepAliveTimer = setTimeout(async () => {
+    if (!reminderOpen.value || reminding.value || previewLoading.value) return
+    await loadReminderPreview()
+  }, delay)
+}
 
 function formatPeriod(item: ArrearsReportItem) {
   if (item.periodStart || item.periodEnd) {
@@ -276,83 +375,202 @@ async function exportCsv() {
 
 async function openReminderModal() {
   reminderError.value = ''
+  reminderHint.value = ''
   reminderSuccess.value = ''
+  reminderPreview.value = null
   reminderOpen.value = true
-  reminderRequestId.value = `arrears_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+  reminderRequestId.value = newReminderRequestId()
   await loadReminderPreview()
+}
+
+function pickStr(row: Record<string, unknown>, ...keys: string[]) {
+  for (const key of keys) {
+    const value = row[key]
+    if (typeof value === 'string' && value.trim()) return value
+  }
+  return ''
+}
+
+function pickNum(row: Record<string, unknown>, ...keys: string[]) {
+  for (const key of keys) {
+    const value = row[key]
+    if (value === undefined || value === null || value === '') continue
+    const n = Number(value)
+    if (Number.isFinite(n)) return n
+  }
+  return 0
+}
+
+function normalizeReminderPreview(raw: ArrearsReminderPreviewResult) {
+  const row = raw as ArrearsReminderPreviewResult & Record<string, unknown>
+  return {
+    templateCode: pickStr(row, 'templateCode', 'template_code'),
+    previewToken: pickStr(row, 'previewToken', 'preview_token'),
+    expiresAt: pickStr(row, 'expiresAt', 'expires_at'),
+    recipientCount: pickNum(row, 'recipientCount', 'recipient_count', 'recipientCount', 'recipient_count'),
+    totalArrearsAmount: pickNum(row, 'totalArrearsAmount', 'total_arrears_amount', 'totalArrearsAmount', 'total_arrears_amount'),
+    inAppEligibleCount: pickNum(row, 'inAppEligibleCount', 'in_app_eligible_count', 'inAppEligibleCount', 'in_app_eligible_count'),
+    wechatEligibleCount: pickNum(row, 'wechatEligibleCount', 'wechat_eligible_count', 'wechatEligibleCount', 'wechat_eligible_count'),
+    wechatIneligibleCount: pickNum(row, 'wechatIneligibleCount', 'wechat_ineligible_count', 'wechatIneligibleCount', 'wechat_ineligible_count'),
+    duplicateResidentCount: pickNum(row, 'duplicateResidentCount', 'duplicate_resident_count', 'duplicateResidentCount', 'duplicate_resident_count')
+  } satisfies ArrearsReminderPreviewResult
+}
+
+function normalizeChannelResult(raw: unknown) {
+  const row = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+  return {
+    successCount: pickNum(row, 'successCount', 'success_count', 'successCount', 'success_count'),
+    skippedCount: pickNum(row, 'skippedCount', 'skipped_count', 'skippedCount', 'skipped_count'),
+    failedCount: pickNum(row, 'failedCount', 'failed_count', 'failedCount', 'failed_count')
+  }
+}
+
+function normalizeReminderResult(raw: ArrearsReminderResult) {
+  const row = raw as ArrearsReminderResult & Record<string, unknown>
+  const channels = (row.channels && typeof row.channels === 'object'
+    ? row.channels
+    : {}) as Record<string, unknown>
+  return {
+    batchId: pickStr(row, 'batchId', 'batch_id', 'batchId', 'batch_id'),
+    recipientCount: pickNum(row, 'recipientCount', 'recipient_count', 'recipientCount', 'recipient_count'),
+    notifiedCount: pickNum(row, 'notifiedCount', 'notified_count'),
+    skippedCount: pickNum(row, 'skippedCount', 'skipped_count', 'skippedCount', 'skipped_count'),
+    failedCount: pickNum(row, 'failedCount', 'failed_count', 'failedCount', 'failed_count'),
+    channels: {
+      inApp: normalizeChannelResult(channels.inApp ?? channels.in_app),
+      wechat: channels.wechat ? normalizeChannelResult(channels.wechat) : undefined
+    }
+  } satisfies ArrearsReminderResult
 }
 
 async function loadReminderPreview() {
   previewLoading.value = true
   reminderError.value = ''
-  reminderPreview.value = null
+  reminderHint.value = ''
   try {
-    reminderPreview.value = await arrearsReportApi.previewReminder({
+    const preview = await arrearsReportApi.previewReminder({
       propertyCompanyId: propertyCompanyId.value || auth.propertyCompanyId || undefined,
       communityId: communityId.value || undefined,
       building: building.value || undefined,
       templateCode: ARREARS_REMINDER_TEMPLATE.PROPERTY_FEE
     })
+    reminderPreview.value = normalizeReminderPreview(preview)
+    schedulePreviewKeepAlive()
   } catch (e) {
+    reminderPreview.value = null
     reminderError.value = e instanceof ApiError ? e.message : '催缴人数预览失败，请重试'
+    clearPreviewKeepAlive()
   } finally {
     previewLoading.value = false
   }
 }
 
-function formatPreviewExpiry(value: string) {
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN')
-}
-
-async function sendReminder() {
-  if (
-    reminding.value ||
-    !reminderPreview.value?.previewToken ||
-    !reminderForm.title ||
-    !reminderForm.content
-  ) return
-  const confirmed = window.confirm(
-    `确认发送物业费催缴通知？\n` +
-      `范围：${reminderScopeText.value}\n` +
-      `本次将向 ${reminderPreview.value.inAppEligibleCount} 户发送，欠费总额 ¥${formatMoney(reminderPreview.value.totalArrearsAmount)}\n` +
-      '通知仅进入住户端物业聊天模块，发送后无法撤回。'
-  )
-  if (!confirmed) return
-  reminding.value = true
-  reminderError.value = ''
-  reminderSuccess.value = ''
-  try {
-    const result = await arrearsReportApi.sendReminder({
-      previewToken: reminderPreview.value.previewToken,
+async function submitReminder(preview: ArrearsReminderPreviewResult) {
+  const result = normalizeReminderResult(
+    await arrearsReportApi.sendReminder({
+      previewToken: preview.previewToken,
       propertyCompanyId: propertyCompanyId.value || auth.propertyCompanyId || undefined,
       communityId: communityId.value || undefined,
       building: building.value || undefined,
-      templateCode: reminderPreview.value.templateCode || ARREARS_REMINDER_TEMPLATE.PROPERTY_FEE,
+      templateCode: preview.templateCode || ARREARS_REMINDER_TEMPLATE.PROPERTY_FEE,
       channels: [ARREARS_REMINDER_CHANNEL.IN_APP],
       requestId: reminderRequestId.value,
       title: reminderForm.title,
       content: reminderForm.content
     })
+  )
+  reminderOpen.value = false
+  clearPreviewKeepAlive()
+  const inAppSuccess = result.channels.inApp.successCount || result.notifiedCount
+  const skipped = result.skippedCount
+  const batchNo = result.batchId || '—'
+  reminderSuccess.value =
+    `催缴批次 ${batchNo} 已处理：成功 ${inAppSuccess} 户` +
+    (skipped ? `，跳过 ${skipped} 户（已有未读催缴）` : '') +
+    (result.failedCount ? `，失败 ${result.failedCount} 户` : '')
+}
 
-    reminderOpen.value = false
-    const inAppSuccess = result.channels?.inApp?.successCount ?? result.notifiedCount
-    reminderSuccess.value =
-      `催缴批次 ${result.batchId} 已处理：成功 ${inAppSuccess} 户` +
-      (result.skippedCount ? `，跳过 ${result.skippedCount} 户` : '') +
-      (result.failedCount ? `，失败 ${result.failedCount} 户` : '')
+function markReminderAlreadySubmitted() {
+  reminderOpen.value = false
+  clearPreviewKeepAlive()
+  reminderSuccess.value = '该催缴已提交，系统未重复发送'
+}
+
+function isReminderWriteError(e: unknown) {
+  if (!(e instanceof ApiError)) return false
+  const message = e.message || ''
+  return (
+    e.code === 500 ||
+    e.code >= 500 ||
+    /数据访问失败|Internal Server Error|SQL|Unable to acquire/i.test(message)
+  )
+}
+
+function handleReminderSendError(e: unknown) {
+  if (isDuplicateReminderError(e)) {
+    markReminderAlreadySubmitted()
+    return
+  }
+  if (isPreviewExpiredError(e)) {
+    reminderError.value = '发送名单需要重新确认，请再次点击「确认发送」'
+    return
+  }
+  if (isWechatTemplateError(e)) {
+    reminderError.value = '当前只发送住户端物业聊天，请不要选择微信渠道后重试'
+    return
+  }
+  if (isReminderWriteError(e)) {
+    reminderError.value =
+      '催缴发送失败：后端写入催缴记录或物业聊天时异常。请关闭后重新预览再发；若仍失败，需要后端查催缴发送接口日志。'
+    return
+  }
+  reminderError.value = e instanceof ApiError ? e.message : '发送失败'
+}
+
+function confirmReminderSend(preview: ArrearsReminderPreviewResult) {
+  return window.confirm(
+    `确认发送物业费催缴通知？\n` +
+      `范围：${reminderScopeText.value}\n` +
+      `本次将向 ${preview.inAppEligibleCount} 户发送，欠费总额 ¥${formatMoney(preview.totalArrearsAmount)}\n` +
+      '已有未读催缴通知的住户会被跳过。\n' +
+      '通知仅进入住户端物业聊天模块，发送后无法撤回。'
+  )
+}
+
+async function sendReminder() {
+  if (reminding.value || previewLoading.value || !reminderForm.title || !reminderForm.content) return
+  if (isPreviewStale(reminderPreview.value, PREVIEW_REFRESH_BUFFER_MS)) {
+    await loadReminderPreview()
+  }
+  const preview = reminderPreview.value
+  if (!preview?.previewToken || preview.inAppEligibleCount === 0) {
+    reminderError.value = reminderError.value || '请先预览发送范围后再发送'
+    return
+  }
+  if (!confirmReminderSend(preview)) return
+  reminding.value = true
+  reminderError.value = ''
+  reminderHint.value = ''
+  reminderSuccess.value = ''
+  try {
+    await submitReminder(preview)
   } catch (e) {
-    if (e instanceof ApiError && e.errorCode === API_ERROR_CODE.PREVIEW_EXPIRED) {
-      reminderPreview.value = null
-      reminderError.value = '发送范围已过期，请重新预览后再发送'
-    } else if (
-      e instanceof ApiError &&
-      e.errorCode === API_ERROR_CODE.ARREARS_REMINDER_DUPLICATE
-    ) {
-      reminderError.value = '该催缴批次已经提交，请勿重复发送'
-    } else {
-      reminderError.value = e instanceof ApiError ? e.message : '发送失败'
+    if (isDuplicateReminderError(e)) {
+      markReminderAlreadySubmitted()
+      return
     }
+    if (isPreviewExpiredError(e)) {
+      reminderError.value = ''
+      reminderHint.value = ''
+      try {
+        await loadReminderPreview()
+        reminderHint.value = '名单已刷新，请再次确认发送'
+      } catch {
+        reminderError.value = '催缴发送范围已过期，请重新预览后再发送'
+      }
+      return
+    }
+    handleReminderSendError(e)
   } finally {
     reminding.value = false
   }
@@ -376,6 +594,13 @@ watch(propertyCompanyId, async () => {
   await loadCommunities()
   await load()
 })
+
+watch(reminderOpen, (open) => {
+  if (open) schedulePreviewKeepAlive()
+  else clearPreviewKeepAlive()
+})
+
+onUnmounted(clearPreviewKeepAlive)
 
 onMounted(async () => {
   applyRouteQuery()

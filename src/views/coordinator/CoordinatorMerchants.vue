@@ -43,6 +43,7 @@
             <tr>
               <th>封面</th>
               <th>商家名称</th>
+              <th>申请身份</th>
               <th>分类</th>
               <th>等级</th>
               <th>审核状态</th>
@@ -69,16 +70,19 @@
                 <MobileCellText variant="primary">{{ item.name }}</MobileCellText>
               </td>
               <td>
+                <MobileCellText variant="nowrap">{{ applyRoleLabel(item) }}</MobileCellText>
+              </td>
+              <td>
                 <MobileCellText variant="nowrap">{{ item.category || '—' }}</MobileCellText>
               </td>
               <td>
                 <MobileCellText variant="nowrap">{{ getEnumLabel(MERCHANT_LEVEL_LABEL, item.merchantLevel) }}</MobileCellText>
               </td>
               <td>
-                <MobileCellText variant="nowrap">{{ getEnumLabel(MERCHANT_AUDIT_STATUS_LABEL, item.auditStatus) }}</MobileCellText>
+                <MobileCellText variant="nowrap">{{ getMerchantAuditDisplayLabel(item.auditStatus, item.status) }}</MobileCellText>
               </td>
               <td>
-                <MobileCellText variant="nowrap">{{ getEnumLabel(MERCHANT_STATUS_LABEL, item.status) }}</MobileCellText>
+                <MobileCellText variant="nowrap">{{ getMerchantOperatingDisplayLabel(item.status, item.auditStatus) }}</MobileCellText>
               </td>
               <td>
                 <MobileCellText variant="nowrap">{{ item.contactPhone || '—' }}</MobileCellText>
@@ -92,6 +96,7 @@
               <td class="actions">
                 <div class="actionsInner">
                   <button type="button" class="btnLink" @click="openDetail(item.id)">详情</button>
+                  <button type="button" class="btnLink" @click="openDistance(item)">小区距离</button>
                   <button
                     v-if="canEdit(item)"
                     type="button"
@@ -101,7 +106,7 @@
                     编辑
                   </button>
                   <button
-                    v-if="item.auditStatus === MERCHANT_AUDIT_STATUS.PENDING"
+                    v-if="isMerchantOnboardingPending(item.auditStatus)"
                     type="button"
                     class="btnPrimarySm"
                     @click="openAudit(item)"
@@ -272,6 +277,10 @@
               分类：{{ auditTarget.category || '—' }} · 电话：{{ auditTarget.contactPhone || '—' }}
             </p>
             <div class="field">
+              <label class="label">申请身份</label>
+              <div class="readonly">{{ applyRoleLabel(auditTarget) }}</div>
+            </div>
+            <div class="field">
               <label class="label">审核结果</label>
               <select v-model="auditForm.auditResult" class="input">
                 <option :value="AUDIT_RESULT.APPROVED">通过</option>
@@ -289,7 +298,7 @@
                 required
               />
             </div>
-            <p v-else class="auditHint">通过后将自动开通商家账号，请通知申请人重新登录商家端。</p>
+            <p v-else class="auditHint">通过后将按申请身份开通对应账号，请通知申请人重新登录。</p>
             <p v-if="auditError" class="error">{{ auditError }}</p>
             <div class="modalFooter">
               <button type="button" class="btnGhost" @click="closeAudit">取消</button>
@@ -301,12 +310,19 @@
         </div>
       </div>
     </Teleport>
+    <MerchantDistanceModal
+      :open="distanceOpen"
+      :merchant-id="distanceMerchantId"
+      :merchant-name="distanceMerchantName"
+      @close="closeDistance"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import MediaUploader from '../../components/MediaUploader.vue'
+import MerchantDistanceModal from '../../components/MerchantDistanceModal.vue'
 import MobileCellText from '../../components/MobileCellText.vue'
 import { merchantApi, coordinatorManageApi } from '../../api/services'
 import type { MerchantItem, MerchantUpdatePayload } from '../../api/types'
@@ -315,13 +331,17 @@ import {
   AUDIT_RESULT,
   getEnumLabel,
   MERCHANT_AUDIT_STATUS,
-  MERCHANT_AUDIT_STATUS_LABEL,
   MERCHANT_LEVEL,
   MERCHANT_LEVEL_LABEL,
   MERCHANT_LEVEL_OPTIONS,
   MERCHANT_SOURCE_LABEL,
   MERCHANT_STATUS,
-  MERCHANT_STATUS_LABEL
+  ROLE_LABEL,
+  USER_ROLE,
+  getMerchantAuditDisplayLabel,
+  getMerchantOperatingDisplayLabel,
+  isMerchantOnboardingPending,
+  isMerchantTerminalStatus
 } from '../../constants/enums'
 import { useCoordinatorPortalStore } from '../../stores/coordinatorPortal'
 import { useIsMobile } from '../../composables/useIsMobile'
@@ -370,6 +390,9 @@ const auditing = ref(false)
 const auditError = ref('')
 const auditSuccess = ref('')
 const freezingId = ref('')
+const distanceOpen = ref(false)
+const distanceMerchantId = ref('')
+const distanceMerchantName = ref('')
 const auditForm = reactive({
   auditResult: AUDIT_RESULT.APPROVED,
   rejectReason: ''
@@ -383,16 +406,24 @@ const detailRows = computed(() => {
     { label: '平台商家 ID', value: d.platformMerchantId || '—' },
     { label: '物业 ID', value: d.propertyCompanyId || '—' },
     { label: '商家名称', value: d.name || '—' },
+    { label: '申请身份', value: applyRoleLabel(d) },
     { label: '分类', value: d.category || '—' },
     { label: '等级', value: getEnumLabel(MERCHANT_LEVEL_LABEL, d.merchantLevel) },
     { label: '商家来源', value: getEnumLabel(MERCHANT_SOURCE_LABEL, d.merchantSource) },
     { label: '等级权重', value: d.levelWeight != null ? String(d.levelWeight) : '—' },
-    { label: '审核状态', value: getEnumLabel(MERCHANT_AUDIT_STATUS_LABEL, d.auditStatus) },
-    { label: '营业状态', value: getEnumLabel(MERCHANT_STATUS_LABEL, d.status) },
+    { label: '审核状态', value: getMerchantAuditDisplayLabel(d.auditStatus, d.status) },
+    { label: '营业状态', value: getMerchantOperatingDisplayLabel(d.status, d.auditStatus) },
     { label: '联系电话', value: d.contactPhone || '—' },
     { label: '地址', value: d.address || '—' },
     { label: '营业时间', value: d.businessHours || '—' },
-    { label: '配送费', value: formatMoney(d.deliveryFee) },
+    {
+      label: '距离配送费',
+      value: (d.deliveryFeeTiers || d.deliveryFees || []).length
+        ? (d.deliveryFeeTiers || d.deliveryFees || [])
+            .map((tier) => `${tier.minKm}–${tier.maxKm}km ¥${formatMoney(tier.fee)}${tier.enabled ? '' : '（停用）'}`)
+            .join('；')
+        : '未设置'
+    },
     { label: '满额免配送', value: formatMoney(d.freeDeliveryThreshold) },
     { label: '会员折扣价', value: formatMoney(d.memberDiscountPrice) },
     { label: '物业币返利', value: d.coinRebateEnabled ? `${formatPercent(d.coinRebateRate)}%` : '未启用' },
@@ -402,6 +433,11 @@ const detailRows = computed(() => {
     { label: '更新时间', value: d.updatedAt || '—' }
   ]
 })
+
+function applyRoleLabel(item?: MerchantItem | null) {
+  const role = item?.applyRole || item?.intendedRole || USER_ROLE.MERCHANT
+  return getEnumLabel(ROLE_LABEL, role, role)
+}
 
 function propertyCompanyId() {
   return portal.detail?.propertyCompanyId || undefined
@@ -494,7 +530,7 @@ async function load(pageNo = 1) {
 }
 
 function canEdit(item: MerchantItem) {
-  return item.auditStatus === MERCHANT_AUDIT_STATUS.APPROVED
+  return item.auditStatus === MERCHANT_AUDIT_STATUS.APPROVED && !isMerchantTerminalStatus(item.status)
 }
 
 function switchTab(next: TabKey) {
@@ -509,6 +545,18 @@ function reload() {
 
 function changePage(next: number) {
   load(next)
+}
+
+function openDistance(item: MerchantItem) {
+  distanceMerchantId.value = item.id
+  distanceMerchantName.value = item.name
+  distanceOpen.value = true
+}
+
+function closeDistance() {
+  distanceOpen.value = false
+  distanceMerchantId.value = ''
+  distanceMerchantName.value = ''
 }
 
 async function openDetail(id: string) {
@@ -604,7 +652,7 @@ function applyMerchantToAuditForm(_merchant: MerchantItem) {
 }
 
 function openAudit(item: MerchantItem) {
-  if (item.auditStatus !== MERCHANT_AUDIT_STATUS.PENDING) {
+  if (!isMerchantOnboardingPending(item.auditStatus)) {
     error.value = '该商家已审核，不可重复操作'
     return
   }
@@ -620,7 +668,7 @@ function closeAudit() {
 
 async function submitAudit() {
   if (!auditTarget.value) return
-  if (auditTarget.value.auditStatus !== MERCHANT_AUDIT_STATUS.PENDING) {
+  if (!isMerchantOnboardingPending(auditTarget.value.auditStatus)) {
     auditError.value = '该商家已审核，不可重复操作'
     return
   }
@@ -640,11 +688,17 @@ async function submitAudit() {
     await coordinatorManageApi.auditMerchant(cid, {
       merchantId: auditTarget.value.id,
       approved,
-      rejectReason: approved ? undefined : auditForm.rejectReason.trim()
+      rejectReason: approved ? undefined : auditForm.rejectReason.trim(),
+      ...(approved
+        ? {
+            applyRole: auditTarget.value.applyRole || auditTarget.value.intendedRole || USER_ROLE.MERCHANT,
+            intendedRole: auditTarget.value.applyRole || auditTarget.value.intendedRole || USER_ROLE.MERCHANT
+          }
+        : {})
     })
     const name = auditTarget.value.name
     auditSuccess.value = approved
-      ? `已通过「${name}」的入驻申请，已自动开通商家账号。请通知申请人重新登录商家端`
+      ? `已通过「${name}」的入驻申请，已按申请身份开通账号。请通知申请人重新登录`
       : `已拒绝「${name}」的入驻申请`
     closeAudit()
     await load(page.value)
@@ -742,6 +796,7 @@ onMounted(async () => {
 .modalBody { padding: 20px; }
 .modalFooter { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 20px; border-top: 1px solid #f0f0f3; }
 .field { margin-bottom: 14px; }
+.readonly { padding: 10px 12px; border-radius: 8px; background: #f5f5f7; color: #5c5c66; font-size: 14px; }
 .fieldRow { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .label { display: block; font-size: 13px; color: #8c8c9a; margin-bottom: 6px; }
 .textarea { width: 100%; padding: 8px 12px; border: 1px solid #e8e8ec; border-radius: 8px; resize: vertical; box-sizing: border-box; }

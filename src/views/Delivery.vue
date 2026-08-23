@@ -3,7 +3,7 @@
       <div class="header">
         <div>
           <h1 class="title">送货管理</h1>
-          <p class="desc">配送监控看板（配送费/起送门槛由商家设置，成本从商家费用扣除；物业不做配送定价干预）</p>
+          <p class="desc">支付成功后商家有 30 分钟选择自配或发大厅；超时自动进大厅。自配单不进入抢单/指派。整单均为团购商品的订单无需配送，支付后进入商家核实。</p>
         </div>
         <button class="btnRefresh" :disabled="loading" @click="reload">
           <IconSvg name="refresh" />
@@ -107,15 +107,17 @@
                 <th>用户</th>
                 <th>商品</th>
                 <th>费用</th>
+                <th>履约</th>
+                <th>承运</th>
                 <th>状态</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="loading">
-                <td colspan="5" class="empty">加载中...</td>
+                <td colspan="7" class="empty">加载中...</td>
               </tr>
               <tr v-else-if="!deliveryOrders.length">
-                <td colspan="5" class="empty">暂无配送记录</td>
+                <td colspan="7" class="empty">暂无配送记录</td>
               </tr>
               <tr v-for="order in deliveryOrders" :key="order.id">
                 <td><MobileCellText variant="nowrap">{{ order.time }}</MobileCellText></td>
@@ -126,6 +128,8 @@
                   <MobileCellText>{{ order.productDesc }}</MobileCellText>
                 </td>
                 <td><MobileCellText variant="nowrap">{{ order.fee }}</MobileCellText></td>
+                <td>{{ order.fulfillmentModeLabel || fulfillmentLabel(order.fulfillmentMode, order) }}</td>
+                <td>{{ carrierLabel(order.carrierType) }}</td>
                 <td>
                   <span class="orderStatus" :class="order.statusClass">
                     {{ order.statusLabel }}
@@ -134,6 +138,72 @@
               </tr>
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <div class="panel orderListPanel">
+        <div class="header">
+          <h3 class="title">配送订单</h3>
+        </div>
+        <div class="toolbar">
+          <select v-model="orderFilters.fulfillmentMode" class="select" @change="loadAdminOrders(1)">
+            <option v-for="opt in FULFILLMENT_MODE_OPTIONS" :key="opt.value || 'all'" :value="opt.value">
+              {{ opt.label }}
+            </option>
+          </select>
+          <select v-model="orderFilters.carrierType" class="select" @change="loadAdminOrders(1)">
+            <option v-for="opt in CARRIER_TYPE_OPTIONS" :key="opt.value || 'all-carrier'" :value="opt.value">
+              {{ opt.label }}
+            </option>
+          </select>
+          <label class="checkLabel">
+            <input v-model="orderFilters.overdueOnly" type="checkbox" @change="loadAdminOrders(1)" />
+            超时未选
+          </label>
+          <button class="btnGhost" :disabled="ordersLoading" @click="loadAdminOrders(orderPage)">刷新</button>
+        </div>
+        <p v-if="ordersError" class="bannerError">{{ ordersError }}</p>
+        <table class="table">
+          <thead>
+            <tr>
+              <th>时间</th>
+              <th>订单号</th>
+              <th>住户</th>
+              <th>商家</th>
+              <th>履约方式</th>
+              <th>承运</th>
+              <th>配送状态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="ordersLoading">
+              <td colspan="8" class="empty">加载中...</td>
+            </tr>
+            <tr v-else-if="!adminOrders.length">
+              <td colspan="8" class="empty">暂无配送订单</td>
+            </tr>
+            <tr v-for="item in visibleAdminOrders" :key="item.id">
+              <td>{{ item.createdAt || '—' }}</td>
+              <td class="idCell">{{ item.orderNo || item.id }}</td>
+              <td>{{ item.residentName || '—' }}</td>
+              <td>{{ item.merchantName || '—' }}</td>
+              <td>
+                {{ fulfillmentModeLabelOf(item) }}
+                <em v-if="isChoiceOverdue(item)" class="overdue">超时未选</em>
+              </td>
+              <td>{{ carrierTypeLabelOf(item) }}</td>
+              <td>{{ item.deliveryStatusLabel || deliveryStatusText(item.deliveryStatus) }}</td>
+              <td>
+                <button class="linkBtn" @click="openOrderDetail(item.id)">详情</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div v-if="orderTotalPages > 1" class="pagination">
+          <button class="pageBtn" :disabled="orderPage <= 1" @click="loadAdminOrders(orderPage - 1)">&lt;</button>
+          <span class="pageInfo">{{ orderPage }} / {{ orderTotalPages }}</span>
+          <button class="pageBtn" :disabled="orderPage >= orderTotalPages" @click="loadAdminOrders(orderPage + 1)">&gt;</button>
         </div>
       </div>
 
@@ -186,23 +256,87 @@
           </div>
         </div>
       </div>
+
+    <Teleport to="body">
+      <div v-if="detailOpen" class="modalOverlay" @click.self="closeOrderDetail">
+        <div class="modal">
+          <div class="modalHeader">
+            <h3 class="modalTitle">订单履约</h3>
+            <button class="modalClose" @click="closeOrderDetail">&times;</button>
+          </div>
+          <div class="modalBody">
+            <div v-if="detailLoading" class="loading">加载详情中...</div>
+            <p v-else-if="detailError" class="bannerError">{{ detailError }}</p>
+            <template v-else-if="detail">
+              <ul class="infoGrid">
+                <li><span>订单号</span><strong>{{ detail.orderNo || detail.id }}</strong></li>
+                <li><span>住户</span><strong>{{ detail.residentName || '—' }}</strong></li>
+                <li><span>商家</span><strong>{{ detail.merchantName || '—' }}</strong></li>
+                <li><span>订单状态</span><strong>{{ detail.orderStatus || detail.status || '—' }}</strong></li>
+              </ul>
+              <FulfillmentPanel
+                :order="detail"
+                variant="admin"
+                :busy="overrideBusy"
+                @override="openOverride"
+              />
+            </template>
+          </div>
+        </div>
+      </div>
+      <div v-if="overrideOpen" class="modalOverlay" @click.self="closeOverride">
+        <div class="modal small">
+          <div class="modalHeader">
+            <h3 class="modalTitle">强制改派</h3>
+            <button class="modalClose" @click="closeOverride">&times;</button>
+          </div>
+          <div class="modalBody">
+            <p class="hint">将改派为：{{ overrideModeLabel }}。已结束订单后端会拒绝。</p>
+            <label class="label">备注</label>
+            <textarea v-model="overrideRemark" class="textarea" rows="3" placeholder="请填写改派原因" />
+            <p v-if="overrideError" class="bannerError">{{ overrideError }}</p>
+          </div>
+          <div class="modalFooter">
+            <button class="btnGhost" @click="closeOverride">取消</button>
+            <button class="btnPrimary" :disabled="overrideBusy" @click="submitOverride">
+              {{ overrideBusy ? '提交中...' : '确认改派' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
     </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import IconSvg from '../components/IconSvg.vue'
 import MobileCellText from '../components/MobileCellText.vue'
-import { deliveryApi } from '../api/services'
+import FulfillmentPanel from '../components/FulfillmentPanel.vue'
+import { deliveryApi, ordersApi } from '../api/services'
+import type { OrderItem } from '../api/types'
 import {
   mapCapacityBars,
   mapDeliveryCouriers,
   mapDeliveryStats,
   mapRecentDeliveries
 } from '../api/mappers'
-import { ApiError } from '../api/request'
-import { DELIVERY_CAPACITY_DIMENSION } from '../constants/enums'
+import { ApiError, formatApiError } from '../api/request'
+import {
+  CARRIER_TYPE_LABEL,
+  CARRIER_TYPE_OPTIONS,
+  DELIVERY_CAPACITY_DIMENSION,
+  DELIVERY_STATUS_LABEL,
+  FULFILLMENT_MODE_LABEL,
+  FULFILLMENT_MODE_OPTIONS,
+  getEnumLabel
+} from '../constants/enums'
 import { useIsMobile } from '../composables/useIsMobile'
+import {
+  carrierTypeLabelOf,
+  fulfillmentModeLabelOf,
+  isChoiceOverdue
+} from '../utils/fulfillment'
 
 const { isMobile } = useIsMobile()
 const loading = ref(true)
@@ -232,6 +366,121 @@ const deliveryStats = ref({
 const couriers = ref<ReturnType<typeof mapDeliveryCouriers>>([])
 const deliveryOrders = ref<ReturnType<typeof mapRecentDeliveries>>([])
 const capacityData = ref<ReturnType<typeof mapCapacityBars>>([])
+
+const orderFilters = reactive({
+  fulfillmentMode: '',
+  carrierType: '',
+  overdueOnly: false
+})
+const adminOrders = ref<OrderItem[]>([])
+const ordersLoading = ref(false)
+const ordersError = ref('')
+const orderPage = ref(1)
+const orderTotalPages = ref(1)
+
+const detailOpen = ref(false)
+const detailLoading = ref(false)
+const detailError = ref('')
+const detail = ref<OrderItem | null>(null)
+const overrideOpen = ref(false)
+const overrideBusy = ref(false)
+const overrideError = ref('')
+const overrideMode = ref('')
+const overrideRemark = ref('')
+
+const overrideModeLabel = computed(() =>
+  getEnumLabel(FULFILLMENT_MODE_LABEL, overrideMode.value, overrideMode.value)
+)
+
+const visibleAdminOrders = computed(() => {
+  if (!orderFilters.overdueOnly) return adminOrders.value
+  return adminOrders.value.filter((item) => isChoiceOverdue(item))
+})
+
+function fulfillmentLabel(mode?: string, item?: { fulfillmentModeLabel?: string }) {
+  return item?.fulfillmentModeLabel || getEnumLabel(FULFILLMENT_MODE_LABEL, mode, '—')
+}
+
+function carrierLabel(type?: string) {
+  return getEnumLabel(CARRIER_TYPE_LABEL, type, '—')
+}
+
+function deliveryStatusText(status?: string) {
+  return getEnumLabel(DELIVERY_STATUS_LABEL, status, '—')
+}
+
+async function loadAdminOrders(pageNo = 1) {
+  ordersLoading.value = true
+  ordersError.value = ''
+  try {
+    const res = await deliveryApi.orders({
+      page: pageNo,
+      pageSize: 20,
+      sort: '-createdAt',
+      fulfillmentMode: orderFilters.fulfillmentMode || undefined,
+      carrierType: orderFilters.carrierType || undefined
+    })
+    adminOrders.value = res.list || []
+    orderPage.value = res.pagination?.page || pageNo
+    orderTotalPages.value = res.pagination?.totalPages || 1
+  } catch (e) {
+    ordersError.value = formatApiError(e, '配送订单加载失败')
+    adminOrders.value = []
+  } finally {
+    ordersLoading.value = false
+  }
+}
+
+async function openOrderDetail(id: string) {
+  detailOpen.value = true
+  detailLoading.value = true
+  detailError.value = ''
+  detail.value = null
+  try {
+    detail.value = await ordersApi.get(id)
+  } catch (e) {
+    detailError.value = formatApiError(e, '订单详情加载失败')
+  } finally {
+    detailLoading.value = false
+  }
+}
+
+function closeOrderDetail() {
+  detailOpen.value = false
+  detail.value = null
+  detailError.value = ''
+}
+
+function openOverride(mode: string) {
+  overrideMode.value = mode
+  overrideRemark.value = ''
+  overrideError.value = ''
+  overrideOpen.value = true
+}
+
+function closeOverride() {
+  overrideOpen.value = false
+  overrideBusy.value = false
+}
+
+async function submitOverride() {
+  if (!detail.value) return
+  overrideBusy.value = true
+  overrideError.value = ''
+  try {
+    await ordersApi.overrideFulfillment(detail.value.id, {
+      mode: overrideMode.value,
+      remark: overrideRemark.value.trim() || undefined
+    })
+    detail.value = await ordersApi.get(detail.value.id)
+    closeOverride()
+    await Promise.all([loadOverview(), loadAdminOrders(orderPage.value)])
+  } catch (e) {
+    overrideError.value = formatApiError(e, '改派失败')
+  } finally {
+    overrideBusy.value = false
+  }
+}
 
 async function loadOverview() {
   loading.value = true
@@ -273,7 +522,7 @@ async function switchCapacityDimension(dimension: string) {
 }
 
 async function reload() {
-  await Promise.all([loadOverview(), loadCapacity()])
+  await Promise.all([loadOverview(), loadCapacity(), loadAdminOrders(1)])
 }
 
 onMounted(reload)
@@ -331,6 +580,33 @@ onMounted(reload)
 .panel .orderStatus.pending { background: #fff8e8; color: #f5a623; }
 .panel .orderStatus.delivering { background: #f0f0ff; color: #5c5c9e; }
 .panel .orderStatus.completed { background: #f0f0f0; color: #8c8c9a; }
+.orderListPanel { margin-bottom: 20px; overflow-x: auto; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 12px; }
+.select { padding: 8px 12px; border: 1px solid #e8e8ec; border-radius: 8px; background: #fff; }
+.checkLabel { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #5c5c66; }
+.btnGhost { padding: 8px 14px; border-radius: 8px; border: 1px solid #e8e8ec; background: #fff; cursor: pointer; }
+.linkBtn { border: none; background: none; color: #5c5c9e; cursor: pointer; }
+.idCell { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+.overdue { color: #cf1322; font-style: normal; margin-left: 6px; font-size: 12px; }
+.pagination { display: flex; justify-content: center; gap: 12px; margin-top: 12px; }
+.pageBtn { padding: 6px 12px; border: 1px solid #e8e8ec; border-radius: 8px; background: #fff; }
+.pageInfo { font-size: 13px; color: #8c8c9a; }
+.modalOverlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 40; padding: 16px;
+}
+.modal { width: min(720px, 100%); max-height: 90vh; overflow: auto; background: #fff; border-radius: 12px; padding: 20px; }
+.modal.small { width: min(480px, 100%); }
+.modalHeader { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.modalTitle { font-size: 18px; margin: 0; }
+.modalClose { border: none; background: none; font-size: 24px; cursor: pointer; }
+.infoGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; list-style: none; padding: 0; margin: 0 0 16px; }
+.infoGrid li { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
+.infoGrid span { color: #8c8c9a; }
+.textarea, .label { display: block; width: 100%; }
+.textarea { margin: 8px 0 12px; padding: 8px 12px; border: 1px solid #e8e8ec; border-radius: 8px; box-sizing: border-box; }
+.hint { font-size: 13px; color: #8c8c9a; }
+.modalFooter { display: flex; justify-content: flex-end; gap: 8px; }
+.btnPrimary { padding: 8px 14px; border: none; border-radius: 8px; background: #5c5c9e; color: #fff; cursor: pointer; }
 
 .capacity { background: #ffffff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
 .capacity .header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; }

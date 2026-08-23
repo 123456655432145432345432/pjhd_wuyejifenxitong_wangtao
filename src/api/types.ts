@@ -65,6 +65,8 @@ export interface ResidentItem {
   phone?: string
   avatarUrl?: string
   gender?: number
+  /** 生日（YYYY-MM-DD）；年龄由后端按生日计算 */
+  birthday?: string
   age?: number
   maritalStatus?: string
   hasChildren?: boolean
@@ -115,6 +117,7 @@ export interface ResidentCreatePayload {
   communityId: string
   avatarUrl?: string
   gender?: number
+  birthday?: string
   age?: number
   maritalStatus?: string
   hasChildren?: boolean
@@ -163,10 +166,18 @@ export interface RoleAccountDeleteResult {
   message?: string
 }
 
+export interface RoleAccountDisableResult {
+  residentId: string
+  status?: string
+  merchantStatus?: string
+  message?: string
+}
+
 export interface ResidentUpdatePayload {
   name?: string
   avatarUrl?: string
   gender?: number
+  birthday?: string
   age?: number
   maritalStatus?: string
   hasChildren?: boolean
@@ -174,6 +185,39 @@ export interface ResidentUpdatePayload {
   floor?: string
   unit?: string
   room?: string
+}
+
+/** GET /admin/building-changes 列表项（§2.6.3） */
+export interface BuildingChangeApplication {
+  id: string
+  residentId: string
+  residentName?: string
+  residentPhone?: string
+  propertyCompanyId?: string
+  propertyCompanyName?: string
+  communityId?: string
+  communityName?: string
+  /** 后端字段：当前楼栋 */
+  currentBuilding?: string
+  /** 后端字段：当前单元 */
+  currentUnit?: string
+  /** 后端字段：当前房号 */
+  currentRoom?: string
+  /** 前端归一化后的原地址（来自 current*） */
+  oldBuilding?: string
+  oldUnit?: string
+  oldFloor?: string
+  oldRoom?: string
+  building: string
+  unit: string
+  floor?: string
+  room: string
+  status: string
+  rejectReason?: string | null
+  /** 后端字段：申请时间 */
+  appliedAt?: string
+  createdAt?: string
+  auditedAt?: string
 }
 
 export interface ResidentStatusPayload {
@@ -197,7 +241,7 @@ export interface FamilyMemberItem {
 
 export interface CoinFreezePayload {
   amount: number
-  reason?: string
+  reason: string
 }
 
 export interface CoinFreezeResult {
@@ -213,7 +257,7 @@ export interface CoinFreezeResult {
 }
 
 export interface CoinUnfreezePayload {
-  reason?: string
+  reason: string
   frozenRecordId?: string
 }
 
@@ -263,6 +307,51 @@ export interface CoinFreezeRecordItem {
   createdAt: string
 }
 
+export interface DeliveryFeeTier {
+  id?: string
+  minKm: number
+  maxKm: number
+  fee: number
+  enabled: boolean
+}
+
+/** GET/PUT /admin/merchants/{id}/community-distances（§42.1） */
+export interface MerchantCommunityDistanceItem {
+  communityId: string
+  communityName?: string
+  distanceKm?: number | null
+}
+
+export interface MerchantCommunityDistancesPayload {
+  items: Array<{
+    communityId: string
+    distanceKm: number | null
+  }>
+}
+
+/** GET /admin/transfer-to-property/points|coins（§42.2） */
+export interface TransferToPropertyItem {
+  id: string
+  type?: 'point' | 'coin' | string
+  residentId?: string
+  residentName?: string
+  residentPhone?: string
+  amount?: number
+  remark?: string
+  propertyCompanyId?: string
+  createdAt?: string
+}
+
+export interface MerchantDuplicateBindingData {
+  id?: string
+  name?: string
+  auditStatus?: string
+  applyRole?: string
+  merchantSource?: string
+  propertyCompanyId?: string
+  contactPhone?: string
+}
+
 export interface MerchantItem {
   id: string
   platformMerchantId?: string
@@ -279,6 +368,13 @@ export interface MerchantItem {
   status?: string
   /** 商家来源：platform / group_leader / technician（v4.1） */
   merchantSource?: string
+  /** 住户入驻时申请的业务身份 */
+  applyRole?: string
+  intendedRole?: string
+  rejectReason?: string | null
+  serveAllCommunities?: boolean
+  communityIds?: string[]
+  communityNames?: string[]
   coinRebateEnabled?: boolean
   merchantLevel?: string
   levelWeight?: number
@@ -302,6 +398,8 @@ export interface MerchantItem {
   withdrawalBlocked?: boolean
   deliveryScope?: string
   distanceType?: string
+  deliveryFeeTiers?: DeliveryFeeTier[]
+  deliveryFees?: DeliveryFeeTier[]
   isOfficialRecommended?: boolean
   recommendedSort?: number
 }
@@ -322,8 +420,10 @@ export interface MerchantUpdatePayload {
   deliveryScope?: string
   /** 商家配送距离：any / radius / district / city */
   distanceType?: string
+  deliveryFeeTiers?: DeliveryFeeTier[]
   rankOrder?: number
   merchantLevel?: string
+  category?: string
 }
 
 export interface PlatformMerchantLinkedProperty {
@@ -393,6 +493,8 @@ export interface MerchantAuditPayload {
   businessHours?: string
   deliveryFee?: string
   freeDeliveryThreshold?: string
+  applyRole?: string
+  intendedRole?: string
 }
 
 export interface MerchantAuditResult {
@@ -679,6 +781,10 @@ export interface PropertyCompanyDetail {
   status?: string
   communityCount?: number
   config?: PropertyCompanyConfig
+  pointEnabled?: boolean
+  pointDisplayEnabled?: boolean
+  coinEnabled?: boolean
+  coinDisplayEnabled?: boolean
   communities?: PropertyCompanyCommunity[]
   admins?: PropertyCompanyAdmin[]
   /** v3.9 详情回显补全 */
@@ -710,6 +816,10 @@ export interface PropertyCompanyUpdatePayload {
   logoUrl?: string
   contactPhone?: string
   address?: string
+  pointEnabled?: boolean
+  pointDisplayEnabled?: boolean
+  coinEnabled?: boolean
+  coinDisplayEnabled?: boolean
   deliveryPerKgFee?: number
   pointExchangeRate?: number
   residentPointShareRate?: number
@@ -742,6 +852,9 @@ export interface PropertyCompanyConfig {
   regionalLeaderRate?: number
   /** 物业级项目负责人参考比例 */
   projectLeaderRate?: number
+  pointEnabled?: boolean
+  pointDisplayEnabled?: boolean
+  coinEnabled?: boolean
   coinDisplayEnabled?: boolean
   coinIssueMode?: string
   coinExpiryDays?: number
@@ -903,6 +1016,9 @@ export interface RecentDeliveryItem {
   productDesc?: string
   fee?: number
   status?: string
+  fulfillmentMode?: string
+  fulfillmentModeLabel?: string
+  carrierType?: string
 }
 
 export interface DeliveryOverview {
@@ -939,6 +1055,17 @@ export interface OrderLineItem {
   quantity?: number
   price?: number
   subtotal?: number
+}
+
+/** 履约选择审计（fulfillment_choice_logs） */
+export interface FulfillmentChoiceLog {
+  id?: string
+  action?: string
+  mode?: string
+  operatorId?: string
+  operatorName?: string
+  remark?: string
+  createdAt?: string
 }
 
 export interface OrderItem {
@@ -985,11 +1112,29 @@ export interface OrderItem {
   courierId?: string | null
   courierName?: string | null
   deliveryId?: string | null
+  deliveryStatus?: string
+  deliveryStatusLabel?: string
+  /** 是否需要配送；false 则无履约选择、无配送单 */
+  requiresDelivery?: boolean
+  /** pending_choice / courier_hall / merchant_self / none */
+  fulfillmentMode?: string
+  fulfillmentModeLabel?: string
+  fulfillmentDeadline?: string | null
+  fulfillmentChosenAt?: string | null
+  /** courier / merchant */
+  carrierType?: string
+  /** 商家自配配送费分成（大厅单为 0） */
+  merchantDeliveryFeeShare?: number
+  fulfillmentChoiceLogs?: FulfillmentChoiceLog[]
   paidAt?: string | null
   completedAt?: string | null
   cancelledAt?: string | null
   orderStatus?: string
   status?: string
+  /** 商家核实通过后的冻结截止（v6.3） */
+  freezeEndDate?: string | null
+  verifiedAt?: string | null
+  verificationResult?: string
 }
 
 /** 居民确认收货 POST /orders/{id}/confirm */
@@ -999,6 +1144,60 @@ export interface OrderConfirmResult {
   completedAt?: string
   pointEarned?: number
   coinEarned?: number
+}
+
+/** POST /orders/{id}/verify（v6.3 商家核实） */
+export interface OrderVerifyPayload {
+  approved: boolean
+  reason?: string
+}
+
+export interface OrderVerifyResult {
+  orderId?: string
+  verificationResult?: string
+  orderStatus?: string
+  freezeEndDate?: string | null
+  verifiedAt?: string | null
+  message?: string
+}
+
+/** GET/PUT /admin/order-config（v6.5：核实入口由整单商品 category=团购决定） */
+export interface AdminOrderConfig {
+  /** v6.5 起失效，仅兼容回读，不再控制是否进入核实 */
+  merchantVerificationEnabled?: boolean
+  merchantVerificationHours?: number
+  freezeDays?: number
+  refundWindowDays?: number
+}
+
+/** GET /admin/orders/refunds（v6.4） */
+export interface OrderRefundItem {
+  orderId: string
+  orderNo?: string
+  orderStatus?: string
+  cancelReason?: string
+  rejectReason?: string
+  residentName?: string
+  residentPhone?: string
+  receiverName?: string
+  merchantName?: string
+  totalAmount?: number
+  createdAt?: string
+  requestedAt?: string
+  auditedAt?: string
+}
+
+/** POST /admin/orders/refunds/{orderId}/audit */
+export interface OrderRefundAuditPayload {
+  action: string
+  rejectReason?: string
+}
+
+export interface OrderRefundAuditResult {
+  orderId?: string
+  orderStatus?: string
+  requestedAt?: string
+  message?: string
 }
 
 export interface MyMerchantDetail {
@@ -1015,6 +1214,8 @@ export interface MyMerchantDetail {
   contactPhone?: string
   address?: string
   deliveryFee?: number
+  deliveryFeeTiers?: DeliveryFeeTier[]
+  deliveryFees?: DeliveryFeeTier[]
   freeDeliveryThreshold?: number
   freeDeliveryEnabled?: boolean
   freeDeliverySponsor?: string
@@ -1045,6 +1246,13 @@ export interface MyMerchantDetail {
   products?: ProductItem[]
   createdAt?: string
   updatedAt?: string
+}
+
+export interface MerchantDeliveryFeesPayload {
+  deliveryFeeTiers: DeliveryFeeTier[]
+  freeDeliveryEnabled: boolean
+  freeDeliveryThreshold?: number
+  freeDeliverySponsor?: string
 }
 
 export interface ProductItem {
@@ -1107,9 +1315,14 @@ export interface MerchantPointPurchasePayload {
 }
 
 export interface MerchantPointGrantPayload {
-  residentId: string
+  phone: string
   pointAmount: number
   description?: string
+}
+
+export interface MerchantPointQuote {
+  pointAmount: number
+  payAmount: number
 }
 
 export interface MerchantWithdrawalItem {
@@ -1179,6 +1392,8 @@ export interface AdminMerchantWithdrawalItem {
   auditedAt?: string
   operatorId?: string
   auditResult?: string
+  /** 资金来源切分：legacy 历史余额 / cbk 新单（新单不应出现在待审列表） */
+  settlementChannel?: string
 }
 
 /** 管理员 - 提现审核请求体 */
@@ -1234,6 +1449,8 @@ export interface CourierDeliveryItem {
   proofImageUrls?: string[]
   createdAt?: string
   updatedAt?: string
+  carrierType?: string
+  merchantDeliveryFeeShare?: number
 }
 
 export interface DeliveryCompletePayload {
@@ -1315,6 +1532,11 @@ export interface DistributionRecordItem {
   sectorLeaderAmount?: number
   individualLeaderShare?: number
   individualLeaderAmount?: number
+  /** 商家自配配送费分成；大厅为 0 */
+  merchantDeliveryFeeShare?: number
+  fulfillmentMode?: string
+  fulfillmentModeLabel?: string
+  carrierType?: string
   coordinatorId?: string
   coordinatorName?: string
   sectorLeaderId?: string
@@ -1408,6 +1630,9 @@ export interface DistributionCalculateResult {
   coordinatorShare?: number
   sectorLeaderShare?: number
   individualLeaderShare?: number
+  merchantDeliveryFeeShare?: number
+  fulfillmentMode?: string
+  carrierType?: string
   coordinatorId?: string
   sectorLeaderId?: string
   individualLeaderId?: string
@@ -1468,19 +1693,19 @@ export interface PlatformEarningRecordItem {
   createdAt?: string
 }
 
-/** 平台收益对账快照（CBK 真分账只读；无内部提现钱包） */
+/** 平台收益对账快照（微信支付分账只读；无内部提现钱包） */
 export interface PlatformEarningsBalance {
-  /** 累计平台收益（已实时入账 CBK） */
+  /** 累计平台收益（已实时入账） */
   totalEarned?: number | string
-  /** 平台 CBK 已入账余额（通常 = totalEarned） */
+  /** 平台已入账余额（通常 = totalEarned） */
   settledBalance?: number | string
   /** 处理中金额（真分账通常为 0） */
   pendingAmount?: number | string
-  /** 结算方式，如 cbk_real_split */
+  /** 结算方式，如 wechat_profit_sharing / cbk_real_split */
   settleMode?: string
   /** 结算状态文案 */
   settlementStatus?: string
-  /** 是否可申请提现；CBK 下恒为 false */
+  /** 是否可申请提现；分账模式下恒为 false */
   withdrawAvailable?: boolean
   /** 构成：订单分成 */
   distributionShare?: number | string
@@ -1658,6 +1883,8 @@ export interface AdminRoleWithdrawalItem {
   rejectReason?: string
   remark?: string
   createdAt?: string
+  /** 资金来源切分：legacy 历史余额 / cbk 新单 */
+  settlementChannel?: string
 }
 
 /** GET /admin/role-withdrawals/summary（v5.5 §70.6） */
@@ -1693,8 +1920,16 @@ export interface AdminRoleWithdrawalAuditResult {
 export interface IndividualLeaderItem {
   id: string
   residentId?: string
+  residentName?: string
+  residentPhone?: string
+  phone?: string
   name?: string
   sector?: string
+  sectorLeaderId?: string
+  sectorName?: string
+  propertyCompanyId?: string
+  propertyCompanyName?: string
+  appointedAt?: string
   commissionRate?: number
   /** 累计收益（若后端返回） */
   totalEarnings?: number
@@ -1726,6 +1961,38 @@ export interface AdminIndividualLeaderCreatePayload {
   commissionRate?: number
 }
 
+/** 住户一级代理申请 GET /admin/individual-leaders/applications */
+export interface IndividualLeaderApplicationItem {
+  id: string
+  residentId?: string
+  residentName?: string
+  residentPhone?: string
+  phone?: string
+  sector?: string
+  sectorName?: string
+  remark?: string
+  message?: string
+  /** 接口字段 auditStatus：pending / approved / rejected */
+  auditStatus?: string
+  status?: string
+  rejectReason?: string
+  propertyCompanyId?: string
+  propertyCompanyName?: string
+  createdAt?: string
+  auditedAt?: string
+}
+
+/** POST /admin/individual-leaders/applications/{applicationId}/audit */
+export interface IndividualLeaderApplicationAuditPayload {
+  auditResult: string
+  rejectReason?: string
+  remark?: string
+  sectorLeaderId?: string
+  sector?: string
+  name?: string
+  commissionRate?: number
+}
+
 export interface SectorLeaderMerchantAuditPayload {
   merchantId: string
   approved: boolean
@@ -1737,6 +2004,8 @@ export interface CoordinatorMerchantAuditPayload {
   merchantId: string
   approved: boolean
   rejectReason?: string
+  applyRole?: string
+  intendedRole?: string
 }
 
 export interface SectorLeaderMerchantCreatePayload {
@@ -2853,6 +3122,7 @@ export interface ArrearsReminderPreviewResult {
 export interface ArrearsReminderPayload extends ArrearsReminderPreviewPayload {
   previewToken: string
   channels: string[]
+  /** 幂等键，对应文档 `requestId` */
   requestId?: string
   title: string
   content: string
@@ -2904,7 +3174,9 @@ export interface AdminChatMessageItem {
 export interface RoomStructureRoom {
   room?: string
   isOccupied?: boolean
+  residentId?: string | null
   residentName?: string | null
+  status?: string
 }
 
 export interface RoomStructureFloor {
@@ -2928,12 +3200,51 @@ export interface AvailableRoomItem {
   floor?: string
   room?: string
   isOccupied?: boolean
+  status?: string
 }
 
 export interface AvailableRoomsResult {
   communityId?: string
   totalAvailable?: number
   items?: AvailableRoomItem[]
+}
+
+/** GET /communities/{id}/rooms（§84.3） */
+export interface CommunityRoomItem {
+  id: string
+  communityId?: string
+  building?: string
+  unit?: string
+  floor?: string
+  room?: string
+  status?: string
+  residentId?: string | null
+  residentName?: string | null
+  createdAt?: string
+}
+
+export interface CommunityRoomListResult {
+  communityId?: string
+  total?: number
+  rooms?: CommunityRoomItem[]
+}
+
+export interface CommunityRoomCreatePayload {
+  building: string
+  unit: string
+  floor?: string
+  room: string
+}
+
+export interface CommunityRoomBatchCreatePayload {
+  building: string
+  unit: string
+  rooms: Array<{ floor?: string; room: string }>
+}
+
+export interface CommunityRoomUpdatePayload {
+  status?: string
+  floor?: string
 }
 
 export interface PointsTrendDay {
@@ -3086,4 +3397,45 @@ export interface FileDetailResponse extends UploadFileResponse {
 export interface DeleteFileResponse {
   fileId: string
   deleted: boolean
+}
+
+/* ---------- 微信收付通分账收款账户 / 对账台（管理端 · 路径仍为 /admin/cbk） ---------- */
+
+/** GET /admin/cbk/accounts 账户行；accountNo 为微信收付通二级商户号 */
+export interface CbkAccountItem {
+  id: string
+  ownerType?: string
+  ownerId?: string
+  accountNo?: string
+  merchantNo?: string
+  accountName?: string
+  verified?: boolean
+  createdAt?: string
+  updatedAt?: string
+}
+
+/** POST /admin/cbk/accounts · PUT /admin/cbk/accounts/{id}；accountNo 为微信收付通二级商户号 */
+export interface CbkAccountUpsertPayload {
+  ownerType: string
+  ownerId: string
+  accountNo: string
+  merchantNo?: string
+  accountName?: string
+  verified?: boolean
+}
+
+/** GET /admin/cbk/reconcile/failed 待人工介入流水 */
+export interface CbkReconcileItem {
+  splitNo: string
+  status?: string
+  ownerType?: string
+  ownerId?: string
+  accountNo?: string
+  amount?: number | string
+  orderId?: string
+  orderNo?: string
+  failReason?: string
+  remark?: string
+  createdAt?: string
+  updatedAt?: string
 }

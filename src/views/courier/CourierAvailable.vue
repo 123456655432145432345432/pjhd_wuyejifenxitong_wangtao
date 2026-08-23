@@ -50,7 +50,8 @@ import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { courierPortalApi } from '../../api/services'
 import type { CourierDeliveryItem } from '../../api/types'
-import { ApiError } from '../../api/request'
+import { formatApiError } from '../../api/request'
+import { CARRIER_TYPE, DELIVERY_STATUS } from '../../constants/enums'
 import { useIsMobile } from '../../composables/useIsMobile'
 
 const router = useRouter()
@@ -78,7 +79,9 @@ async function load(pageNo = 1) {
     if (!res.list?.length && pageNo === 1) {
       res = await courierPortalApi.available({ page: pageNo, pageSize: 10, sort: '-createdAt' })
     }
-    deliveries.value = res.list || []
+    deliveries.value = (res.list || []).filter(
+      (item) => item.carrierType !== CARRIER_TYPE.MERCHANT && item.status !== DELIVERY_STATUS.MERCHANT_SELF
+    )
     page.value = res.pagination?.page || pageNo
     totalPages.value = res.pagination?.totalPages || 1
     total.value = res.pagination?.total ?? deliveries.value.length
@@ -102,7 +105,7 @@ async function grab(id: string) {
     await load(page.value)
     setTimeout(() => router.push({ name: 'courier-tasks' }), 800)
   } catch (e) {
-    error.value = e instanceof ApiError ? e.message : '抢单失败，可能已被其他快递员抢走'
+    error.value = formatApiError(e, '抢单失败，可能已被其他快递员抢走')
   } finally {
     actionId.value = ''
   }

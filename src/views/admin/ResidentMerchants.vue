@@ -3,7 +3,7 @@
     <div class="header">
       <div>
         <h1 class="title">业主商户</h1>
-        <p class="desc">申请审核、保证金管理、T+1 结算明细、分销商品收费周期与参数配置</p>
+        <p class="desc">审核住户端「业主商户」二级分销申请（缴保证金后）。商品商家 / 技工 / 组长入驻请到「商家管理」。</p>
       </div>
       <div class="headerActions">
         <button type="button" class="btnSecondary" @click="openSettings">参数设置</button>
@@ -24,6 +24,23 @@
     </div>
 
     <div class="panel">
+      <div v-if="activeTab === 'applications'" class="productsToolbar">
+        <select
+          v-if="isPlatformAdmin"
+          v-model="selectedPropertyId"
+          class="input toolbarInput"
+          @change="loadCurrent"
+        >
+          <option value="">全部物业</option>
+          <option v-for="pc in propertyCompanies" :key="pc.id" :value="pc.id">{{ pc.name }}</option>
+        </select>
+        <select v-model="applicationStatus" class="input toolbarInput" @change="loadCurrent">
+          <option v-for="opt in RESIDENT_MERCHANT_STATUS_OPTIONS" :key="opt.value" :value="opt.value">
+            {{ opt.label }}
+          </option>
+        </select>
+      </div>
+
       <div v-if="loading" class="hint">加载中...</div>
       <p v-else-if="error" class="error">{{ error }}</p>
 
@@ -44,7 +61,7 @@
             <td>{{ item.residentName || item.residentId }} · {{ item.phone || '' }}</td>
             <td>{{ item.communityName || item.communityId || '—' }}</td>
             <td>{{ item.depositAmount ?? '—' }}（{{ item.depositStatus || '—' }}）</td>
-            <td>{{ item.status || item.statusCode || '—' }}</td>
+            <td>{{ applicationStatusLabel(item) }}</td>
             <td>
               <span class="visibilityTag" :class="item.visibility || 'private'">
                 {{ visibilityLabel(item.visibility) }}
@@ -52,16 +69,19 @@
             </td>
             <td>{{ item.createdAt || '—' }}</td>
             <td class="actions">
-              <button type="button" class="linkBtn" @click="auditApp(item.id, AUDIT_RESULT.APPROVED)">
-                通过
-              </button>
-              <button
-                type="button"
-                class="linkBtn danger"
-                @click="auditApp(item.id, AUDIT_RESULT.REJECTED)"
-              >
-                拒绝
-              </button>
+              <template v-if="canAuditApplication(item)">
+                <button type="button" class="linkBtn" @click="auditApp(item.id, AUDIT_RESULT.APPROVED)">
+                  通过
+                </button>
+                <button
+                  type="button"
+                  class="linkBtn danger"
+                  @click="auditApp(item.id, AUDIT_RESULT.REJECTED)"
+                >
+                  拒绝
+                </button>
+              </template>
+              <span v-else class="muted">—</span>
             </td>
           </tr>
         </tbody>
@@ -195,7 +215,7 @@
         "
         class="hint"
       >
-        暂无数据
+        {{ emptyHint }}
       </p>
     </div>
 
@@ -352,9 +372,13 @@ import {
   BILLING_CYCLE,
   BILLING_CYCLE_LABEL,
   BILLING_CYCLE_OPTIONS,
+  RESIDENT_MERCHANT_STATUS,
+  RESIDENT_MERCHANT_STATUS_LABEL,
+  RESIDENT_MERCHANT_STATUS_OPTIONS,
   RESIDENT_SHOP_VISIBILITY_LABEL,
   USER_ROLE,
-  getEnumLabel
+  getEnumLabel,
+  isResidentMerchantPendingAudit
 } from '../../constants/enums'
 import { useAuthStore } from '../../stores/auth'
 
@@ -363,6 +387,15 @@ const isPlatformAdmin = computed(() => auth.profile?.role === USER_ROLE.PLATFORM
 
 function visibilityLabel(value?: string) {
   return getEnumLabel(RESIDENT_SHOP_VISIBILITY_LABEL, value, '不对外')
+}
+
+function applicationStatusLabel(item: ResidentMerchantApplicationItem) {
+  const status = item.statusCode || item.status
+  return getEnumLabel(RESIDENT_MERCHANT_STATUS_LABEL, status, status || '—')
+}
+
+function canAuditApplication(item: ResidentMerchantApplicationItem) {
+  return isResidentMerchantPendingAudit(item.statusCode || item.status)
 }
 
 const tabs = [
@@ -386,6 +419,14 @@ const productPage = ref(1)
 const productTotalPages = ref(1)
 const propertyCompanies = ref<PropertyCompanyItem[]>([])
 const selectedPropertyId = ref('')
+const applicationStatus = ref(RESIDENT_MERCHANT_STATUS.PENDING_AUDIT)
+
+const emptyHint = computed(() => {
+  if (activeTab.value === 'applications') {
+    return '暂无业主商户申请。商品商家 / 技工 / 组长入驻请到「商家管理」，并筛选「待审核」。'
+  }
+  return '暂无数据'
+})
 
 const deductOpen = ref(false)
 const deducting = ref(false)
@@ -440,7 +481,26 @@ async function loadPropertyCompanies() {
 }
 
 async function loadApplications() {
-  const res = await residentMerchantAdminApi.applications({ page: 1, pageSize: 50 })
+  const propertyCompanyId = resolvePropertyCompanyId() || undefined
+  const status = applicationStatus.value
+  const base = { page: 1, pageSize: 50, propertyCompanyId }
+
+  if (status === RESIDENT_MERCHANT_STATUS.PENDING_AUDIT) {
+    const [auditRes, reviewRes] = await Promise.all([
+      residentMerchantAdminApi.applications({ ...base, status: RESIDENT_MERCHANT_STATUS.PENDING_AUDIT }),
+      residentMerchantAdminApi
+        .applications({ ...base, status: RESIDENT_MERCHANT_STATUS.PENDING_REVIEW })
+        .catch(() => ({ list: [] as ResidentMerchantApplicationItem[] }))
+    ])
+    const merged = new Map<string, ResidentMerchantApplicationItem>()
+    for (const item of [...(auditRes.list || []), ...(reviewRes.list || [])]) {
+      merged.set(item.id, item)
+    }
+    applications.value = [...merged.values()]
+    return
+  }
+
+  const res = await residentMerchantAdminApi.applications({ ...base, status })
   applications.value = res.list || []
 }
 
@@ -663,6 +723,7 @@ onMounted(async () => {
 .actions { display: flex; gap: 12px; flex-wrap: wrap; }
 .linkBtn { border: none; background: none; color: #5c5c9e; cursor: pointer; padding: 0; font-size: 14px; }
 .linkBtn.danger { color: #e05c5c; }
+.muted { color: #8c8c9a; }
 .visibilityTag {
   display: inline-block;
   padding: 2px 8px;

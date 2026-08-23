@@ -5,7 +5,7 @@
         <h1 class="title">{{ pageTitle }}</h1>
         <p class="desc">{{ pageDesc }}</p>
       </div>
-      <button class="btnPrimary" @click="openCreate">新增商品</button>
+      <button class="btnPrimary" :disabled="shopBlocked" @click="openCreate">新增商品</button>
     </div>
 
     <div class="panel">
@@ -98,7 +98,7 @@
                   {{ opt.label }}
                 </option>
               </select>
-              <p class="formHint">分类由平台统一设计，发布时从列表中选择。</p>
+              <p class="formHint">分类由平台统一设计。选「团购」且整单都是团购商品时，支付后走商家核实、无需配送。</p>
             </div>
             <div class="field">
               <label class="label">封面图</label>
@@ -187,7 +187,7 @@ import { useRoute } from 'vue-router'
 import { merchantPortalApi } from '../../api/services'
 import type { ProductCreatePayload, ProductItem, ProductUpdatePayload } from '../../api/types'
 import { ApiError } from '../../api/request'
-import { ENTITY_STATUS, PRODUCT_CATEGORY_OPTIONS } from '../../constants/enums'
+import { ENTITY_STATUS, PRODUCT_CATEGORY_OPTIONS, getPhase2ErrorMessage } from '../../constants/enums'
 import { useIsMobile } from '../../composables/useIsMobile'
 import MediaUploader from '../../components/MediaUploader.vue'
 
@@ -198,13 +198,14 @@ const pageTitle = computed(() => (isActivityLeaderShop.value ? '我的小店' : 
 const pageDesc = computed(() =>
   isActivityLeaderShop.value
     ? '首次上架商品将自动开通组长小店，商品进入主商城'
-    : '维护店铺商品与库存'
+    : '维护店铺商品与库存。分类选「团购」且顾客整单都是团购商品时，支付后走商家核实、无需配送。'
 )
 
 const products = ref<ProductItem[]>([])
 const loading = ref(false)
 const error = ref('')
 const shopHint = ref('')
+const shopBlocked = ref(false)
 const modalOpen = ref(false)
 const editingId = ref('')
 const submitting = ref(false)
@@ -260,6 +261,7 @@ async function load() {
   loading.value = true
   error.value = ''
   shopHint.value = ''
+  shopBlocked.value = false
   try {
     const shop = await merchantPortalApi.my()
     const res = await merchantPortalApi.products({
@@ -271,11 +273,13 @@ async function load() {
     products.value = res.list?.length ? res.list : shop.products || []
   } catch (e) {
     products.value = []
-    // 组长首次访问尚未自动建店时，允许直接新增商品触发绑定
-    if (isActivityLeaderShop.value) {
+    if (e instanceof ApiError && (e.code === 60005 || e.code === 60002)) {
+      shopBlocked.value = true
+      error.value = getPhase2ErrorMessage(e.code, e.message)
+    } else if (isActivityLeaderShop.value) {
       shopHint.value = '尚未开通小店：点击「新增商品」上架后将自动创建组长小店'
     } else {
-      error.value = e instanceof ApiError ? e.message : '商品加载失败'
+      error.value = e instanceof ApiError ? getPhase2ErrorMessage(e.code, e.message) : '商品加载失败'
     }
   } finally {
     loading.value = false
@@ -283,6 +287,7 @@ async function load() {
 }
 
 function openCreate() {
+  if (shopBlocked.value) return
   editingId.value = ''
   resetForm()
   modalOpen.value = true

@@ -2,10 +2,11 @@
   <div class="page">
     <div class="header">
       <div>
-        <h1 class="title">提现审批</h1>
-        <p class="desc">审核商家提现申请。</p>
+        <h1 class="title">商家提现审批</h1>
+        <p class="desc">只审核商家历史上线前计入内部钱包的余额。新订单走微信支付分账，不会出现在本列表。</p>
       </div>
     </div>
+    <p class="bannerInfo">本页不含住户物业币兑换。住户兑换请到「物业币提现审批」。配送员提现请到「配送员提现审批」。</p>
 
     <div class="stats">
       <div class="statCard">
@@ -181,6 +182,7 @@ import { adminMerchantWithdrawalApi } from '../../api/services'
 import type { AdminMerchantWithdrawalItem, MerchantWithdrawalSummary } from '../../api/types'
 import { ApiError, formatApiError } from '../../api/request'
 import {
+  SETTLEMENT_CHANNEL,
   WITHDRAWAL_AUDIT_STATUS,
   WITHDRAWAL_AUDIT_STATUS_LABEL,
   WITHDRAWAL_AUDIT_STATUS_OPTIONS,
@@ -320,7 +322,8 @@ async function buildSummaryFromList(): Promise<MerchantWithdrawalSummary> {
     const res = await adminMerchantWithdrawalApi.list({
       page,
       pageSize: NAME_SEARCH_PAGE_SIZE,
-      sort: '-createdAt'
+      sort: '-createdAt',
+      settlementChannel: SETTLEMENT_CHANNEL.LEGACY
     })
     collected.push(...(res.list || []))
     pages = res.pagination?.totalPages ?? 1
@@ -368,7 +371,9 @@ async function loadSummary() {
   summaryHint.value = ''
   let apiSummary: MerchantWithdrawalSummary | null = null
   try {
-    apiSummary = normalizeSummary(await adminMerchantWithdrawalApi.summary())
+    apiSummary = normalizeSummary(await adminMerchantWithdrawalApi.summary({
+      settlementChannel: SETTLEMENT_CHANNEL.LEGACY
+    }))
   } catch (e) {
     console.error(e)
     summaryHint.value = '统计暂不可用，当前数据根据提现列表估算'
@@ -409,6 +414,7 @@ async function loadData(page = currentPage.value) {
       startDate: startDate.value || undefined,
       endDate: endDate.value || undefined,
       sort: '-createdAt' as const,
+      settlementChannel: SETTLEMENT_CHANNEL.LEGACY,
       ...buildMerchantSearchParams(term)
     }
 
@@ -545,6 +551,7 @@ onMounted(() => {
 .statCard .value { font-size: 22px; font-weight: 600; color: #1f1f2e; }
 .statCard .value.small { font-size: 16px; }
 .summaryHint { margin: 0 0 12px; padding: 10px 14px; border-radius: 8px; background: #fffbe6; color: #8c6d1f; font-size: 13px; }
+.bannerInfo { margin: 0 0 16px; padding: 10px 14px; border-radius: 8px; background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; font-size: 13px; }
 
 .table { background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); overflow: hidden; }
 .toolbar { display: flex; align-items: center; gap: 12px; padding: 16px 24px; border-bottom: 1px solid #f0f0f3; flex-wrap: wrap; }

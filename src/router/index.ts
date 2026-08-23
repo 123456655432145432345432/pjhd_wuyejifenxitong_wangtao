@@ -16,7 +16,11 @@ import Dashboard from '../views/Dashboard.vue'
 import Permission from '../views/Permission.vue'
 import Merchant from '../views/Merchant.vue'
 import MerchantPointApproval from '../views/admin/MerchantPointApproval.vue'
-import WithdrawalApproval from '../views/admin/WithdrawalApproval.vue'
+import BuildingChangeApprovals from '../views/admin/BuildingChangeApprovals.vue'
+import OrderRefundApprovals from '../views/admin/OrderRefundApprovals.vue'
+import MerchantWithdrawalApproval from '../views/admin/MerchantWithdrawalApproval.vue'
+import RoleWithdrawalApproval from '../views/admin/RoleWithdrawalApproval.vue'
+import IndividualLeaders from '../views/admin/IndividualLeaders.vue'
 import CoinWithdrawalApproval from '../views/admin/CoinWithdrawalApproval.vue'
 import PropertyContact from '../views/admin/PropertyContact.vue'
 import PlatformShareConfig from '../views/admin/PlatformShareConfig.vue'
@@ -33,6 +37,9 @@ import CompanyAccount from '../views/admin/CompanyAccount.vue'
 import SettlementAccount from '../views/admin/SettlementAccount.vue'
 import DistributionRecords from '../views/admin/DistributionRecords.vue'
 import DistributionStats from '../views/admin/DistributionStats.vue'
+import CbkAccounts from '../views/admin/CbkAccounts.vue'
+import CbkReconcile from '../views/admin/CbkReconcile.vue'
+import TransferToProperty from '../views/admin/TransferToProperty.vue'
 import RegionalLeaders from '../views/admin/RegionalLeaders.vue'
 import RoleAccounts from '../views/admin/RoleAccounts.vue'
 import CommunityForum from '../views/admin/CommunityForum.vue'
@@ -153,6 +160,24 @@ const routes = [
         meta: { title: '住户管理', roles: [...ADMIN_ROLE_LIST, USER_ROLE.COORDINATOR] }
       },
       {
+        path: 'building-change-approvals',
+        name: 'building-change-approvals',
+        component: BuildingChangeApprovals,
+        meta: { title: '楼栋变更审批', roles: ADMIN_ROLE_LIST }
+      },
+      {
+        path: 'order-refund-approvals',
+        name: 'order-refund-approvals',
+        component: OrderRefundApprovals,
+        meta: { title: '退货审批', roles: ADMIN_ROLE_LIST }
+      },
+      {
+        path: 'merchant/onboarding-approval',
+        name: 'merchant-onboarding-approval',
+        component: Merchant,
+        meta: { title: '商家入驻审核', roles: ADMIN_ROLE_LIST }
+      },
+      {
         path: 'merchant',
         name: 'merchant',
         component: Merchant,
@@ -167,8 +192,14 @@ const routes = [
       {
         path: 'merchant/withdrawal-approval',
         name: 'merchant-withdrawal-approval',
-        component: WithdrawalApproval,
-        meta: { title: '提现审批', roles: ADMIN_ROLE_LIST }
+        component: MerchantWithdrawalApproval,
+        meta: { title: '商家提现审批', roles: ADMIN_ROLE_LIST }
+      },
+      {
+        path: 'merchant/role-withdrawal-approval',
+        name: 'role-withdrawal-approval',
+        component: RoleWithdrawalApproval,
+        meta: { title: '配送员提现审批', roles: ADMIN_ROLE_LIST }
       },
       {
         path: 'coin-withdrawal-approval',
@@ -193,6 +224,12 @@ const routes = [
         name: 'sector-leaders',
         component: SectorLeaders,
         meta: { title: '板块负责人', roles: ADMIN_ROLE_LIST }
+      },
+      {
+        path: 'individual-leaders',
+        name: 'individual-leaders',
+        component: IndividualLeaders,
+        meta: { title: '一级代理', roles: ADMIN_ROLE_LIST }
       },
       {
         path: 'community-entity',
@@ -322,6 +359,20 @@ const routes = [
         meta: { title: '建设积分', roles: ADMIN_ROLE_LIST }
       },
       {
+        path: 'transfer-to-property',
+        name: 'transfer-to-property',
+        component: TransferToProperty,
+        meta: {
+          title: '转给物业对账',
+          roles: [
+            ...ADMIN_ROLE_LIST,
+            USER_ROLE.COORDINATOR,
+            USER_ROLE.SECTOR_LEADER,
+            USER_ROLE.INDIVIDUAL_LEADER
+          ]
+        }
+      },
+      {
         path: 'profile-rewards',
         name: 'profile-rewards',
         component: ProfileRewards,
@@ -356,6 +407,22 @@ const routes = [
           title: '分成统计',
           roles: [...ADMIN_ROLE_LIST, USER_ROLE.COORDINATOR]
         }
+      },
+      {
+        path: 'cbk/accounts',
+        name: 'cbk-accounts',
+        component: CbkAccounts,
+        meta: { title: '收款账户（微信收付通）', roles: ADMIN_ROLE_LIST }
+      },
+      {
+        path: 'cbk/reconcile',
+        name: 'cbk-reconcile',
+        component: CbkReconcile,
+        meta: { title: '分账对账台', roles: ADMIN_ROLE_LIST }
+      },
+      {
+        path: 'cbk/allocations',
+        redirect: { name: 'cbk-reconcile' }
       },
       {
         path: 'regional-leaders',

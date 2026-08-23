@@ -369,20 +369,21 @@
               <p class="hint">可用余额：¥{{ formatMoney(coinTargetUser?.coinBalance) }}</p>
             </div>
             <div class="field">
-              <label class="label">操作原因</label>
+              <label class="label">{{ coinModal === 'freeze' ? '冻结原因' : '解冻原因' }} <span class="required">*</span></label>
               <textarea
                 v-model="coinForm.reason"
                 class="textarea"
                 rows="3"
                 maxlength="200"
-                :placeholder="coinModal === 'freeze' ? '选填，如：违规使用' : '选填，如：核实无误'"
+                required
+                :placeholder="coinModal === 'freeze' ? '请填写冻结原因，如：违规使用' : '请填写解冻原因，如：核实无误'"
               />
             </div>
             <p v-if="coinError" class="error">{{ coinError }}</p>
             <p v-if="coinSuccess" class="success">{{ coinSuccess }}</p>
             <div class="modalFooter">
               <button type="button" class="btnSecondary" @click="closeCoinModal">取消</button>
-              <button type="submit" class="btnPrimary" :disabled="coinSubmitting">
+              <button type="submit" class="btnPrimary" :disabled="coinSubmitting || !coinForm.reason.trim()">
                 {{ coinSubmitting ? '提交中...' : '确认' }}
               </button>
             </div>
@@ -858,6 +859,11 @@ function closeCoinModal() {
 async function submitCoinModal() {
   const user = coinTargetUser.value
   if (!user || !coinModal.value) return
+  const reason = coinForm.value.reason.trim()
+  if (!reason) {
+    coinError.value = coinModal.value === 'freeze' ? '请填写冻结原因' : '请填写解冻原因'
+    return
+  }
 
   coinSubmitting.value = true
   coinError.value = ''
@@ -872,12 +878,12 @@ async function submitCoinModal() {
       }
       await residentApi.freezeCoin(user.id, {
         amount,
-        reason: coinForm.value.reason.trim() || undefined
+        reason
       })
       coinSuccess.value = '物业币已冻结'
     } else {
       await residentApi.unfreezeCoin(user.id, {
-        reason: coinForm.value.reason.trim() || undefined
+        reason
       })
       coinSuccess.value = '物业币已解冻'
     }

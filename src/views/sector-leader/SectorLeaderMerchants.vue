@@ -47,7 +47,8 @@
               <td>{{ getEnumLabel(MERCHANT_LEVEL_LABEL, item.merchantLevel) }}</td>
               <td>{{ item.rankOrder ?? '—' }}</td>
               <td>{{ getEnumLabel(MERCHANT_STATUS_LABEL, item.status) }}</td>
-              <td>
+              <td class="actions">
+                <button class="btnLink" @click="openDistance(item)">小区距离</button>
                 <button
                   class="btnDanger"
                   :disabled="item.status === MERCHANT_STATUS.KICKED || kickingId === item.id"
@@ -70,6 +71,7 @@
               <span>等级：{{ getEnumLabel(MERCHANT_LEVEL_LABEL, item.merchantLevel) }}</span>
               <span>排名：{{ item.rankOrder ?? '—' }}</span>
             </div>
+            <button class="btnLink" @click="openDistance(item)">小区距离</button>
             <button class="btnDanger" :disabled="item.status === MERCHANT_STATUS.KICKED || kickingId === item.id" @click="openKick(item)">
               踢出商家
             </button>
@@ -112,6 +114,7 @@
           <thead>
             <tr>
               <th>商家名称</th>
+              <th>申请身份</th>
               <th>分类</th>
               <th>联系电话</th>
               <th>申请时间</th>
@@ -121,6 +124,7 @@
           <tbody>
             <tr v-for="item in pendingMerchants" :key="item.id">
               <td>{{ item.name }}</td>
+              <td>{{ applyRoleLabel(item) }}</td>
               <td>{{ item.category || '—' }}</td>
               <td>{{ item.contactPhone || '—' }}</td>
               <td>{{ item.createdAt || '—' }}</td>
@@ -148,7 +152,7 @@
             <button class="modalClose" @click="closeKick">&times;</button>
           </div>
           <div class="modalBody">
-            <p class="hint">确认踢出「{{ kickTarget.name }}」？踢出后商品将自动下架。</p>
+            <p class="hint">确认踢出「{{ kickTarget.name }}」？踢出后商品将自动下架，对方可重新申请入驻。</p>
             <div class="field">
               <label class="label">踢出原因</label>
               <textarea v-model="kickReason" class="textarea" rows="3" placeholder="请填写踢出原因" />
@@ -263,12 +267,19 @@
       </div>
 
     </Teleport>
+    <MerchantDistanceModal
+      :open="distanceOpen"
+      :merchant-id="distanceMerchantId"
+      :merchant-name="distanceMerchantName"
+      @close="closeDistance"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import ResidentSearchSelect from '../../components/ResidentSearchSelect.vue'
+import MerchantDistanceModal from '../../components/MerchantDistanceModal.vue'
 import { merchantApi, sectorLeaderPortalApiExt } from '../../api/services'
 import type { IndividualLeaderItem, MerchantItem } from '../../api/types'
 import { ApiError, formatApiError } from '../../api/request'
@@ -280,6 +291,8 @@ import {
   MERCHANT_STATUS,
   MERCHANT_STATUS_LABEL,
   RESIDENT_STATUS,
+  ROLE_LABEL,
+  USER_ROLE,
   SECTOR_TYPE,
   SECTOR_TYPE_LABEL
 } from '../../constants/enums'
@@ -301,6 +314,9 @@ const page = ref(1)
 const totalPages = ref(1)
 
 const kickTarget = ref<MerchantItem | null>(null)
+const distanceOpen = ref(false)
+const distanceMerchantId = ref('')
+const distanceMerchantName = ref('')
 const kickReason = ref('')
 const kickError = ref('')
 const kicking = ref(false)
@@ -341,6 +357,11 @@ const canManageIndividualLeaders = computed(
 function formatRate(value?: number) {
   if (value == null) return '—'
   return `${(Number(value) * 100).toFixed(0)}%`
+}
+
+function applyRoleLabel(item?: MerchantItem | null) {
+  const role = item?.applyRole || item?.intendedRole || USER_ROLE.MERCHANT
+  return getEnumLabel(ROLE_LABEL, role, role)
 }
 
 async function ensurePortal() {
@@ -412,6 +433,18 @@ function reload() {
 
 function changePage(next: number) {
   load(next)
+}
+
+function openDistance(item: MerchantItem) {
+  distanceMerchantId.value = item.id
+  distanceMerchantName.value = item.name
+  distanceOpen.value = true
+}
+
+function closeDistance() {
+  distanceOpen.value = false
+  distanceMerchantId.value = ''
+  distanceMerchantName.value = ''
 }
 
 function openKick(item: MerchantItem) {

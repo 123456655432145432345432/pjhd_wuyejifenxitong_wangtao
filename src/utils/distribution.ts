@@ -110,6 +110,10 @@ export function normalizeDistributionRecord(raw: unknown): DistributionRecordIte
   // 仅保留旧字段兼容展示；正式配送员收入必须读取 courierEarning
   const courierShare = pickNumber(source, ['courierShare', 'courierAmount', 'courier_share', 'courier_amount'])
   const courierEarning = pickNumber(source, ['courierEarning', 'courier_earning'])
+  const merchantDeliveryFeeShare = pickNumber(source, [
+    'merchantDeliveryFeeShare',
+    'merchant_delivery_fee_share'
+  ])
 
   return {
     ...(source as DistributionRecordItem),
@@ -156,6 +160,10 @@ export function normalizeDistributionRecord(raw: unknown): DistributionRecordIte
     courierShare,
     courierAmount: courierShare,
     courierEarning,
+    merchantDeliveryFeeShare,
+    fulfillmentMode: pickString(source, ['fulfillmentMode', 'fulfillment_mode']),
+    fulfillmentModeLabel: pickString(source, ['fulfillmentModeLabel', 'fulfillment_mode_label']),
+    carrierType: pickString(source, ['carrierType', 'carrier_type']),
     coordinatorShare,
     coordinatorAmount: coordinatorShare,
     sectorLeaderShare,

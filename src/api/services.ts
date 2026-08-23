@@ -1,7 +1,9 @@
-import { buildQuery, request } from './request'
+import { ApiError, buildQuery, request } from './request'
+import { normalizeBuildingChangeApplication } from './mappers'
 import { getAccessToken } from '../stores/tokenStore'
 import { normalizePageResult } from '../utils/pageResult'
 import { normalizeDistributionRecords } from '../utils/distribution'
+import { normalizeCbkAccount, normalizeCbkReconcileItem } from '../utils/cbk'
 import { MERCHANT_AUDIT_STATUS, ORDER_STATUS } from '../constants/enums'
 import type {
   AgeBracketItem,
@@ -48,7 +50,10 @@ import type {
   MerchantItem,
   MerchantKickPayload,
   MerchantKickResult,
+  MerchantCommunityDistanceItem,
+  MerchantCommunityDistancesPayload,
   MerchantMessageServicePayload,
+  MerchantDeliveryFeesPayload,
   MerchantServiceScope,
   MerchantServiceScopeUpdatePayload,
   MerchantUpdatePayload,
@@ -61,6 +66,9 @@ import type {
   OperationLogItem,
   OrderConfirmResult,
   OrderItem,
+  OrderVerifyPayload,
+  OrderVerifyResult,
+  AdminOrderConfig,
   PageResult,
   PermissionChangeLog,
   PermissionItemDto,
@@ -85,9 +93,12 @@ import type {
   ResidentCreatePayload,
   ResidentUpdatePayload,
   ResidentStatusPayload,
+  BuildingChangeApplication,
+  TransferToPropertyItem,
   RoleAccountCreatePayload,
   RoleAccountCreateResult,
   RoleAccountDeleteResult,
+  RoleAccountDisableResult,
   FamilyMemberItem,
   ResidentMerchantApplicationItem,
   ResidentMerchantDepositItem,
@@ -113,6 +124,7 @@ import type {
   DistributionStats,
   PropertySettlementBalance,
   MerchantPointGrantPayload,
+  MerchantPointQuote,
   MerchantPointPurchaseItem,
   MerchantPointPurchasePayload,
   MerchantWithdrawalItem,
@@ -156,6 +168,7 @@ import type {
   AdminCoinWithdrawalAuditPayload,
   PropertyContactConfig,
   PropertyContactPayload,
+  CommunityCommentItem,
   CommunityPostItem,
   ContentReportItem,
   ContentReportHandlePayload,
@@ -182,6 +195,11 @@ import type {
   IndividualLeaderItem,
   IndividualLeaderCreatePayload,
   AdminIndividualLeaderCreatePayload,
+  IndividualLeaderApplicationItem,
+  IndividualLeaderApplicationAuditPayload,
+  OrderRefundItem,
+  OrderRefundAuditPayload,
+  OrderRefundAuditResult,
   SectorLeaderMerchantAuditPayload,
   SectorLeaderMerchantCreatePayload,
   MerchantDistributionPayload,
@@ -213,6 +231,11 @@ import type {
   ArrearsReport,
   RoomStructure,
   AvailableRoomsResult,
+  CommunityRoomItem,
+  CommunityRoomListResult,
+  CommunityRoomCreatePayload,
+  CommunityRoomBatchCreatePayload,
+  CommunityRoomUpdatePayload,
   PointsTrend,
   PointsConsumptionStructure,
   PointPoolRecordItem,
@@ -227,7 +250,9 @@ import type {
   MerchantKeywordBatchPayload,
   MerchantKeywordUpdatePayload,
   MerchantPostItem,
-  MerchantPostPayload
+  MerchantPostPayload,
+  CbkAccountItem,
+  CbkAccountUpsertPayload
 } from './types'
 
 
@@ -295,6 +320,8 @@ export const residentApi = {
     buildingIsNull?: boolean
     status?: string
     role?: string
+    /** 按关联店铺名搜索；不依赖 resident.role，被踢出后仍可按店名找回账号 */
+    merchantName?: string
     userType?: string
     propertyCompanyId?: string
     sort?: string
@@ -359,6 +386,137 @@ export const residentApi = {
 
 }
 
+/** 住户转给物业流水对账（§42.2） */
+export const transferToPropertyAdminApi = {
+  points(params: {
+    page?: number
+    pageSize?: number
+    propertyCompanyId?: string
+    residentId?: string
+  } = {}) {
+    return request<PageResult<TransferToPropertyItem>>(
+      `/admin/transfer-to-property/points${buildQuery(params)}`
+    )
+  },
+
+  coins(params: {
+    page?: number
+    pageSize?: number
+    propertyCompanyId?: string
+    residentId?: string
+  } = {}) {
+    return request<PageResult<TransferToPropertyItem>>(
+      `/admin/transfer-to-property/coins${buildQuery(params)}`
+    )
+  }
+}
+
+/** 物业端住户楼栋变更审批（§2.6.3） */
+export const buildingChangeAdminApi = {
+  async list(params: {
+    page?: number
+    pageSize?: number
+    status?: string
+    propertyCompanyId?: string
+  } = {}) {
+    const result = await request<PageResult<BuildingChangeApplication>>(
+      `/admin/building-changes${buildQuery(params)}`
+    )
+    return {
+      ...result,
+      list: (result.list || []).map(normalizeBuildingChangeApplication)
+    }
+  },
+
+  approve(id: string) {
+    return request<BuildingChangeApplication>(`/admin/building-changes/${id}/approve`, {
+      method: 'POST'
+    })
+  },
+
+  reject(id: string, reason: string) {
+    return request<BuildingChangeApplication>(
+      `/admin/building-changes/${id}/reject${buildQuery({ reason })}`,
+      { method: 'POST' }
+    )
+  }
+}
+
+function pickRefundNumber(source: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = source[key]
+    if (typeof value === 'number' && Number.isFinite(value)) return value
+    if (typeof value === 'string' && value.trim()) {
+      const parsed = Number(value)
+      if (Number.isFinite(parsed)) return parsed
+    }
+  }
+  return undefined
+}
+
+function flattenRefundSource(raw: unknown): Record<string, unknown> {
+  const source = raw && typeof raw === 'object' ? { ...(raw as Record<string, unknown>) } : {}
+  for (const key of ['order', 'data', 'refund']) {
+    const nested = source[key]
+    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+      Object.assign(source, nested as Record<string, unknown>, source)
+    }
+  }
+  return source
+}
+
+function normalizeOrderRefundItem(raw: unknown): OrderRefundItem {
+  const source = flattenRefundSource(raw)
+  return {
+    orderId: pickPrefixedId(source, 'ord_', ['orderId', 'order_id', 'id']) || '',
+    orderNo: pickApplicationField(source, ['orderNo', 'order_no']),
+    orderStatus: pickApplicationField(source, [
+      'orderStatus',
+      'order_status',
+      'refundStatus',
+      'refund_status',
+      'status'
+    ]),
+    cancelReason: pickApplicationField(source, ['cancelReason', 'cancel_reason', 'reason', 'refundReason', 'refund_reason']),
+    rejectReason: pickApplicationField(source, ['rejectReason', 'reject_reason']),
+    residentName: pickApplicationField(source, ['residentName', 'resident_name', 'receiverName', 'receiver_name']),
+    residentPhone: pickApplicationField(source, ['residentPhone', 'resident_phone', 'phone', 'contactPhone', 'receiverPhone']),
+    receiverName: pickApplicationField(source, ['receiverName', 'receiver_name']),
+    merchantName: pickApplicationField(source, ['merchantName', 'merchant_name']),
+    totalAmount: pickRefundNumber(source, ['totalAmount', 'total_amount', 'payAmount', 'amount']),
+    createdAt: pickApplicationField(source, ['createdAt', 'created_at']),
+    requestedAt: pickApplicationField(source, ['requestedAt', 'requested_at', 'refundRequestedAt']),
+    auditedAt: pickApplicationField(source, ['auditedAt', 'audited_at'])
+  }
+}
+
+/** 管理端订单退货审核（v6.4 §60.11.1） */
+export const adminOrderRefundApi = {
+  async list(params: {
+    page?: number
+    pageSize?: number
+    status?: string
+    keyword?: string
+    propertyCompanyId?: string
+  } = {}) {
+    const raw = await request<PageResult<OrderRefundItem> | unknown>(
+      `/admin/orders/refunds${buildQuery(params)}`
+    )
+    const result = normalizePageResult<OrderRefundItem>(raw, params.page ?? 1, params.pageSize ?? 20)
+    return {
+      ...result,
+      list: result.list.map(normalizeOrderRefundItem)
+    }
+  },
+
+  audit(orderId: string, payload: OrderRefundAuditPayload) {
+    return request<OrderRefundAuditResult>(`/admin/orders/refunds/${orderId}/audit`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  }
+}
+
 /**
  * §31.2 业务角色账号直建 / 直删
  * Roles: property_admin、platform_admin
@@ -372,10 +530,25 @@ export const roleAccountApi = {
     })
   },
 
-  /** 硬删除账号（含关联店铺）；id 为 res_ 前缀 */
+  /** 硬删除账号（含关联店铺）；id 为 res_ 前缀。有业务数据时返回 90120，应改用 disable / softDelete */
   remove(id: string) {
     return request<RoleAccountDeleteResult>(`/admin/role-accounts/${id}`, {
       method: 'DELETE'
+    })
+  },
+
+  /** §31.2.3 禁用：账号不可登录，名下 active 店铺改为 stopped */
+  disable(id: string, reason: string) {
+    return request<RoleAccountDisableResult>(`/admin/role-accounts/${id}/disable`, {
+      method: 'POST',
+      body: JSON.stringify({ reason })
+    })
+  },
+
+  /** §31.2.4 软删除：账号从列表隐藏，名下 active 店铺改为 stopped，不释放手机号 */
+  softDelete(id: string) {
+    return request<RoleAccountDeleteResult>(`/admin/role-accounts/${id}/soft-delete`, {
+      method: 'POST'
     })
   }
 }
@@ -383,6 +556,13 @@ export const roleAccountApi = {
 export const familyApi = {
   listMembers(familyId: string) {
     return request<{ list: FamilyMemberItem[] }>(`/families/${familyId}/members`)
+  },
+
+  addMember(familyId: string, payload: { phone: string; name?: string; relation: string }) {
+    return request<{ memberId?: string; familyId?: string; name?: string; phone?: string; relation?: string }>(
+      `/families/${familyId}/members`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    )
   }
 }
 
@@ -400,7 +580,23 @@ export const coinFreezeRecordApi = {
   }
 }
 
-
+function unwrapCommunityDistances(
+  data:
+    | MerchantCommunityDistanceItem[]
+    | { list?: MerchantCommunityDistanceItem[]; items?: MerchantCommunityDistanceItem[] }
+    | null
+    | undefined
+) {
+  const raw = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : Array.isArray(data?.list) ? data.list : []
+  return raw.map((item) => {
+    const row = item as MerchantCommunityDistanceItem & { id?: string; name?: string; community_id?: string; community_name?: string; distance_km?: number }
+    return {
+      communityId: row.communityId || row.community_id || row.id || '',
+      communityName: row.communityName || row.community_name || row.name,
+      distanceKm: row.distanceKm ?? row.distance_km ?? null
+    }
+  }).filter((item) => item.communityId)
+}
 
 export const merchantApi = {
 
@@ -411,12 +607,31 @@ export const merchantApi = {
     category?: string
     merchantLevel?: string
     auditStatus?: string
+    applyRole?: string
+    /** 管理端营业状态：active / kicked / quit / inactive；不传返回全部 */
+    status?: string
     propertyCompanyId?: string
     sort?: string
   } = {}) {
 
     return request<PageResult<MerchantItem>>(`/merchants${buildQuery(params)}`)
 
+  },
+
+  /** POST /admin/platform-merchants/batch-config — 批量/单条改挂接兑换比等 */
+  batchConfig(payload: {
+    merchantIds: string[]
+    config: {
+      commissionRate?: number
+      pointExchangeRate?: number
+      coinRebateRate?: number
+      coinRebateEnabled?: boolean
+    }
+  }) {
+    return request<{ updatedCount?: number; failedCount?: number }>(
+      '/admin/platform-merchants/batch-config',
+      { method: 'POST', body: JSON.stringify(payload) }
+    )
   },
 
   get(id: string, propertyCompanyId?: string) {
@@ -459,12 +674,28 @@ export const merchantApi = {
     })
   },
 
-  listPending(params: Record<string, string | number | undefined> = {}) {
-
-    return request<PageResult<MerchantItem>>(
-      `/merchants${buildQuery({ auditStatus: MERCHANT_AUDIT_STATUS.PENDING, ...params })}`
+  async listPending(params: Record<string, string | number | undefined> = {}) {
+    const query = { page: 1, pageSize: 50, sort: '-createdAt', ...params }
+    const pendingAudit = await request<PageResult<MerchantItem>>(
+      `/merchants${buildQuery({ ...query, auditStatus: MERCHANT_AUDIT_STATUS.PENDING })}`
     )
-
+    let pendingLegacy: MerchantItem[] = []
+    try {
+      const extra = await request<PageResult<MerchantItem>>(
+        `/merchants${buildQuery({ ...query, auditStatus: 'pending' })}`
+      )
+      pendingLegacy = extra.list || []
+    } catch {
+      pendingLegacy = []
+    }
+    const merged = new Map<string, MerchantItem>()
+    for (const item of [...(pendingAudit.list || []), ...pendingLegacy]) {
+      merged.set(item.id, item)
+    }
+    return {
+      list: [...merged.values()],
+      pagination: pendingAudit.pagination
+    }
   },
 
   audit(id: string, payload: MerchantAuditPayload) {
@@ -503,6 +734,24 @@ export const merchantApi = {
         consumptionAmount: params.consumptionAmount
       })}`
     )
+  },
+
+  /** GET /admin/merchants/{id}/community-distances — 商家×小区距离（§42.1） */
+  async listCommunityDistances(merchantId: string) {
+    const data = await request<
+      MerchantCommunityDistanceItem[] | { list?: MerchantCommunityDistanceItem[]; items?: MerchantCommunityDistanceItem[] }
+    >(`/admin/merchants/${merchantId}/community-distances`)
+    return unwrapCommunityDistances(data)
+  },
+
+  async updateCommunityDistances(merchantId: string, payload: MerchantCommunityDistancesPayload) {
+    const data = await request<
+      MerchantCommunityDistanceItem[] | { list?: MerchantCommunityDistanceItem[]; items?: MerchantCommunityDistanceItem[] }
+    >(`/admin/merchants/${merchantId}/community-distances`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
+    return unwrapCommunityDistances(data)
   }
 
 }
@@ -720,6 +969,19 @@ export const propertyCompanyApi = {
 }
 
 
+export const adminOrderConfigApi = {
+  /** GET/PUT /admin/order-config。v6.5 起核实入口由商品分类=团购决定，不再提交 merchantVerificationEnabled */
+  get() {
+    return request<AdminOrderConfig>('/admin/order-config')
+  },
+
+  update(payload: AdminOrderConfig) {
+    return request<AdminOrderConfig>('/admin/order-config', {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
+  }
+}
 
 export const configApi = {
 
@@ -823,6 +1085,26 @@ export type { DeliveryOrderItem }
  * 配送入账：POST /deliveries/{id}/complete 后立刻刷新 GET /courier-managers/my（role=courier 即可）。
  */
 export const ordersApi = {
+  get(id: string) {
+    return request<OrderItem>(`/orders/${id}`)
+  },
+
+  /** 管理员强制改履约方式 POST /admin/orders/{id}/override-fulfillment（§68.4） */
+  overrideFulfillment(id: string, payload: { mode: string; remark?: string }) {
+    return request<OrderItem>(`/admin/orders/${id}/override-fulfillment`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+
+  /** 商家核实纯团购单 POST /orders/{id}/verify（v6.5：整单商品 category=团购） */
+  verify(id: string, payload: OrderVerifyPayload) {
+    return request<OrderVerifyResult>(`/orders/${id}/verify`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+
   /** 居民确认收货 → completed（商家侧入账） */
   confirm(id: string) {
     return request<OrderConfirmResult>(`/orders/${id}/confirm`, { method: 'POST' })
@@ -849,6 +1131,13 @@ export const merchantPortalApi = {
     })
   },
 
+  updateDeliveryFees(payload: MerchantDeliveryFeesPayload) {
+    return request<MyMerchantDetail>('/merchants/my/delivery-fees', {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
+  },
+
   orders(params: {
     page?: number
     pageSize?: number
@@ -862,6 +1151,33 @@ export const merchantPortalApi = {
 
   getOrder(id: string) {
     return request<OrderItem>(`/orders/${id}`)
+  },
+
+  verifyOrder(id: string, payload: OrderVerifyPayload) {
+    return ordersApi.verify(id, payload)
+  },
+
+  /** 商家选择履约方式（§68.2）：merchant_self | courier_hall */
+  chooseFulfillment(id: string, mode: string) {
+    return request<{
+      orderId?: string
+      deliveryId?: string
+      status?: string
+      statusCode?: string
+      statusLabel?: string
+      sentAt?: string
+    }>(`/orders/${id}/choose-fulfillment`, {
+      method: 'POST',
+      body: JSON.stringify({ mode })
+    })
+  },
+
+  /** 商家确认自配送达（§68.3） */
+  confirmMerchantDelivery(deliveryId: string, payload: DeliveryCompletePayload = {}) {
+    return request<CourierDeliveryItem>(`/deliveries/${deliveryId}/merchant-confirm`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
   },
 
   updateOrderStatus(id: string, orderStatus: string) {
@@ -930,6 +1246,12 @@ export const merchantPortalApi = {
       method: 'POST',
       body: JSON.stringify(payload)
     })
+  },
+
+  pointQuote(payAmount = 100) {
+    return request<MerchantPointQuote>(
+      `/merchant/points/quote${buildQuery({ payAmount })}`
+    )
   },
 
   pointPurchases(params: {
@@ -1149,7 +1471,7 @@ export const propertySettlementApi = {
 
   async withdrawals(
     propertyCompanyId: string,
-    params: { page?: number; pageSize?: number; status?: string } = {}
+    params: { page?: number; pageSize?: number; status?: string; settlementChannel?: string } = {}
   ) {
     const raw = await request<unknown>(
       `/admin/property-companies/${propertyCompanyId}/settlement-withdrawals${buildQuery(params)}`
@@ -1434,6 +1756,8 @@ export const adminMerchantWithdrawalApi = {
     endDate?: string
     propertyCompanyId?: string
     sort?: string
+    /** 仅审历史内部钱包；新单分账完结单不应出现 */
+    settlementChannel?: string
   } = {}) {
     return request<PageResult<AdminMerchantWithdrawalItem>>(
       `/admin/merchant-withdrawals${buildQuery(params)}`
@@ -1446,7 +1770,7 @@ export const adminMerchantWithdrawalApi = {
     )
   },
   /** §34.5 审批看板汇总 */
-  summary(params: { propertyCompanyId?: string } = {}) {
+  summary(params: { propertyCompanyId?: string; settlementChannel?: string } = {}) {
     return request<MerchantWithdrawalSummary>(
       `/admin/merchant-withdrawals/summary${buildQuery(params)}`
     )
@@ -1464,13 +1788,14 @@ export const adminRoleWithdrawalApi = {
     startDate?: string
     endDate?: string
     propertyCompanyId?: string
+    settlementChannel?: string
   } = {}) {
     return request<PageResult<AdminRoleWithdrawalItem>>(
       `/admin/role-withdrawals${buildQuery(params)}`
     )
   },
 
-  summary(params: { propertyCompanyId?: string } = {}) {
+  summary(params: { propertyCompanyId?: string; settlementChannel?: string } = {}) {
     return request<RoleWithdrawalSummary>(
       `/admin/role-withdrawals/summary${buildQuery(params)}`
     )
@@ -1703,6 +2028,7 @@ export const residentMerchantAdminApi = {
     pageSize?: number
     status?: string
     keyword?: string
+    propertyCompanyId?: string
   } = {}) {
     return request<PageResult<ResidentMerchantApplicationItem>>(
       `/admin/resident-merchant-applications${buildQuery(params)}`
@@ -1904,13 +2230,13 @@ export const platformShareApi = {
     )
   },
 
-  /** 平台收益对账快照（只读；CBK 真分账无提现） */
+  /** 平台收益对账快照（只读；微信支付分账无内部提现） */
   earningsBalance(params: { propertyCompanyId?: string } = {}) {
     return request<PlatformEarningsBalance>(
       `/admin/platform-earnings/balance${buildQuery(params)}`
     )
   }
-  // CBK 真分账下平台侧无提现：勿再封装 /admin/platform-earnings/withdrawals
+  // 微信支付分账下平台侧无提现：勿再封装 /admin/platform-earnings/withdrawals
 }
 
 /** 快递负责人管理 */
@@ -2011,13 +2337,171 @@ export const deliveryPriceRangeApi = {
   }
 }
 
-/** 管理端个体负责人 */
+function isMissingEndpointError(e: unknown) {
+  if (!(e instanceof ApiError)) return false
+  if (e.code === 404) return true
+  const msg = e.message || ''
+  return /NoResourceFoundException|NoHandlerFoundException|not found|找不到|ID格式不正确/i.test(msg)
+}
+
+function pickApplicationField(source: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = source[key]
+    if (value === undefined || value === null || value === '') continue
+    return String(value)
+  }
+  return undefined
+}
+
+function pickPrefixedId(source: Record<string, unknown>, prefix: string, keys: string[]) {
+  const values = keys
+    .map((key) => pickApplicationField(source, [key]))
+    .filter((value): value is string => Boolean(value))
+  return values.find((value) => value.toLowerCase().startsWith(prefix)) || values[0]
+}
+
+function normalizeIndividualLeaderApplication(raw: unknown): IndividualLeaderApplicationItem {
+  const source = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+  return {
+    id: pickPrefixedId(source, 'ila_', ['applicationId', 'application_id', 'id']) || '',
+    residentId: pickApplicationField(source, ['residentId', 'resident_id']),
+    residentName: pickApplicationField(source, ['residentName', 'resident_name', 'name']),
+    residentPhone: pickApplicationField(source, ['residentPhone', 'resident_phone', 'phone']),
+    phone: pickApplicationField(source, ['phone', 'residentPhone', 'resident_phone']),
+    sector: pickApplicationField(source, ['sector']),
+    sectorName: pickApplicationField(source, ['sectorName', 'sector_name']),
+    remark: pickApplicationField(source, ['remark', 'intro', 'description']),
+    message: pickApplicationField(source, ['message']),
+    auditStatus: pickApplicationField(source, ['auditStatus', 'audit_status', 'status']),
+    status: pickApplicationField(source, ['auditStatus', 'audit_status', 'status']),
+    rejectReason: pickApplicationField(source, ['rejectReason', 'reject_reason', 'reason']),
+    propertyCompanyId: pickApplicationField(source, ['propertyCompanyId', 'property_company_id']),
+    propertyCompanyName: pickApplicationField(source, ['propertyCompanyName', 'property_company_name']),
+    createdAt: pickApplicationField(source, ['createdAt', 'created_at', 'appliedAt', 'applied_at']),
+    auditedAt: pickApplicationField(source, ['auditedAt', 'audited_at'])
+  }
+}
+
+/** 管理端个体负责人（一级代理）§37 */
 export const adminIndividualLeaderApi = {
+  list(params: {
+    page?: number
+    pageSize?: number
+    keyword?: string
+    status?: string
+    sort?: string
+  } = {}) {
+    return request<PageResult<IndividualLeaderItem>>(`/admin/individual-leaders${buildQuery(params)}`)
+  },
+
   create(payload: AdminIndividualLeaderCreatePayload) {
     return request<IndividualLeaderItem>('/admin/individual-leaders', {
       method: 'POST',
       body: JSON.stringify(payload)
     })
+  },
+
+  update(id: string, payload: { sectorId?: string; description?: string; status?: string }) {
+    return request<IndividualLeaderItem>(`/admin/individual-leaders/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
+  },
+
+  /** 撤销：软删除为 inactive；reason 可选，不传不再报 99001 */
+  remove(id: string, reason?: string) {
+    return request<IndividualLeaderItem>(
+      `/admin/individual-leaders/${id}${buildQuery({ reason })}`,
+      { method: 'DELETE' }
+    )
+  },
+
+  async listApplications(params: {
+    page?: number
+    pageSize?: number
+    keyword?: string
+    auditStatus?: string
+    sector?: string
+    propertyCompanyId?: string
+  } = {}) {
+    const query = buildQuery({
+      page: params.page,
+      pageSize: params.pageSize,
+      keyword: params.keyword,
+      auditStatus: params.auditStatus,
+      sector: params.sector,
+      propertyCompanyId: params.propertyCompanyId
+    })
+    const paths = [
+      `/admin/individual-leaders/applications${query}`,
+      `/admin/individual-leader-applications${query}`
+    ]
+    let lastError: unknown
+    for (const path of paths) {
+      try {
+        const raw = await request<PageResult<IndividualLeaderApplicationItem> | unknown>(path)
+        const result = normalizePageResult<IndividualLeaderApplicationItem>(
+          raw,
+          params.page ?? 1,
+          params.pageSize ?? 20
+        )
+        return {
+          ...result,
+          list: result.list.map(normalizeIndividualLeaderApplication)
+        }
+      } catch (e) {
+        lastError = e
+        if (isMissingEndpointError(e)) continue
+        throw e
+      }
+    }
+    throw lastError
+  },
+
+  async auditApplication(id: string, payload: IndividualLeaderApplicationAuditPayload) {
+    const applicationId = id.trim()
+    const body = JSON.stringify({
+      auditStatus: payload.auditResult,
+      auditResult: payload.auditResult,
+      rejectReason: payload.rejectReason,
+      remark: payload.remark,
+      sectorLeaderId: payload.sectorLeaderId,
+      sector: payload.sector,
+      name: payload.name,
+      commissionRate: payload.commissionRate
+    })
+    const paths = [
+      `/admin/individual-leaders/applications/${applicationId}/audit`,
+      `/admin/individual-leader-applications/${applicationId}/audit`
+    ]
+    let lastError: unknown
+    for (const path of paths) {
+      try {
+        return await request<IndividualLeaderApplicationItem>(path, {
+          method: 'POST',
+          body
+        })
+      } catch (e) {
+        lastError = e
+        if (isMissingEndpointError(e)) continue
+        throw e
+      }
+    }
+    throw lastError
+  }
+}
+
+export const merchantCategoryApi = {
+  async list() {
+    try {
+      const data = await request<{ list?: Array<{ name?: string }> } | Array<{ name?: string }>>(
+        '/merchant-categories'
+      )
+      const rows = Array.isArray(data) ? data : data?.list || []
+      return rows.map((item) => item.name).filter((name): name is string => Boolean(name))
+    } catch {
+      return []
+    }
   }
 }
 
@@ -2429,6 +2913,26 @@ export const communityForumAdminApi = {
   deletePost(id: string) {
     return request<null>(`/admin/community/posts/${id}`, { method: 'DELETE' })
   },
+  /** 该帖评论列表：优先管理端路径，未发布时回退居民端 §C.7 */
+  async listComments(
+    postId: string,
+    params: { page?: number; pageSize?: number } = {}
+  ) {
+    const query = buildQuery(params)
+    const page = params.page ?? 1
+    const pageSize = params.pageSize ?? 50
+    try {
+      const raw = await request<unknown>(`/admin/community/posts/${postId}/comments${query}`)
+      return normalizePageResult<CommunityCommentItem>(raw, page, pageSize)
+    } catch (e) {
+      const missing =
+        e instanceof ApiError &&
+        (e.code === 404 || /NoResourceFoundException|no static resource|Not Found/i.test(e.message || ''))
+      if (!missing) throw e
+      const raw = await request<unknown>(`/community/posts/${postId}/comments${query}`)
+      return normalizePageResult<CommunityCommentItem>(raw, page, pageSize)
+    }
+  },
   deleteComment(id: string) {
     return request<null>(`/admin/community/comments/${id}`, { method: 'DELETE' })
   },
@@ -2542,11 +3046,24 @@ export const arrearsReportApi = {
     })
   },
 
-  /** POST /admin/property-fees/arrears-reminder — v5.3 统一催缴通知 */
+  /** POST /admin/property-fees/arrears-reminder — v6.5 统一催缴通知 */
   sendReminder(payload: ArrearsReminderPayload) {
     return request<ArrearsReminderResult>('/admin/property-fees/arrears-reminder', {
       method: 'POST',
-      body: JSON.stringify(payload)
+      body: JSON.stringify({
+        propertyCompanyId: payload.propertyCompanyId,
+        communityId: payload.communityId,
+        building: payload.building,
+        feeType: payload.feeType,
+        templateCode: payload.templateCode,
+        previewToken: payload.previewToken,
+        preview_token: payload.previewToken,
+        channels: payload.channels,
+        requestId: payload.requestId,
+        request_id: payload.requestId,
+        title: payload.title,
+        content: payload.content
+      })
     })
   }
 }
@@ -2586,6 +3103,43 @@ export const communityRoomApi = {
     return request<AvailableRoomsResult>(
       `/communities/${communityId}/available-rooms${buildQuery(params)}`
     )
+  },
+  async list(communityId: string, params: { building?: string; unit?: string; status?: string } = {}) {
+    const data = await request<
+      CommunityRoomListResult | CommunityRoomItem[] | { list?: CommunityRoomItem[] }
+    >(`/communities/${communityId}/rooms${buildQuery(params)}`)
+    if (Array.isArray(data)) {
+      return { communityId, total: data.length, rooms: data } as CommunityRoomListResult
+    }
+    const rooms = data.rooms || data.list || []
+    return {
+      communityId: data.communityId || communityId,
+      total: data.total ?? rooms.length,
+      rooms
+    }
+  },
+  create(communityId: string, payload: CommunityRoomCreatePayload) {
+    return request<CommunityRoomItem>(`/communities/${communityId}/rooms`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+  createBatch(communityId: string, payload: CommunityRoomBatchCreatePayload) {
+    return request<CommunityRoomListResult | CommunityRoomItem[]>(
+      `/communities/${communityId}/rooms/batch`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    )
+  },
+  update(communityId: string, roomId: string, payload: CommunityRoomUpdatePayload) {
+    return request<CommunityRoomItem>(`/communities/${communityId}/rooms/${roomId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload)
+    })
+  },
+  remove(communityId: string, roomId: string) {
+    return request<unknown>(`/communities/${communityId}/rooms/${roomId}`, {
+      method: 'DELETE'
+    })
   }
 }
 
@@ -2685,6 +3239,74 @@ export const merchantPostApi = {
   },
   remove(id: string) {
     return request<{ id?: string }>(`/merchant-posts/${id}`, { method: 'DELETE' })
+  }
+}
+
+/** 管理端微信收付通分账：收款账户 CRUD + 对账台（路径仍为 /admin/cbk） */
+export const adminCbkApi = {
+  listAccounts(params: {
+    ownerType?: string
+    ownerId?: string
+    verified?: boolean
+  } = {}) {
+    return request<unknown>(`/admin/cbk/accounts${buildQuery(params)}`).then((raw) => {
+      const page = normalizePageResult<unknown>(raw)
+      return page.list.map(normalizeCbkAccount)
+    })
+  },
+
+  getAccount(id: string) {
+    return request<CbkAccountItem>(`/admin/cbk/accounts/${id}`).then(normalizeCbkAccount)
+  },
+
+  upsertAccount(payload: CbkAccountUpsertPayload) {
+    return request<CbkAccountItem>('/admin/cbk/accounts', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }).then(normalizeCbkAccount)
+  },
+
+  updateAccount(id: string, payload: CbkAccountUpsertPayload) {
+    return request<CbkAccountItem>(`/admin/cbk/accounts/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    }).then(normalizeCbkAccount)
+  },
+
+  deleteAccount(id: string) {
+    return request<void>(`/admin/cbk/accounts/${id}`, { method: 'DELETE' })
+  },
+
+  batchUpsertAccounts(payload: CbkAccountUpsertPayload[]) {
+    return request<unknown>('/admin/cbk/accounts/batch', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }).then((raw) => {
+      const page = normalizePageResult<unknown>(raw)
+      if (page.list.length) return page.list.map(normalizeCbkAccount)
+      if (Array.isArray(raw)) return raw.map(normalizeCbkAccount)
+      return []
+    })
+  },
+
+  verifyAccount(id: string, verified: boolean) {
+    return request<CbkAccountItem>(
+      `/admin/cbk/accounts/${id}/verify${buildQuery({ verified })}`,
+      { method: 'POST' }
+    ).then(normalizeCbkAccount)
+  },
+
+  listFailed(params: { statuses?: string; limit?: number } = {}) {
+    return request<unknown>(`/admin/cbk/reconcile/failed${buildQuery(params)}`).then((raw) => {
+      const page = normalizePageResult<unknown>(raw)
+      return page.list.map(normalizeCbkReconcileItem)
+    })
+  },
+
+  retrySplit(splitNo: string) {
+    return request<boolean>(`/admin/cbk/reconcile/retry/${encodeURIComponent(splitNo)}`, {
+      method: 'POST'
+    })
   }
 }
 

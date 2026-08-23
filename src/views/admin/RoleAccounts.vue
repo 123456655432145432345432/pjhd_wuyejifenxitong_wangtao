@@ -4,7 +4,7 @@
       <div>
         <h1 class="title">业务角色账号</h1>
         <p class="desc">
-          直接创建 / 硬删除商家、活动组长、技工、配送员账号（§31.2）。物业管理员与平台管理员均可操作。
+          直接创建商家、活动组长、技工、配送员账号。有历史业务数据时请用禁用或软删除，不要反复硬删。搜索支持姓名、手机号和商家名。
         </p>
       </div>
       <button type="button" class="btnPrimary" @click="openCreate">
@@ -40,7 +40,7 @@
       <input
         v-model="keyword"
         class="input"
-        placeholder="搜索姓名/手机号"
+        placeholder="搜索姓名/手机号/商家名"
         @keyup.enter="reload"
       />
       <button type="button" class="btnPrimary" :disabled="loading" @click="reload">搜索</button>
@@ -79,6 +79,8 @@
               </td>
               <td><MobileCellText variant="nowrap">{{ item.createdAt || '—' }}</MobileCellText></td>
               <td class="actions">
+                <button type="button" class="linkBtn" @click="openDisable(item)">禁用</button>
+                <button type="button" class="linkBtn" @click="openSoftDelete(item)">软删除</button>
                 <button type="button" class="linkBtn danger" @click="openDelete(item)">彻底删除</button>
               </td>
             </tr>
@@ -156,7 +158,10 @@
             <template v-if="activeRole === USER_ROLE.MERCHANT">
               <div class="field">
                 <label class="label">品类</label>
-                <input v-model="form.category" class="input" maxlength="50" placeholder="如：外卖" />
+                <select v-model="form.category" class="input">
+                  <option value="">不指定</option>
+                  <option v-for="opt in MERCHANT_CATEGORY_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                </select>
               </div>
               <div class="field">
                 <label class="label">营业时间</label>
@@ -222,13 +227,65 @@
           <div class="modalBody">
             <p class="deleteHint">
               确定彻底删除「{{ deleteTarget?.name || deleteTarget?.phone }}」？此为
-              <strong>硬删除</strong>，将同步删除关联店铺，手机号释放后可重建。若已有订单/积分/提现等业务数据将无法删除。
+              <strong>硬删除</strong>，将同步删除关联店铺，手机号释放后可重建。若已有订单/积分/提现等业务数据将返回 90120，请改用禁用或软删除。
             </p>
             <p v-if="formError" class="error">{{ formError }}</p>
             <div class="modalFooter">
               <button type="button" class="btnSecondary" @click="closeDelete">取消</button>
-              <button type="button" class="btnDanger" :disabled="saving" @click="submitDelete">
+              <template v-if="hardDeleteBlocked">
+                <button type="button" class="btnSecondary" :disabled="saving" @click="switchToDisable">改为禁用</button>
+                <button type="button" class="btnPrimary" :disabled="saving" @click="submitSoftDeleteFromHard">
+                  {{ saving ? '处理中...' : '改为软删除' }}
+                </button>
+              </template>
+              <button v-else type="button" class="btnDanger" :disabled="saving" @click="submitDelete">
                 {{ saving ? '删除中...' : '确认删除' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="disableOpen" class="modalOverlay" @click.self="closeDisable">
+        <div class="modal" :class="{ mobileSheet: isMobile }">
+          <div class="modalHeader">
+            <h3 class="modalTitle">禁用账号</h3>
+            <button type="button" class="modalClose" @click="closeDisable">&times;</button>
+          </div>
+          <div class="modalBody">
+            <p class="deleteHint">
+              禁用「{{ actionTarget?.name || actionTarget?.phone }}」后不可登录、不可接单，名下营业中店铺将停用（stopped），历史业务数据保留。
+            </p>
+            <div class="field">
+              <label class="label">禁用原因 <em>*</em></label>
+              <textarea v-model="disableReason" class="textarea" rows="3" maxlength="200" placeholder="如：存在业务数据，停用账号" />
+            </div>
+            <p v-if="formError" class="error">{{ formError }}</p>
+            <div class="modalFooter">
+              <button type="button" class="btnSecondary" @click="closeDisable">取消</button>
+              <button type="button" class="btnPrimary" :disabled="saving" @click="submitDisable">
+                {{ saving ? '处理中...' : '确认禁用' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="softDeleteOpen" class="modalOverlay" @click.self="closeSoftDelete">
+        <div class="modal" :class="{ mobileSheet: isMobile }">
+          <div class="modalHeader">
+            <h3 class="modalTitle">软删除账号</h3>
+            <button type="button" class="modalClose" @click="closeSoftDelete">&times;</button>
+          </div>
+          <div class="modalBody">
+            <p class="deleteHint">
+              账号将停用，历史业务数据保留。软删除后列表自动隐藏，手机号不会立即释放。
+            </p>
+            <p v-if="formError" class="error">{{ formError }}</p>
+            <div class="modalFooter">
+              <button type="button" class="btnSecondary" @click="closeSoftDelete">取消</button>
+              <button type="button" class="btnDanger" :disabled="saving" @click="submitSoftDelete">
+                {{ saving ? '处理中...' : '确认软删除' }}
               </button>
             </div>
           </div>
@@ -251,9 +308,11 @@ import type {
 } from '../../api/types'
 import {
   ENTITY_STATUS,
+  MERCHANT_CATEGORY_OPTIONS,
   RESIDENT_STATUS_LABEL,
   USER_ROLE,
-  getEnumLabel
+  getEnumLabel,
+  getPhase2ErrorMessage
 } from '../../constants/enums'
 import { useAuthStore } from '../../stores/auth'
 import { useIsMobile } from '../../composables/useIsMobile'
@@ -305,6 +364,11 @@ const totalPages = ref(1)
 const createOpen = ref(false)
 const deleteOpen = ref(false)
 const deleteTarget = ref<ResidentItem | null>(null)
+const disableOpen = ref(false)
+const softDeleteOpen = ref(false)
+const actionTarget = ref<ResidentItem | null>(null)
+const disableReason = ref('')
+const hardDeleteBlocked = ref(false)
 const saving = ref(false)
 const formError = ref('')
 
@@ -377,11 +441,13 @@ async function load(pageNo = 1) {
   loading.value = true
   error.value = ''
   try {
+    const q = keyword.value.trim() || undefined
     const res = await residentApi.list({
       page: pageNo,
       pageSize: 20,
       role: activeRole.value,
-      keyword: keyword.value.trim() || undefined,
+      keyword: q,
+      merchantName: q,
       propertyCompanyId: isPlatformAdmin.value
         ? filterPropertyCompanyId.value || undefined
         : undefined,
@@ -440,13 +506,46 @@ function closeCreate() {
 function openDelete(item: ResidentItem) {
   deleteTarget.value = item
   formError.value = ''
+  hardDeleteBlocked.value = false
   deleteOpen.value = true
 }
 
 function closeDelete() {
   deleteOpen.value = false
   deleteTarget.value = null
+  hardDeleteBlocked.value = false
   formError.value = ''
+}
+
+function openDisable(item: ResidentItem) {
+  actionTarget.value = item
+  disableReason.value = ''
+  formError.value = ''
+  disableOpen.value = true
+}
+
+function closeDisable() {
+  disableOpen.value = false
+  actionTarget.value = null
+  disableReason.value = ''
+  formError.value = ''
+}
+
+function openSoftDelete(item: ResidentItem) {
+  actionTarget.value = item
+  formError.value = ''
+  softDeleteOpen.value = true
+}
+
+function closeSoftDelete() {
+  softDeleteOpen.value = false
+  actionTarget.value = null
+  formError.value = ''
+}
+
+function resolveRoleError(e: unknown, fallback: string) {
+  if (e instanceof ApiError) return getPhase2ErrorMessage(e.code, e.message || fallback)
+  return fallback
 }
 
 function validateCreate(): string | null {
@@ -531,7 +630,68 @@ async function submitDelete() {
     closeDelete()
     await load(page.value)
   } catch (e) {
-    formError.value = e instanceof ApiError ? e.message : '删除失败'
+    if (e instanceof ApiError && e.code === 90120) {
+      hardDeleteBlocked.value = true
+      formError.value = getPhase2ErrorMessage(90120, e.message)
+    } else {
+      formError.value = resolveRoleError(e, '删除失败')
+    }
+  } finally {
+    saving.value = false
+  }
+}
+
+function switchToDisable() {
+  const item = deleteTarget.value
+  closeDelete()
+  if (item) openDisable(item)
+}
+
+async function submitSoftDeleteFromHard() {
+  if (!deleteTarget.value?.id) return
+  saving.value = true
+  formError.value = ''
+  try {
+    await roleAccountApi.softDelete(deleteTarget.value.id)
+    closeDelete()
+    await load(page.value)
+  } catch (e) {
+    formError.value = resolveRoleError(e, '软删除失败')
+  } finally {
+    saving.value = false
+  }
+}
+
+async function submitDisable() {
+  if (!actionTarget.value?.id) return
+  const reason = disableReason.value.trim()
+  if (!reason) {
+    formError.value = '请填写禁用原因'
+    return
+  }
+  saving.value = true
+  formError.value = ''
+  try {
+    await roleAccountApi.disable(actionTarget.value.id, reason)
+    closeDisable()
+    await load(page.value)
+  } catch (e) {
+    formError.value = resolveRoleError(e, '禁用失败')
+  } finally {
+    saving.value = false
+  }
+}
+
+async function submitSoftDelete() {
+  if (!actionTarget.value?.id) return
+  saving.value = true
+  formError.value = ''
+  try {
+    await roleAccountApi.softDelete(actionTarget.value.id)
+    closeSoftDelete()
+    await load(page.value)
+  } catch (e) {
+    formError.value = resolveRoleError(e, '软删除失败')
   } finally {
     saving.value = false
   }

@@ -1,5 +1,6 @@
 import type {
   AnnouncementItem,
+  BuildingChangeApplication,
   DashboardOverview,
   DeliveryCourierItem,
   DeliveryHourlyData,
@@ -18,7 +19,7 @@ import type {
   ResidentItem,
   RolePresetDto
 } from './types'
-import { getEnumLabel, ANNOUNCEMENT_STATUS, ANNOUNCEMENT_STATUS_LABEL, ANNOUNCEMENT_TYPE_LABEL, COURIER_STATUS, COURIER_STATUS_LABEL, DELIVERY_STATUS, DELIVERY_STATUS_LABEL, MERCHANT_AUDIT_STATUS_LABEL, MERCHANT_LEVEL_LABEL, MERCHANT_SOURCE_LABEL, MERCHANT_STATUS_LABEL, PERMISSION_MODULE_LABEL, RESIDENT_STATUS, RESIDENT_STATUS_LABEL, RESIDENT_USER_TYPE, ROLE_LABEL, normalizeAnnouncementType, formatAnnouncementTargetRoles } from '../constants/enums'
+import { getEnumLabel, ANNOUNCEMENT_STATUS, ANNOUNCEMENT_STATUS_LABEL, ANNOUNCEMENT_TYPE_LABEL, COURIER_STATUS, COURIER_STATUS_LABEL, DELIVERY_SCOPE_LABEL, DELIVERY_STATUS, DELIVERY_STATUS_LABEL, MERCHANT_LEVEL_LABEL, MERCHANT_SOURCE_LABEL, MERCHANT_STATUS_LABEL, PERMISSION_MODULE_LABEL, RESIDENT_STATUS, RESIDENT_STATUS_LABEL, RESIDENT_USER_TYPE, ROLE_LABEL, getMerchantAuditDisplayLabel, getMerchantOperatingDisplayLabel, resolveMerchantAuditDisplayStatus, resolveMerchantOperatingDisplayStatus, normalizeAnnouncementType, formatAnnouncementTargetRoles } from '../constants/enums'
 
 const avatarColors = ['#5c5c9e', '#3aaf7d', '#f5a623', '#e05c5c', '#6a6aae']
 
@@ -44,6 +45,19 @@ export function formatPercent(rate?: number) {
   return rate <= 1 ? Math.round(rate * 100) : Math.round(rate)
 }
 
+/** 兼容 §2.6.3 current* / appliedAt 与历史前端字段 */
+export function normalizeBuildingChangeApplication(
+  raw: BuildingChangeApplication
+): BuildingChangeApplication {
+  return {
+    ...raw,
+    oldBuilding: raw.oldBuilding ?? raw.currentBuilding,
+    oldUnit: raw.oldUnit ?? raw.currentUnit,
+    oldRoom: raw.oldRoom ?? raw.currentRoom,
+    createdAt: raw.createdAt ?? raw.appliedAt
+  }
+}
+
 const PROPERTY_COMPANY_CONFIG_KEYS: (keyof PropertyCompanyConfig)[] = [
   'propertyShareRate',
   'coordinatorShareRate',
@@ -54,6 +68,9 @@ const PROPERTY_COMPANY_CONFIG_KEYS: (keyof PropertyCompanyConfig)[] = [
   'platformWithdrawalFeeShareRate',
   'regionalLeaderRate',
   'projectLeaderRate',
+  'pointEnabled',
+  'pointDisplayEnabled',
+  'coinEnabled',
   'coinDisplayEnabled',
   'coinIssueMode',
   'coinExpiryDays',
@@ -98,6 +115,10 @@ export function normalizePropertyCompanyDetail(
     communityCount: raw.communityCount,
     communities: raw.communities,
     admins: raw.admins,
+    pointEnabled: raw.pointEnabled,
+    pointDisplayEnabled: raw.pointDisplayEnabled,
+    coinEnabled: raw.coinEnabled,
+    coinDisplayEnabled: raw.coinDisplayEnabled,
     deliveryPerKgFee: raw.deliveryPerKgFee,
     pointExchangeRate: raw.pointExchangeRate,
     platformShareRate: raw.platformShareRate,
@@ -350,23 +371,41 @@ export function resolvePlatformMerchantId(item: MerchantItem): string | null {
   return null
 }
 
+export function formatMerchantServiceScope(item: MerchantItem) {
+  if (item.serveAllCommunities) return '全部小区'
+  const names = (item.communityNames || []).map(name => name.trim()).filter(Boolean)
+  if (names.length) return names.join('、')
+  if (item.communityIds?.length) return `${item.communityIds.length} 个小区`
+  if (item.deliveryScope) return getEnumLabel(DELIVERY_SCOPE_LABEL, item.deliveryScope, item.deliveryScope)
+  return item.address || '—'
+}
+
 export function mapMerchants(list: MerchantItem[]) {
-  return list.map(item => ({
-    id: item.id,
-    platformMerchantId: resolvePlatformMerchantId(item),
-    name: item.name,
-    category: item.category || '-',
-    categoryCode: item.category?.includes('餐') ? 'dining' as const : 'retail' as const,
-    merchantLevel: getEnumLabel(MERCHANT_LEVEL_LABEL, item.merchantLevel),
-    merchantSource: getEnumLabel(MERCHANT_SOURCE_LABEL, item.merchantSource, '—'),
-    auditStatus: getEnumLabel(MERCHANT_AUDIT_STATUS_LABEL, item.auditStatus),
-    status: item.status,
-    statusLabel: getEnumLabel(MERCHANT_STATUS_LABEL, item.status, '—'),
-    commissionRate: item.commissionRate !== undefined ? `${formatPercent(item.commissionRate)}%` : '-',
-    pointsRatio: item.pointExchangeRate !== undefined ? `1元=${item.pointExchangeRate}积分` : '-',
-    cashbackRate: item.coinRebateRate !== undefined ? `${formatPercent(item.coinRebateRate)}%` : '0%',
-    ownerPrice: item.memberDiscountPrice ? `${item.memberDiscountPrice}元` : '-'
-  }))
+  return list.map(item => {
+    const auditStatusCode = resolveMerchantAuditDisplayStatus(item.auditStatus, item.status)
+    const status = resolveMerchantOperatingDisplayStatus(item.status, item.auditStatus)
+    return {
+      id: item.id,
+      platformMerchantId: resolvePlatformMerchantId(item),
+      name: item.name,
+      category: item.category || '-',
+      categoryCode: item.category?.includes('餐') ? 'dining' as const : 'retail' as const,
+      merchantLevel: getEnumLabel(MERCHANT_LEVEL_LABEL, item.merchantLevel),
+      merchantSource: getEnumLabel(MERCHANT_SOURCE_LABEL, item.merchantSource, '—'),
+      auditStatus: getMerchantAuditDisplayLabel(item.auditStatus, item.status),
+      auditStatusCode,
+      status,
+      statusLabel: getMerchantOperatingDisplayLabel(item.status, item.auditStatus),
+      commissionRate: item.commissionRate !== undefined ? `${formatPercent(item.commissionRate)}%` : '-',
+      pointsRatio: item.pointExchangeRate !== undefined ? `1元=${item.pointExchangeRate}积分` : '-',
+      cashbackRate: item.coinRebateRate !== undefined ? `${formatPercent(item.coinRebateRate)}%` : '0%',
+      ownerPrice: item.memberDiscountPrice ? `${item.memberDiscountPrice}元` : '-',
+      contactPhone: item.contactPhone || '—',
+      createdAt: item.createdAt || '—',
+      rejectReason: item.rejectReason?.trim() || '',
+      serviceScope: formatMerchantServiceScope(item)
+    }
+  })
 }
 
 export function mapPlatformMerchants(list: PlatformMerchantItem[]) {
@@ -662,7 +701,7 @@ export function mapPointsOverview(pool?: PointPool, overview?: DashboardOverview
 function deliveryStatusClass(status?: string) {
   if (status === DELIVERY_STATUS.ACCEPTED || status === DELIVERY_STATUS.GRABBED) return 'grabbed'
   if (status === DELIVERY_STATUS.PENDING) return 'pending'
-  if (status === DELIVERY_STATUS.DELIVERING) return 'delivering'
+  if (status === DELIVERY_STATUS.DELIVERING || status === DELIVERY_STATUS.MERCHANT_SELF) return 'delivering'
   if (status === DELIVERY_STATUS.DELIVERED || status === DELIVERY_STATUS.COMPLETED) return 'completed'
   return 'completed'
 }
@@ -723,7 +762,10 @@ export function mapRecentDeliveries(list?: RecentDeliveryItem[]) {
       fee: item.fee !== undefined ? `¥${formatMoney(item.fee)}` : '—',
       status,
       statusLabel: getEnumLabel(DELIVERY_STATUS_LABEL, status),
-      statusClass: deliveryStatusClass(status)
+      statusClass: deliveryStatusClass(status),
+      fulfillmentMode: item.fulfillmentMode,
+      fulfillmentModeLabel: item.fulfillmentModeLabel,
+      carrierType: item.carrierType
     }
   })
 }

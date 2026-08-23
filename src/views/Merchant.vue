@@ -2,10 +2,10 @@
     <div class="page">
       <div class="header">
         <div>
-          <h1 class="title">商家管理</h1>
-          <p class="desc">配置并监控平台商家及其财务参数。</p>
+          <h1 class="title">{{ pageTitle }}</h1>
+          <p class="desc">{{ pageDesc }}</p>
         </div>
-        <div v-if="viewMode === 'platform'" class="headerActions">
+        <div v-if="viewMode === 'platform' && !isOnboardingAudit" class="headerActions">
           <button class="btnPrimary" @click="openCreatePlatformModal">
             <IconSvg name="plus" />
             新增平台商家
@@ -14,14 +14,14 @@
       </div>
 
       <SegmentedControl
-        v-if="isPlatformAdmin"
+        v-if="isPlatformAdmin && !isOnboardingAudit"
         v-model="viewMode"
         :tabs="viewTabs"
         class="viewTabs"
         @update:model-value="onViewModeChange"
       />
 
-      <div v-if="isPlatformAdmin" class="profitFlow">
+      <div v-if="isPlatformAdmin && !isOnboardingAudit" class="profitFlow">
         <div class="profitHeader">
           <div class="profitTitle">
             <IconSvg name="merchant" class="headerIcon" />
@@ -131,7 +131,7 @@
             <input
               v-model="searchKeyword"
               type="search"
-              :placeholder="viewMode === 'platform' ? '搜索商家名称、电话...' : '搜索商家名称...'"
+              :placeholder="isOnboardingAudit ? '搜索商家名称、电话...' : (viewMode === 'platform' ? '搜索商家名称、电话...' : '搜索商家名称...')"
               @input="onSearchInput"
             />
           </form>
@@ -140,9 +140,22 @@
             {{ mobileFilterOpen ? '收起筛选' : '筛选' }}
           </button>
           <div class="filters" :class="{ filtersMobile: isMobile, filtersMobileOpen: !isMobile || mobileFilterOpen }">
-            <select v-model="selectedCategory" class="filterSelect" @change="applyFilters">
+            <select
+              v-if="isOnboardingAudit && isPlatformAdmin"
+              v-model="selectedPropertyCompanyId"
+              class="filterSelect"
+              :disabled="companiesLoading"
+              @change="onPropertyCompanyChange"
+            >
+              <option v-if="companiesLoading" value="">加载物业公司...</option>
+              <option v-else-if="!propertyCompanies.length" value="">暂无物业公司</option>
+              <option v-for="company in propertyCompanies" :key="company.id" :value="company.id">
+                {{ company.name }}
+              </option>
+            </select>
+            <select v-if="!isOnboardingAudit" v-model="selectedCategory" class="filterSelect" @change="applyFilters">
               <option value="">全部分类</option>
-              <option v-for="cat in categoryOptions" :key="cat" :value="cat">{{ cat }}</option>
+              <option v-for="cat in categoryFilterOptions" :key="cat" :value="cat">{{ cat }}</option>
             </select>
             <select
               v-if="viewMode === 'property'"
@@ -156,6 +169,26 @@
             </select>
             <select
               v-if="viewMode === 'property'"
+              v-model="selectedApplyRole"
+              class="filterSelect"
+              @change="applyFilters"
+            >
+              <option v-for="opt in MERCHANT_APPLY_ROLE_FILTER_OPTIONS" :key="opt.value || 'all-role'" :value="opt.value">
+                {{ opt.label }}
+              </option>
+            </select>
+            <select
+              v-if="viewMode === 'property' && !isOnboardingAudit"
+              v-model="selectedMerchantStatus"
+              class="filterSelect"
+              @change="applyFilters"
+            >
+              <option v-for="opt in MERCHANT_OPERATING_STATUS_OPTIONS" :key="opt.value || 'all-status'" :value="opt.value">
+                {{ opt.label }}
+              </option>
+            </select>
+            <select
+              v-if="viewMode === 'property' && !isOnboardingAudit"
               v-model="onlyOfficialRecommended"
               class="filterSelect"
               @change="applyFilters"
@@ -175,9 +208,99 @@
             </select>
           </div>
         </div>
-        <div v-if="isMobile && viewMode === 'property'" class="merchantCards">
+        <p v-if="auditNotice" class="success auditNotice">{{ auditNotice }}</p>
+        <p v-if="rejectedFilterHint" class="formHint warning auditNotice">{{ rejectedFilterHint }}</p>
+        <div v-if="isOnboardingAudit && isMobile" class="merchantCards">
           <div v-if="loading" class="emptyCell">加载中...</div>
-          <div v-else-if="!merchants.length" class="emptyCell">暂无商家数据</div>
+          <div v-else-if="!merchants.length" class="emptyCell">{{ emptyMerchantHint }}</div>
+          <article v-for="merchant in merchants" v-else :key="merchant.id" class="merchantCard">
+            <div class="merchantCardHeader">
+              <div class="info">
+                <div class="avatar"><IconSvg :name="merchant.categoryCode" /></div>
+                <div>
+                  <div class="name">{{ merchant.name }}</div>
+                  <div class="category">{{ merchant.category }}</div>
+                </div>
+              </div>
+              <span class="statusBadge" :class="merchant.auditStatusCode">{{ merchant.auditStatus }}</span>
+            </div>
+            <div class="merchantMeta">
+              <span>电话：{{ merchant.contactPhone }}</span>
+              <span>申请身份：{{ applyRoleLabel(merchantListCache[merchant.id]) }}</span>
+              <span>来源：{{ merchant.merchantSource }}</span>
+              <span>服务范围：{{ merchant.serviceScope }}</span>
+              <span>申请时间：{{ merchant.createdAt }}</span>
+              <span v-if="merchant.rejectReason">拒绝原因：{{ merchant.rejectReason }}</span>
+            </div>
+            <div class="merchantCardActions">
+              <template v-if="canAuditMerchant(merchant.id)">
+                <button class="cardActionBtn primary" @click="openAuditModal(merchant.id, merchant.name, AUDIT_RESULT.APPROVED)">
+                  通过
+                </button>
+                <button class="cardActionBtn danger" @click="openAuditModal(merchant.id, merchant.name, AUDIT_RESULT.REJECTED)">
+                  拒绝
+                </button>
+              </template>
+            </div>
+          </article>
+        </div>
+        <table v-else-if="isOnboardingAudit" class="content">
+          <thead>
+            <tr>
+              <th>商家名称</th>
+              <th>联系电话</th>
+              <th>申请身份</th>
+              <th>商家来源</th>
+              <th>分类</th>
+              <th>服务范围</th>
+              <th>申请时间</th>
+              <th>审核状态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="loading">
+              <td colspan="9" class="emptyCell">加载中...</td>
+            </tr>
+            <tr v-else-if="!merchants.length">
+              <td colspan="9" class="emptyCell">{{ emptyMerchantHint }}</td>
+            </tr>
+            <tr v-for="merchant in merchants" v-else :key="merchant.id" class="merchantRow">
+              <td>
+                <div class="info">
+                  <div class="avatar"><IconSvg :name="merchant.categoryCode" /></div>
+                  <div>
+                    <div class="name">{{ merchant.name }}</div>
+                    <div v-if="merchant.rejectReason" class="category">拒绝原因：{{ merchant.rejectReason }}</div>
+                  </div>
+                </div>
+              </td>
+              <td>{{ merchant.contactPhone }}</td>
+              <td>{{ applyRoleLabel(merchantListCache[merchant.id]) }}</td>
+              <td>{{ merchant.merchantSource }}</td>
+              <td>{{ merchant.category }}</td>
+              <td>{{ merchant.serviceScope }}</td>
+              <td>{{ merchant.createdAt }}</td>
+              <td>
+                <span class="statusBadge" :class="merchant.auditStatusCode">{{ merchant.auditStatus }}</span>
+              </td>
+              <td>
+                <div v-if="canAuditMerchant(merchant.id)" class="actions">
+                  <button type="button" class="linkBtn" @click="openAuditModal(merchant.id, merchant.name, AUDIT_RESULT.APPROVED)">
+                    通过
+                  </button>
+                  <button type="button" class="linkBtn danger" @click="openAuditModal(merchant.id, merchant.name, AUDIT_RESULT.REJECTED)">
+                    拒绝
+                  </button>
+                </div>
+                <span v-else class="muted">—</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div v-else-if="isMobile && viewMode === 'property'" class="merchantCards">
+          <div v-if="loading" class="emptyCell">加载中...</div>
+          <div v-else-if="!merchants.length" class="emptyCell">{{ emptyMerchantHint }}</div>
           <article v-for="merchant in merchants" v-else :key="merchant.id" class="merchantCard">
             <div class="merchantCardHeader">
               <div class="info">
@@ -191,6 +314,7 @@
             </div>
             <div class="merchantMeta">
               <span>审核：{{ merchant.auditStatus }}</span>
+              <span>申请身份：{{ applyRoleLabel(merchantListCache[merchant.id]) }}</span>
               <span>营业：{{ merchant.statusLabel }}</span>
               <span>抽佣：{{ merchant.commissionRate }}</span>
               <span>兑换：{{ merchant.pointsRatio }}</span>
@@ -206,6 +330,7 @@
                 审核
               </button>
               <button class="cardActionBtn primary" @click="openEditModal(merchant.id)">编辑</button>
+              <button class="cardActionBtn" @click="openDistanceModal(merchant.id, merchant.name)">小区距离</button>
               <button
                 v-if="canGrantMerchantCoin"
                 class="cardActionBtn success"
@@ -214,7 +339,7 @@
                 发币
               </button>
               <button v-if="canManageAdQuota" class="cardActionBtn success" @click="openAdQuotaModal(merchant.id, merchant.name)">广告额度</button>
-              <button v-if="canKick && merchant.status !== MERCHANT_STATUS.KICKED" class="cardActionBtn danger" @click="openKickModal(merchant.id, merchant.name)">踢出</button>
+              <button v-if="canKick && canKickMerchant(merchant.status)" class="cardActionBtn danger" @click="openKickModal(merchant.id, merchant.name)">踢出</button>
             </div>
           </article>
         </div>
@@ -222,6 +347,7 @@
           <thead>
             <tr>
               <th>商家名称</th>
+              <th>申请身份</th>
               <th>等级</th>
               <th>审核状态</th>
               <th>营业状态</th>
@@ -233,10 +359,10 @@
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td colspan="8" class="emptyCell">加载中...</td>
+              <td colspan="9" class="emptyCell">加载中...</td>
             </tr>
             <tr v-else-if="!merchants.length">
-              <td colspan="8" class="emptyCell">暂无商家数据</td>
+              <td colspan="9" class="emptyCell">{{ emptyMerchantHint }}</td>
             </tr>
             <tr v-for="merchant in merchants" v-else :key="merchant.id" class="merchantRow">
               <td>
@@ -248,9 +374,14 @@
                   </div>
                 </div>
               </td>
+              <td>{{ applyRoleLabel(merchantListCache[merchant.id]) }}</td>
               <td>{{ merchant.merchantLevel }}</td>
-              <td>{{ merchant.auditStatus }}</td>
-              <td>{{ merchant.statusLabel }}</td>
+              <td>
+                <span class="statusBadge" :class="merchant.auditStatusCode">{{ merchant.auditStatus }}</span>
+              </td>
+              <td>
+                <span class="statusBadge" :class="merchant.status">{{ merchant.statusLabel }}</span>
+              </td>
               <td><span class="badge">{{ merchant.commissionRate }}</span></td>
               <td>
                 <div class="points"><IconSvg name="coin" /><span>{{ merchant.pointsRatio }}</span></div>
@@ -272,6 +403,9 @@
                   <button class="actionBtn edit" title="编辑" @click="openEditModal(merchant.id)">
                     <IconSvg name="edit" />
                   </button>
+                  <button class="actionBtn detail" title="小区距离" @click="openDistanceModal(merchant.id, merchant.name)">
+                    km
+                  </button>
                   <button
                     v-if="canGrantMerchantCoin"
                     class="actionBtn adQuota"
@@ -289,7 +423,7 @@
                     <IconSvg name="retail" />
                   </button>
                   <button
-                    v-if="canKick && merchant.status !== MERCHANT_STATUS.KICKED"
+                    v-if="canKick && canKickMerchant(merchant.status)"
                     class="actionBtn kick"
                     title="踢出"
                     @click="openKickModal(merchant.id, merchant.name)"
@@ -502,16 +636,38 @@
                 <p class="formHint">分成/营收等来自后端详情接口；后端未返回时显示「—」。配送减免配置在下方单独编辑，正式结算使用下单快照。</p>
               </section>
               <section class="readonlyBlock">
-                <h4 class="detailSectionTitle">配送费与满额减免</h4>
-                <div class="fieldRow">
+                <div class="tierTitleRow">
+                  <h4 class="detailSectionTitle">多档配送费与满额减免</h4>
+                  <button type="button" class="btnSecondary compact" @click="addDeliveryTier">新增距离档</button>
+                </div>
+                <div v-for="(tier, index) in editForm.deliveryFeeTiers" :key="index" class="deliveryTierRow">
                   <div class="field">
-                    <label class="label">基础配送费（元）</label>
-                    <input v-model.number="editForm.deliveryFee" type="number" min="0" step="0.01" class="input" />
+                    <label class="label">起始距离（km）</label>
+                    <input v-model.number="tier.minKm" type="number" min="0" step="0.1" class="input" />
                   </div>
                   <div class="field">
-                    <label class="label">满额门槛（元）</label>
-                    <input v-model.number="editForm.freeDeliveryThreshold" type="number" min="0.01" step="0.01" class="input" :disabled="!editForm.freeDeliveryEnabled" />
+                    <label class="label">结束距离（km）</label>
+                    <input v-model.number="tier.maxKm" type="number" min="0.1" step="0.1" class="input" />
                   </div>
+                  <div class="field">
+                    <label class="label">配送费（元）</label>
+                    <input v-model.number="tier.fee" type="number" min="0" step="0.01" class="input" />
+                  </div>
+                  <label class="checkLabel tierEnabled">
+                    <input v-model="tier.enabled" type="checkbox" />
+                    启用
+                  </label>
+                  <button
+                    type="button"
+                    class="removeTierBtn"
+                    title="删除此档"
+                    @click="removeDeliveryTier(index)"
+                  >×</button>
+                </div>
+                <p class="formHint">可新增、修改、删除档位；请至少保留一档启用。距离按管理端「小区距离」配置命中，不用经纬度计算。</p>
+                <div class="field">
+                  <label class="label">满额门槛（元）</label>
+                  <input v-model.number="editForm.freeDeliveryThreshold" type="number" min="0.01" step="0.01" class="input" :disabled="!editForm.freeDeliveryEnabled" />
                 </div>
                 <label class="checkLabel">
                   <input v-model="editForm.freeDeliveryEnabled" type="checkbox" />
@@ -533,6 +689,18 @@
               <div class="field">
                 <label class="label">商家名称</label>
                 <input v-model="editForm.name" type="text" class="input" maxlength="100" />
+              </div>
+              <div class="field">
+                <label class="label">分类</label>
+                <select v-model="editForm.category" class="input">
+                  <option value="">不修改</option>
+                  <option v-for="name in dictCategories" :key="name" :value="name">{{ name }}</option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="label">积分兑换比（1元=X积分）</label>
+                <input v-model.number="editForm.pointExchangeRate" type="number" min="1" step="1" class="input" placeholder="默认 100" />
+                <p class="formHint">写入商家挂接配置，影响住户「购积分」报价。物业级兑换比仅作参考。</p>
               </div>
               <div class="field">
                 <label class="label">描述</label>
@@ -699,7 +867,7 @@
             <button class="modalClose" @click="closeKickModal">&times;</button>
           </div>
           <form class="modalBody" @submit.prevent="submitKick">
-            <p class="kickHint">确定踢出「{{ kickTargetName }}」？踢出后商品将自动下架。</p>
+            <p class="kickHint">确定踢出「{{ kickTargetName }}」？踢出后商品将自动下架，对方可重新申请入驻。</p>
             <div class="field">
               <label class="label">踢出原因 <span class="required">*</span></label>
               <textarea v-model="kickForm.reason" class="textarea" rows="3" maxlength="200" required placeholder="请填写踢出原因" />
@@ -781,6 +949,10 @@
           </div>
           <form class="modalBody" @submit.prevent="submitAudit">
             <div class="field">
+              <label class="label">申请身份</label>
+              <div class="readonly">{{ applyRoleLabel(merchantListCache[auditTargetId]) }}</div>
+            </div>
+            <div class="field">
               <label class="label">审核结果</label>
               <select v-model="auditForm.auditResult" class="input">
                 <option :value="AUDIT_RESULT.APPROVED">通过</option>
@@ -797,6 +969,7 @@
                 required
                 placeholder="请填写拒绝原因"
               />
+              <p class="formHint">拒绝后申请记录会物理删除，列表中不再保留驳回记录。</p>
             </div>
             <template v-if="auditForm.auditResult === AUDIT_RESULT.APPROVED">
               <div class="field">
@@ -807,9 +980,12 @@
                   </option>
                 </select>
               </div>
-              <div class="field">
+              <div v-if="isProductMerchantApply(merchantListCache[auditTargetId])" class="field">
                 <label class="label">分类</label>
-                <input v-model="auditForm.category" type="text" class="input" maxlength="50" placeholder="如：外卖" />
+                <select v-model="auditForm.category" class="input">
+                  <option value="">不调整</option>
+                  <option v-for="name in dictCategories" :key="name" :value="name">{{ name }}</option>
+                </select>
               </div>
               <div class="field">
                 <label class="label">营业时间</label>
@@ -821,11 +997,28 @@
                   placeholder="如：08:00-22:00"
                 />
               </div>
-              <p class="formHint">通过后将自动开通商家账号。配送费 / 满额免配送由商家自行设置，审核不干预。</p>
+              <p v-if="isProductMerchantApply(merchantListCache[auditTargetId])" class="formHint">
+                分类、营业时间和配送参数按需填写；技工、组长无需强制填写分类与配送字段。
+              </p>
+              <p v-else class="formHint">技工、组长无需填写商品分类和配送字段。通过后请通知申请人退出并重新登录。</p>
+              <div v-if="isProductMerchantApply(merchantListCache[auditTargetId])" class="field">
+                <label class="label">配送费（选填）</label>
+                <input v-model="auditForm.deliveryFee" type="text" class="input" placeholder="如：2.00" />
+              </div>
+              <div v-if="isProductMerchantApply(merchantListCache[auditTargetId])" class="field">
+                <label class="label">满额免配送（选填）</label>
+                <input v-model="auditForm.freeDeliveryThreshold" type="text" class="input" placeholder="如：30.00" />
+              </div>
             </template>
             <div class="field">
               <label class="label">备注（选填）</label>
-              <textarea v-model="auditForm.remark" class="textarea" rows="2" maxlength="200" placeholder="审核备注" />
+              <textarea
+                v-model="auditForm.remark"
+                class="textarea"
+                rows="2"
+                maxlength="200"
+                :placeholder="auditForm.auditResult === AUDIT_RESULT.REJECTED ? '请完善后重新申请' : '资料核验通过'"
+              />
             </div>
             <p v-if="formError" class="error">{{ formError }}</p>
             <div class="modalFooter">
@@ -904,17 +1097,27 @@
         </div>
       </div>
     </Teleport>
+
+    <MerchantDistanceModal
+      :open="distanceModalOpen"
+      :merchant-id="distanceMerchantId"
+      :merchant-name="distanceMerchantName"
+      @close="closeDistanceModal"
+    />
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import IconSvg from '../components/IconSvg.vue'
 import MediaUploader from '../components/MediaUploader.vue'
+import MerchantDistanceModal from '../components/MerchantDistanceModal.vue'
 import SegmentedControl from '../components/SegmentedControl.vue'
-import { merchantApi, merchantAdAdminApi, merchantRecommendApi, coinWithdrawalAdminApi, propertyCompanyApi } from '../api/services'
+import { merchantApi, merchantAdAdminApi, merchantCategoryApi, merchantRecommendApi, coinWithdrawalAdminApi, propertyCompanyApi } from '../api/services'
 import type {
   MerchantAdQuota,
   MerchantAuditPayload,
+  DeliveryFeeTier,
   MerchantItem,
   MerchantUpdatePayload,
   PlatformMerchantCreatePayload,
@@ -934,9 +1137,15 @@ import { ApiError } from '../api/request'
 import {
   AUDIT_RESULT,
   ENTITY_STATUS,
+  MERCHANT_APPLY_ROLE_FILTER_OPTIONS,
   MERCHANT_AUDIT_STATUS,
-  MERCHANT_AUDIT_STATUS_LABEL,
   MERCHANT_AUDIT_STATUS_OPTIONS,
+  MERCHANT_OPERATING_STATUS_OPTIONS,
+  isMerchantOnboardingPending,
+  canKickMerchant,
+  getMerchantAuditDisplayLabel,
+  getMerchantOperatingDisplayLabel,
+  MERCHANT_CATEGORY_NAMES,
   MERCHANT_LEVEL,
   MERCHANT_LEVEL_LABEL,
   MERCHANT_LEVEL_OPTIONS,
@@ -946,10 +1155,9 @@ import {
   PLATFORM_MERCHANT_STATUS_OPTIONS,
   PROPERTY_COIN_SOURCE,
   USER_ROLE,
-  DELIVERY_SCOPE_LABEL,
-  DISTANCE_TYPE_LABEL,
   DELIVERY_SUBSIDY_SPONSOR,
   DELIVERY_SUBSIDY_SPONSOR_OPTIONS,
+  ROLE_LABEL,
   getEnumLabel
 } from '../constants/enums'
 import { useAuthStore } from '../stores/auth'
@@ -957,10 +1165,19 @@ import { useIsMobile } from '../composables/useIsMobile'
 
 const PAGE_SIZE = 20
 
+const route = useRoute()
 const auth = useAuthStore()
 const { isMobile } = useIsMobile()
 
 type ViewMode = 'property' | 'platform'
+
+const isOnboardingAudit = computed(() => route.name === 'merchant-onboarding-approval')
+const pageTitle = computed(() => (isOnboardingAudit.value ? '商家入驻审核' : '商家管理'))
+const pageDesc = computed(() =>
+  isOnboardingAudit.value
+    ? '审核住户 App「商家入驻」。拒绝后申请记录会清除，住户可随时重新提交；「已拒绝」筛选仅兼容历史数据。不要在此审核业主商户分销。'
+    : '配置并监控平台商家及其财务参数。被踢/停用/退出的商家不再展示为已通过或营业中。住户「商家入驻」请到「商家入驻审核」。'
+)
 
 const viewMode = ref<ViewMode>('property')
 const isPlatformAdmin = computed(() => auth.profile?.role === USER_ROLE.PLATFORM_ADMIN)
@@ -994,11 +1211,18 @@ const searchKeyword = ref('')
 const appliedKeyword = ref('')
 const selectedCategory = ref('')
 const selectedAuditStatus = ref('')
+const selectedMerchantStatus = ref(MERCHANT_STATUS.ACTIVE)
+const selectedApplyRole = ref('')
 const onlyOfficialRecommended = ref('')
 const recommendSortDraft = ref(0)
 const selectedPlatformStatus = ref('')
 const mobileFilterOpen = ref(false)
 const categoryOptions = ref<string[]>([])
+const dictCategories = ref<string[]>([...MERCHANT_CATEGORY_NAMES])
+const categoryFilterOptions = computed(() => {
+  const set = new Set([...dictCategories.value, ...categoryOptions.value])
+  return Array.from(set)
+})
 const merchantListCache = ref<Record<string, MerchantItem>>({})
 const platformMerchantListCache = ref<Record<string, PlatformMerchantItem>>({})
 const merchantTotal = ref(0)
@@ -1056,11 +1280,14 @@ const earnForm = ref({
 const auditModalOpen = ref(false)
 const auditTargetId = ref('')
 const auditTargetName = ref('')
+const auditNotice = ref('')
 const auditForm = ref({
   auditResult: AUDIT_RESULT.APPROVED as string,
   merchantLevel: MERCHANT_LEVEL.PROPERTY_CERTIFIED,
   category: '',
   businessHours: '',
+  deliveryFee: '',
+  freeDeliveryThreshold: '',
   rejectReason: '',
   remark: ''
 })
@@ -1072,16 +1299,21 @@ const adQuotaPurchased = ref<number | ''>(1)
 const adQuotaResult = ref<MerchantAdQuota | null>(null)
 const adQuotaCurrent = ref<MerchantAdQuota | null>(null)
 const adQuotaLoading = ref(false)
+const distanceModalOpen = ref(false)
+const distanceMerchantId = ref('')
+const distanceMerchantName = ref('')
 const recommendSubmittingId = ref('')
 const withdrawBlockSubmitting = ref(false)
 
 const editForm = ref({
   name: '',
+  category: '',
+  pointExchangeRate: undefined as number | undefined,
   description: '',
   contactPhone: '',
   businessHours: '',
   address: '',
-  deliveryFee: '' as string | number,
+  deliveryFeeTiers: [] as DeliveryFeeTier[],
   freeDeliveryThreshold: '' as string | number,
   freeDeliveryEnabled: false,
   freeDeliverySponsor: DELIVERY_SUBSIDY_SPONSOR.MERCHANT as string,
@@ -1110,6 +1342,22 @@ const pageEnd = computed(() => {
 
 const listTotal = computed(() =>
   viewMode.value === 'platform' ? platformMerchantTotal.value : merchantTotal.value
+)
+
+const emptyMerchantHint = computed(() => {
+  if (isOnboardingAudit.value || selectedAuditStatus.value === MERCHANT_AUDIT_STATUS.PENDING) {
+    return '暂无待审核的商家入驻。请核对物业公司。审核拒绝后记录会清除，住户可重新提交。'
+  }
+  if (selectedAuditStatus.value === MERCHANT_AUDIT_STATUS.REJECTED) {
+    return '暂无已拒绝记录。新的审核拒绝会物理删除申请，不再保留驳回记录。'
+  }
+  return '暂无商家数据'
+})
+
+const rejectedFilterHint = computed(() =>
+  !isOnboardingAudit.value && selectedAuditStatus.value === MERCHANT_AUDIT_STATUS.REJECTED
+    ? '「已拒绝」仅兼容历史数据。新审核拒绝会物理删除申请，请不要用此筛选查看驳回记录。'
+    : ''
 )
 
 const profitMerchantOptions = computed(() => {
@@ -1141,9 +1389,10 @@ const detailBasicRows = computed(() => {
     { label: '分类', value: d.category || '—' },
     { label: '等级', value: getEnumLabel(MERCHANT_LEVEL_LABEL, d.merchantLevel) },
     { label: '商家来源', value: getEnumLabel(MERCHANT_SOURCE_LABEL, d.merchantSource) },
+    { label: '申请身份', value: applyRoleLabel(d) },
     { label: '等级权重', value: d.levelWeight !== undefined ? String(d.levelWeight) : '—' },
-    { label: '审核状态', value: getEnumLabel(MERCHANT_AUDIT_STATUS_LABEL, d.auditStatus) },
-    { label: '营业状态', value: getEnumLabel(MERCHANT_STATUS_LABEL, d.status, '—') },
+    { label: '审核状态', value: getMerchantAuditDisplayLabel(d.auditStatus, d.status) },
+    { label: '营业状态', value: getMerchantOperatingDisplayLabel(d.status, d.auditStatus) },
     { label: '联系电话', value: d.contactPhone || '—' },
     { label: '地址', value: d.address || '—' },
     { label: '营业时间', value: d.businessHours || '—' }
@@ -1154,14 +1403,57 @@ const detailDeliveryRows = computed(() => {
   const d = detailData.value
   if (!d) return []
   return [
-    { label: '配送费', value: d.deliveryFee !== undefined && d.deliveryFee !== null && d.deliveryFee !== '' ? `¥${formatMoney(Number(d.deliveryFee))}` : '未设置' },
+    {
+      label: '距离配送费',
+      value: resolveDeliveryTiers(d).length
+        ? resolveDeliveryTiers(d)
+            .map((tier) => `${tier.minKm}–${tier.maxKm}km ¥${formatMoney(Number(tier.fee))}${tier.enabled ? '' : '（停用）'}`)
+            .join('；')
+        : '未设置'
+    },
     { label: '满额免配送', value: d.freeDeliveryThreshold !== undefined && d.freeDeliveryThreshold !== null && d.freeDeliveryThreshold !== '' ? `¥${formatMoney(Number(d.freeDeliveryThreshold))}` : '未设置' },
-    { label: '配送范围', value: getEnumLabel(DELIVERY_SCOPE_LABEL, d.deliveryScope, '—') },
-    { label: '配送距离', value: getEnumLabel(DISTANCE_TYPE_LABEL, d.distanceType, '—') },
     { label: '排序权重', value: d.rankOrder !== undefined ? String(d.rankOrder) : '—' },
     { label: '官方推荐', value: d.isOfficialRecommended ? `是${d.recommendedSort != null ? `（排序 ${d.recommendedSort}）` : ''}` : '否' }
   ]
 })
+
+function applyRoleLabel(merchant?: MerchantItem | null) {
+  const role = merchant?.applyRole || merchant?.intendedRole || USER_ROLE.MERCHANT
+  if (role === USER_ROLE.MERCHANT) return '商品商家'
+  return getEnumLabel(ROLE_LABEL, role, role)
+}
+
+function isProductMerchantApply(merchant?: MerchantItem | null) {
+  const role = merchant?.applyRole || merchant?.intendedRole || USER_ROLE.MERCHANT
+  return role === USER_ROLE.MERCHANT
+}
+
+function resolveDeliveryTiers(merchant?: MerchantItem | null): DeliveryFeeTier[] {
+  return merchant?.deliveryFeeTiers || merchant?.deliveryFees || []
+}
+
+function addDeliveryTier() {
+  const tiers = editForm.value.deliveryFeeTiers
+  const previous = tiers[tiers.length - 1]
+  const minKm = Number(previous?.maxKm) || 0
+  editForm.value.deliveryFeeTiers.push({ minKm, maxKm: minKm + 1, fee: 0, enabled: true })
+}
+
+function removeDeliveryTier(index: number) {
+  editForm.value.deliveryFeeTiers.splice(index, 1)
+}
+
+function openDistanceModal(id: string, name: string) {
+  distanceMerchantId.value = id
+  distanceMerchantName.value = name
+  distanceModalOpen.value = true
+}
+
+function closeDistanceModal() {
+  distanceModalOpen.value = false
+  distanceMerchantId.value = ''
+  distanceMerchantName.value = ''
+}
 
 const detailFinanceRows = computed(() => {
   const d = detailData.value
@@ -1204,7 +1496,6 @@ const editReadonlyRows = computed(() => {
   if (!d) return []
   return [
     { label: '分成比例', value: d.commissionRate !== undefined && d.commissionRate !== null ? `${formatPercent(d.commissionRate)}%` : '—（接口未返回）' },
-    { label: '积分兑换比例', value: d.pointExchangeRate !== undefined && d.pointExchangeRate !== null ? `1元=${d.pointExchangeRate}积分` : '—（接口未返回）' },
     { label: '返现比例', value: d.coinRebateRate !== undefined ? `${formatPercent(d.coinRebateRate)}%` : '—（接口未返回）' },
     { label: '累计订单', value: d.totalOrders !== undefined ? String(d.totalOrders) : '—（接口未返回）' },
     { label: '累计营收', value: d.totalRevenue !== undefined ? `¥${formatMoney(Number(d.totalRevenue))}` : '—（接口未返回）' }
@@ -1271,6 +1562,8 @@ async function loadPropertyCompanies() {
     const preferredId = auth.propertyCompanyId || import.meta.env.VITE_PROPERTY_COMPANY_ID || ''
     if (preferredId && propertyCompanies.value.some(c => c.id === preferredId)) {
       selectedPropertyCompanyId.value = preferredId
+    } else if (preferredId) {
+      selectedPropertyCompanyId.value = preferredId
     } else if (propertyCompanies.value.length) {
       selectedPropertyCompanyId.value = propertyCompanies.value[0].id
     }
@@ -1291,21 +1584,29 @@ async function loadMerchants(page = currentPage.value) {
   }
   loading.value = true
   try {
+    const pendingFilter = isMerchantOnboardingPending(selectedAuditStatus.value)
+    const listParams = {
+      page,
+      pageSize: PAGE_SIZE,
+      keyword: appliedKeyword.value || undefined,
+      category: isOnboardingAudit.value ? undefined : selectedCategory.value || undefined,
+      applyRole: selectedApplyRole.value || undefined,
+      propertyCompanyId: selectedPropertyCompanyId.value,
+      sort: pendingFilter || isOnboardingAudit.value ? '-createdAt' : '-rankOrder'
+    }
     const res = onlyOfficialRecommended.value === '1'
       ? await merchantRecommendApi.listOfficial({
           page,
           pageSize: PAGE_SIZE,
           propertyCompanyId: selectedPropertyCompanyId.value
         })
-      : await merchantApi.list({
-          page,
-          pageSize: PAGE_SIZE,
-          keyword: appliedKeyword.value || undefined,
-          category: selectedCategory.value || undefined,
-          auditStatus: selectedAuditStatus.value || undefined,
-          propertyCompanyId: selectedPropertyCompanyId.value,
-          sort: '-rankOrder'
-        })
+      : pendingFilter
+        ? await merchantApi.listPending(listParams)
+        : await merchantApi.list({
+            ...listParams,
+            auditStatus: selectedAuditStatus.value || undefined,
+            status: isOnboardingAudit.value ? undefined : selectedMerchantStatus.value || undefined
+          })
     const list = res.list || []
     list.forEach(item => {
       merchantListCache.value[item.id] = item
@@ -1370,6 +1671,7 @@ async function onPropertyCompanyChange() {
   currentPage.value = 1
   try {
     await loadMerchants(1)
+    if (isOnboardingAudit.value) return
     if (profitMerchantOptions.value.length) {
       selectedProfitMerchantId.value = profitMerchantOptions.value[0].id
     }
@@ -1500,13 +1802,16 @@ async function openEditModal(id: string) {
   try {
     const data = await merchantApi.get(id, selectedPropertyCompanyId.value || undefined)
     editSnapshot.value = data
+    const tiers = resolveDeliveryTiers(data).map((tier) => ({ ...tier }))
     editForm.value = {
       name: data.name || '',
+      category: data.category || '',
+      pointExchangeRate: data.pointExchangeRate,
       description: data.description || '',
       contactPhone: data.contactPhone || '',
       businessHours: data.businessHours || '',
       address: data.address || '',
-      deliveryFee: data.deliveryFee ?? '',
+      deliveryFeeTiers: tiers,
       freeDeliveryThreshold: data.freeDeliveryThreshold ?? '',
       freeDeliveryEnabled: Boolean(data.freeDeliveryEnabled),
       freeDeliverySponsor: data.freeDeliverySponsor || DELIVERY_SUBSIDY_SPONSOR.MERCHANT,
@@ -1538,16 +1843,46 @@ async function submitEdit() {
     formError.value = '启用满额减免时，门槛必须大于 0'
     return
   }
+  const sortedTiers = [...editForm.value.deliveryFeeTiers].sort((a, b) => Number(a.minKm) - Number(b.minKm))
+  const invalidTier = sortedTiers.some((tier, index) => {
+    const minKm = Number(tier.minKm)
+    const maxKm = Number(tier.maxKm)
+    const fee = Number(tier.fee)
+    const previous = sortedTiers[index - 1]
+    return (
+      !Number.isFinite(minKm) ||
+      !Number.isFinite(maxKm) ||
+      !Number.isFinite(fee) ||
+      minKm < 0 ||
+      maxKm <= minKm ||
+      fee < 0 ||
+      (previous !== undefined && minKm < Number(previous.maxKm))
+    )
+  })
+  if (invalidTier) {
+    formError.value = '请检查配送费距离档：距离须有效且各档不可重叠，费用不能小于 0'
+    return
+  }
+  if (!sortedTiers.some((tier) => tier.enabled)) {
+    formError.value = '请至少启用一档配送费'
+    return
+  }
   formSubmitting.value = true
   try {
     const coverUrls = editForm.value.coverUrls.filter((s) => s.trim())
     const payload: MerchantUpdatePayload = {
       name: editForm.value.name.trim() || undefined,
+      category: editForm.value.category.trim() || undefined,
       description: editForm.value.description.trim() || undefined,
       contactPhone: editForm.value.contactPhone.trim() || undefined,
       businessHours: editForm.value.businessHours.trim() || undefined,
       address: editForm.value.address.trim() || undefined,
-      deliveryFee: editForm.value.deliveryFee === '' ? undefined : Number(editForm.value.deliveryFee),
+      deliveryFeeTiers: sortedTiers.map((tier) => ({
+        minKm: Number(tier.minKm),
+        maxKm: Number(tier.maxKm),
+        fee: Number(tier.fee),
+        enabled: Boolean(tier.enabled)
+      })),
       freeDeliveryThreshold:
         editForm.value.freeDeliveryThreshold === ''
           ? undefined
@@ -1559,6 +1894,14 @@ async function submitEdit() {
       videoUrl: editForm.value.videoUrl.trim() || undefined
     }
     await merchantApi.update(editingId.value, payload, selectedPropertyCompanyId.value || undefined)
+    const nextRate = Number(editForm.value.pointExchangeRate)
+    const prevRate = Number(editSnapshot.value?.pointExchangeRate)
+    if (Number.isFinite(nextRate) && nextRate >= 1 && nextRate !== prevRate) {
+      await merchantApi.batchConfig({
+        merchantIds: [editingId.value],
+        config: { pointExchangeRate: nextRate }
+      })
+    }
     closeEditModal()
     await loadMerchants(currentPage.value)
   } catch (e) {
@@ -1748,25 +2091,31 @@ async function submitEarnModal() {
 
 function canAuditMerchant(id: string) {
   const raw = merchantListCache.value[id]
-  return !!raw && raw.auditStatus === MERCHANT_AUDIT_STATUS.PENDING
+  return !!raw && isMerchantOnboardingPending(raw.auditStatus)
 }
 
-function openAuditModal(id: string, name: string) {
+function openAuditModal(id: string, name: string, auditResult = AUDIT_RESULT.APPROVED) {
   const raw = merchantListCache.value[id]
-  if (!raw || raw.auditStatus !== MERCHANT_AUDIT_STATUS.PENDING) {
+  if (!raw || !isMerchantOnboardingPending(raw.auditStatus)) {
     formError.value = '该商家已审核，不可重复操作'
     return
   }
   resetFormError()
+  auditNotice.value = ''
   auditTargetId.value = id
   auditTargetName.value = name
   auditForm.value = {
-    auditResult: AUDIT_RESULT.APPROVED,
+    auditResult,
     merchantLevel: raw.merchantLevel || MERCHANT_LEVEL.PROPERTY_CERTIFIED,
     category: raw.category || '',
     businessHours: raw.businessHours || '',
+    deliveryFee: raw.deliveryFee != null && raw.deliveryFee !== '' ? String(raw.deliveryFee) : '',
+    freeDeliveryThreshold:
+      raw.freeDeliveryThreshold != null && raw.freeDeliveryThreshold !== ''
+        ? String(raw.freeDeliveryThreshold)
+        : '',
     rejectReason: '',
-    remark: ''
+    remark: auditResult === AUDIT_RESULT.REJECTED ? '请完善后重新申请' : '资料核验通过'
   }
   auditModalOpen.value = true
 }
@@ -1781,7 +2130,7 @@ function closeAuditModal() {
 async function submitAudit() {
   if (!auditTargetId.value) return
   const raw = merchantListCache.value[auditTargetId.value]
-  if (!raw || raw.auditStatus !== MERCHANT_AUDIT_STATUS.PENDING) {
+  if (!raw || !isMerchantOnboardingPending(raw.auditStatus)) {
     formError.value = '该商家已审核，不可重复操作'
     return
   }
@@ -1800,10 +2149,25 @@ async function submitAudit() {
       payload.rejectReason = auditForm.value.rejectReason.trim()
     } else {
       payload.merchantLevel = auditForm.value.merchantLevel
+      const applyRole = raw.applyRole || raw.intendedRole
+      if (applyRole) {
+        payload.applyRole = applyRole
+        payload.intendedRole = applyRole
+      }
       if (auditForm.value.category.trim()) payload.category = auditForm.value.category.trim()
       if (auditForm.value.businessHours.trim()) payload.businessHours = auditForm.value.businessHours.trim()
+      if (isProductMerchantApply(raw)) {
+        if (auditForm.value.deliveryFee.trim()) payload.deliveryFee = auditForm.value.deliveryFee.trim()
+        if (auditForm.value.freeDeliveryThreshold.trim()) {
+          payload.freeDeliveryThreshold = auditForm.value.freeDeliveryThreshold.trim()
+        }
+      }
     }
     await merchantApi.audit(auditTargetId.value, payload)
+    auditNotice.value =
+      auditForm.value.auditResult === AUDIT_RESULT.APPROVED
+        ? '审核已通过，请通知申请人退出并重新登录。'
+        : '已拒绝该入驻申请，记录已清除。'
     closeAuditModal()
     await loadMerchants(currentPage.value)
   } catch (e) {
@@ -1826,6 +2190,7 @@ async function submitKick() {
       reason: kickForm.value.reason.trim(),
       notifyMerchant: kickForm.value.notifyMerchant
     })
+    auditNotice.value = '已踢出该商家。对方无法继续经营，可重新申请入驻。'
     closeKickModal()
     await loadMerchants(currentPage.value)
   } catch (e) {
@@ -1932,9 +2297,18 @@ async function toggleMerchantWithdrawBlock(merchant: MerchantItem) {
 
 onMounted(async () => {
   try {
+    const names = await merchantCategoryApi.list()
+    if (names.length) dictCategories.value = names
     await loadPropertyCompanies()
+    if (isOnboardingAudit.value) {
+      viewMode.value = 'property'
+      selectedAuditStatus.value = MERCHANT_AUDIT_STATUS.PENDING
+      onlyOfficialRecommended.value = ''
+    } else {
+      selectedMerchantStatus.value = MERCHANT_STATUS.ACTIVE
+    }
     await loadMerchants(1)
-    if (isPlatformAdmin.value) {
+    if (isPlatformAdmin.value && !isOnboardingAudit.value) {
       if (!selectedProfitMerchantId.value && profitMerchantOptions.value.length) {
         selectedProfitMerchantId.value = profitMerchantOptions.value[0].id
       }
@@ -1944,6 +2318,21 @@ onMounted(async () => {
     loading.value = false
   }
 })
+
+watch(
+  () => route.name,
+  async (name) => {
+    viewMode.value = 'property'
+    if (name === 'merchant-onboarding-approval') {
+      selectedAuditStatus.value = MERCHANT_AUDIT_STATUS.PENDING
+      onlyOfficialRecommended.value = ''
+    } else {
+      selectedAuditStatus.value = ''
+      selectedMerchantStatus.value = MERCHANT_STATUS.ACTIVE
+    }
+    await loadMerchants(1)
+  }
+)
 </script>
 
 <style scoped>
@@ -2093,6 +2482,15 @@ onMounted(async () => {
 .input:focus, .textarea:focus { border-color: #5c5c9e; }
 .error { font-size: 13px; color: #e05c5c; margin-bottom: 12px; }
 .success { font-size: 13px; color: #3aaf7d; margin-bottom: 12px; }
+.auditNotice { padding: 0 24px 12px; }
+.linkBtn { border: none; background: none; color: #5c5c9e; cursor: pointer; padding: 0; font-size: 14px; }
+.linkBtn.danger { color: #e05c5c; }
+.muted { color: #8c8c9a; }
+.statusBadge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+.statusBadge.pending_audit, .statusBadge.pending { color: #b76a00; background: #fff7e8; }
+.statusBadge.approved, .statusBadge.active { color: #15803d; background: #eaf7ee; }
+.statusBadge.rejected, .statusBadge.kicked, .statusBadge.stopped, .statusBadge.closed { color: #b42318; background: #fee4e2; }
+.statusBadge.frozen, .statusBadge.disabled, .statusBadge.inactive { color: #8c8c9a; background: #f4f5f7; }
 .readonly {
   padding: 10px 12px;
   border-radius: 8px;
@@ -2103,6 +2501,13 @@ onMounted(async () => {
 .formHint { font-size: 12px; color: #8c8c9a; margin: 0 0 12px; line-height: 1.5; }
 .formHint.warning { color: #b45309; }
 .checkLabel { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; font-size: 13px; color: #5c5c66; }
+.tierTitleRow { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.tierTitleRow .detailSectionTitle { margin-bottom: 0; }
+.btnSecondary.compact { padding: 7px 12px; font-size: 12px; }
+.deliveryTierRow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto auto; align-items: end; gap: 10px; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px dashed #e8e8ec; }
+.deliveryTierRow .field { margin-bottom: 0; }
+.tierEnabled { margin-bottom: 11px; white-space: nowrap; }
+.removeTierBtn { width: 34px; height: 40px; margin-bottom: 0; border: 1px solid #f0b8b8; border-radius: 8px; background: #fff; color: #e05c5c; font-size: 20px; cursor: pointer; }
 .field .input:disabled { background: #f5f5f7; color: #8c8c9a; cursor: not-allowed; }
 .loadingText { text-align: center; color: #8c8c9a; padding: 24px 0; }
 .detailGrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px 24px; margin-bottom: 8px; }
@@ -2145,6 +2550,8 @@ onMounted(async () => {
   .table .toolbar { flex-direction: column; align-items: stretch; }
   .fieldRow { grid-template-columns: 1fr; }
   .detailGrid { grid-template-columns: 1fr; }
+  .deliveryTierRow { grid-template-columns: 1fr; align-items: stretch; }
+  .tierEnabled { margin-bottom: 0; }
 }
 @media (max-width: 640px) {
   .header { flex-direction: column; align-items: stretch; }

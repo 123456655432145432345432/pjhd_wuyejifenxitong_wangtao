@@ -292,6 +292,22 @@
               <span>积分规则</span>
             </div>
             <div class="field">
+              <div class="switchRow">
+                <div>
+                  <div class="label">启用积分功能</div>
+                  <p class="note">关闭后住户端隐藏积分、建设积分、资料奖励及支付抵扣，商家端停用购分和赠分。</p>
+                </div>
+                <button
+                  type="button"
+                  class="switch"
+                  :class="{ active: config.pointEnabled }"
+                  @click="config.pointEnabled = !config.pointEnabled"
+                >
+                  <span class="thumb" />
+                </button>
+              </div>
+            </div>
+            <div class="field">
               <label class="label">抵扣物业费比率</label>
               <div class="inline">
                 <div class="inputWrap">
@@ -320,6 +336,7 @@
                 </div>
                 <span class="hint">积分 / 1 元</span>
               </div>
+              <p class="fieldHint">物业级参考值；商家购分报价实际按各商家挂接配置的积分兑换比计算。</p>
             </div>
             <div class="field">
               <label class="label">清零规则</label>
@@ -469,13 +486,14 @@
             <div class="field">
               <div class="switchRow">
                 <div>
-                  <div class="label">App 显示余额</div>
+                  <div class="label">启用物业币功能</div>
+                  <p class="note">关闭后隐藏余额、明细、充值及支付抵扣，不再仅对余额打码。</p>
                 </div>
                 <button
                   type="button"
                   class="switch"
-                  :class="{ active: config.coinDisplayEnabled }"
-                  @click="config.coinDisplayEnabled = !config.coinDisplayEnabled"
+                  :class="{ active: config.coinEnabled }"
+                  @click="config.coinEnabled = !config.coinEnabled"
                 >
                   <span class="thumb" />
                 </button>
@@ -571,6 +589,79 @@
               @click="saveCoinUseCondition"
             >
               {{ coinUseSaving ? '保存中...' : '保存使用条件' }}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ③a 订单核实与冻结（v6.5：核实入口由商品分类=团购决定） -->
+      <section class="section">
+        <div class="sectionHead">
+          <h2 class="sectionTitle">订单核实与冻结</h2>
+          <p class="sectionDesc">
+            仅整单商品分类均为「团购」时，支付后进入商家核实；通过或超时未核实均视为通过并进入冻结期，期满自动分账。其余订单仍走配送选择。退款窗口不能超过冻结期。
+          </p>
+        </div>
+        <div class="grid">
+          <div class="card cardWide">
+            <div class="header">
+              <div class="icon pink"><IconSvg name="wallet" /></div>
+              <span>核实 / 冻结 / 退款窗口</span>
+            </div>
+            <div class="shareGrid three">
+              <div class="field">
+                <label class="label">核实时限</label>
+                <div class="inputWrap">
+                  <input
+                    v-model.number="orderConfig.merchantVerificationHours"
+                    type="number"
+                    min="1"
+                    max="168"
+                    step="1"
+                    class="input"
+                  />
+                  <span class="unit">小时</span>
+                </div>
+              </div>
+              <div class="field">
+                <label class="label">冻结期</label>
+                <div class="inputWrap">
+                  <input
+                    v-model.number="orderConfig.freezeDays"
+                    type="number"
+                    min="1"
+                    max="30"
+                    step="1"
+                    class="input"
+                  />
+                  <span class="unit">天</span>
+                </div>
+              </div>
+              <div class="field">
+                <label class="label">退款窗口</label>
+                <div class="inputWrap">
+                  <input
+                    v-model.number="orderConfig.refundWindowDays"
+                    type="number"
+                    min="1"
+                    max="30"
+                    step="1"
+                    class="input"
+                  />
+                  <span class="unit">天</span>
+                </div>
+              </div>
+            </div>
+            <p class="fieldHint">核实时限只作用于纯团购单；时限内商家未操作则系统自动通过。混装或非团购商品不进核实。冻结期满后不可再申请退货。退款窗口天数不能超过冻结期。</p>
+            <p v-if="orderConfigError" class="error">{{ orderConfigError }}</p>
+            <p v-if="orderConfigSuccess" class="success">{{ orderConfigSuccess }}</p>
+            <button
+              type="button"
+              class="btnSave compact"
+              :disabled="orderConfigSaving || !companyId"
+              @click="saveOrderConfig"
+            >
+              {{ orderConfigSaving ? '保存中...' : '保存订单配置' }}
             </button>
           </div>
         </div>
@@ -729,7 +820,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import IconSvg from '../components/IconSvg.vue'
-import { configApi, propertyCoinMallApi, propertyCompanyApi, coinUseConditionApi, coinWithdrawalAdminApi, platformShareApi, priceApprovalApi } from '../api/services'
+import { adminOrderConfigApi, configApi, propertyCoinMallApi, propertyCompanyApi, coinUseConditionApi, coinWithdrawalAdminApi, platformShareApi, priceApprovalApi } from '../api/services'
 import {
   extractPropertyCompanyConfig,
   normalizePropertyCompanyDetail,
@@ -771,6 +862,15 @@ const coinUseForm = reactive({
 const coinUseSaving = ref(false)
 const coinUseError = ref('')
 const coinUseSuccess = ref('')
+
+const orderConfig = reactive({
+  merchantVerificationHours: 24,
+  freezeDays: 7,
+  refundWindowDays: 3
+})
+const orderConfigSaving = ref(false)
+const orderConfigError = ref('')
+const orderConfigSuccess = ref('')
 
 const withdrawSettings = reactive({
   autoEnabled: false,
@@ -832,8 +932,9 @@ const pointShareSaveBlocked = computed(() => pointShareDirty.value && pointShare
 const config = reactive({
   pointToFeeRatePercent: 1,
   twoYearClearEnabled: false,
+  pointEnabled: true,
+  coinEnabled: true,
   coinExpiryDays: 365,
-  coinDisplayEnabled: true,
   coinIssueMode: COIN_ISSUE_MODE.AUTO,
   coinFreezeDefault: false,
   coinMallEnabled: false,
@@ -856,8 +957,9 @@ const config = reactive({
 } as {
   pointToFeeRatePercent: number
   twoYearClearEnabled: boolean
+  pointEnabled: boolean
+  coinEnabled: boolean
   coinExpiryDays: number
-  coinDisplayEnabled: boolean
   coinIssueMode: string
   coinFreezeDefault: boolean
   coinMallEnabled: boolean
@@ -990,8 +1092,9 @@ function toggleFeeCharge() {
 function mapConfigToForm(apiConfig: PropertyCompanyConfig) {
   config.pointToFeeRatePercent = rateToFormPercent(apiConfig.pointToFeeRate ?? 0.01)
   config.twoYearClearEnabled = apiConfig.twoYearClearEnabled ?? false
+  config.pointEnabled = apiConfig.pointEnabled ?? apiConfig.pointDisplayEnabled ?? true
+  config.coinEnabled = apiConfig.coinEnabled ?? apiConfig.coinDisplayEnabled ?? true
   config.coinExpiryDays = apiConfig.coinExpiryDays ?? 365
-  config.coinDisplayEnabled = apiConfig.coinDisplayEnabled ?? true
   config.coinIssueMode = apiConfig.coinIssueMode || COIN_ISSUE_MODE.AUTO
   config.coinFreezeDefault = apiConfig.coinFreezeDefault ?? false
   config.coinMallEnabled = apiConfig.coinMallEnabled ?? false
@@ -1029,7 +1132,10 @@ function toNonNegativeNumber(value: unknown, fallback = 0) {
 function mapFormToConfig(): PropertyCompanyConfig {
   syncCascadeFromManagementSplit()
   const payload: PropertyCompanyConfig = {
-    coinDisplayEnabled: config.coinDisplayEnabled,
+    pointEnabled: config.pointEnabled,
+    pointDisplayEnabled: config.pointEnabled,
+    coinEnabled: config.coinEnabled,
+    coinDisplayEnabled: config.coinEnabled,
     coinIssueMode: config.coinIssueMode,
     coinExpiryDays: Math.round(Number(config.coinExpiryDays)),
     coinFreezeDefault: config.coinFreezeDefault,
@@ -1219,7 +1325,7 @@ async function loadDetail(options?: { silent?: boolean }) {
       // 专用接口不可用时保留物业公司配置中的 coinMall 字段
     }
     await loadPlatformShareReadonlyValues(id)
-    await Promise.all([loadCoinUseCondition(), loadWithdrawSettings()])
+    await Promise.all([loadCoinUseCondition(), loadWithdrawSettings(), loadOrderConfig()])
   } catch (e) {
     loadError.value = e instanceof ApiError ? e.message : '配置加载失败'
   } finally {
@@ -1256,6 +1362,58 @@ async function saveCoinUseCondition() {
     coinUseError.value = e instanceof ApiError ? e.message : '保存使用条件失败'
   } finally {
     coinUseSaving.value = false
+  }
+}
+
+async function loadOrderConfig() {
+  try {
+    const res = await adminOrderConfigApi.get()
+    orderConfig.merchantVerificationHours = res.merchantVerificationHours ?? 24
+    orderConfig.freezeDays = res.freezeDays ?? 7
+    orderConfig.refundWindowDays = res.refundWindowDays ?? 3
+  } catch {
+    // 接口未部署时保留默认
+  }
+}
+
+async function saveOrderConfig() {
+  if (orderConfigSaving.value || !companyId.value) return
+  const hours = Number(orderConfig.merchantVerificationHours) || 0
+  const freezeDays = Number(orderConfig.freezeDays) || 0
+  const refundWindowDays = Number(orderConfig.refundWindowDays) || 0
+  if (hours < 1 || hours > 168) {
+    orderConfigError.value = '核实时限须在 1–168 小时'
+    return
+  }
+  if (freezeDays < 1 || freezeDays > 30) {
+    orderConfigError.value = '冻结期须在 1–30 天'
+    return
+  }
+  if (refundWindowDays < 1 || refundWindowDays > 30) {
+    orderConfigError.value = '退款窗口须在 1–30 天'
+    return
+  }
+  if (refundWindowDays > freezeDays) {
+    orderConfigError.value = '退款窗口不能超过冻结期'
+    return
+  }
+  orderConfigSaving.value = true
+  orderConfigError.value = ''
+  orderConfigSuccess.value = ''
+  try {
+    const res = await adminOrderConfigApi.update({
+      merchantVerificationHours: hours,
+      freezeDays,
+      refundWindowDays
+    })
+    orderConfig.merchantVerificationHours = res.merchantVerificationHours ?? hours
+    orderConfig.freezeDays = res.freezeDays ?? freezeDays
+    orderConfig.refundWindowDays = res.refundWindowDays ?? refundWindowDays
+    orderConfigSuccess.value = '订单配置已保存'
+  } catch (e) {
+    orderConfigError.value = e instanceof ApiError ? e.message : '保存订单配置失败'
+  } finally {
+    orderConfigSaving.value = false
   }
 }
 

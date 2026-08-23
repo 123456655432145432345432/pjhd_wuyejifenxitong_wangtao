@@ -11,6 +11,10 @@
       <div class="card">
         <h3 class="cardTitle">购买积分</h3>
         <p v-if="purchaseMsg" :class="purchaseMsgType">{{ purchaseMsg }}</p>
+        <div class="quoteBox">
+          <span>100 元可购</span>
+          <strong>{{ quoteLoading ? '计算中…' : `${quotePointAmount} 积分` }}</strong>
+        </div>
         <div class="field">
           <label class="label">积分数量</label>
           <input v-model.number="purchaseForm.pointAmount" type="number" min="1" class="input" />
@@ -32,24 +36,17 @@
           </p>
         </div>
         <div class="field">
-          <label class="label">选择顾客</label>
-          <select
-            v-model="grantForm.orderId"
+          <label class="label">住户手机号</label>
+          <input
+            v-model="grantForm.phone"
+            type="tel"
+            inputmode="numeric"
+            maxlength="11"
+            pattern="1\d{10}"
             class="input"
-            :disabled="ordersLoading"
-          >
-            <option value="">请从历史订单选择顾客</option>
-            <option v-for="order in orderOptions" :key="order.id" :value="order.id">
-              {{ formatOrderOption(order) }}
-            </option>
-          </select>
-          <p v-if="selectedOrder" class="hint">
-            顾客：{{ selectedOrder.residentName || '—' }}
-            <template v-if="selectedOrder.contactPhone"> · {{ selectedOrder.contactPhone }}</template>
-          </p>
-          <p v-else-if="!ordersLoading && !orderOptions.length" class="hint warn">
-            暂无含顾客信息的历史订单
-          </p>
+            placeholder="请输入住户手机号"
+          />
+          <p class="hint">系统按手机号定位同一物业下的住户。</p>
         </div>
         <div class="field">
           <label class="label">赠送积分</label>
@@ -67,7 +64,7 @@
         </div>
         <button
           class="btnPrimary"
-          :disabled="grantSubmitting || !totalBalance || !orderOptions.length"
+          :disabled="grantSubmitting || !totalBalance"
           @click="submitGrant"
         >
           {{ grantSubmitting ? '赠送中...' : '确认赠送' }}
@@ -124,7 +121,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { merchantPortalApi } from '../../api/services'
-import type { MerchantPointPurchaseItem, OrderItem } from '../../api/types'
+import type { MerchantPointPurchaseItem } from '../../api/types'
 import { ApiError } from '../../api/request'
 import {
   getEnumLabel,
@@ -137,10 +134,10 @@ import { useIsMobile } from '../../composables/useIsMobile'
 const { isMobile } = useIsMobile()
 const purchases = ref<MerchantPointPurchaseItem[]>([])
 const approvedPurchases = ref<MerchantPointPurchaseItem[]>([])
-const orderOptions = ref<OrderItem[]>([])
 const loading = ref(false)
 const approvedLoading = ref(false)
-const ordersLoading = ref(false)
+const quoteLoading = ref(false)
+const quotePointAmount = ref(0)
 const listError = ref('')
 const auditFilter = ref('')
 const purchaseSubmitting = ref(false)
@@ -152,17 +149,13 @@ const grantMsgType = ref('success')
 
 const purchaseForm = reactive({ pointAmount: 1000 })
 const grantForm = reactive({
-  orderId: '',
+  phone: '',
   pointAmount: 50,
   description: '消费赠送'
 })
 
 const totalBalance = computed(() =>
   approvedPurchases.value.reduce((sum, item) => sum + (item.remainingPoints ?? 0), 0)
-)
-
-const selectedOrder = computed(() =>
-  orderOptions.value.find((order) => order.id === grantForm.orderId)
 )
 
 function formatMoney(value?: number) {
@@ -181,29 +174,15 @@ function pointPurchaseStatusLabel(status?: string) {
   return getEnumLabel(POINT_PURCHASE_STATUS_LABEL, status, status || '—')
 }
 
-function formatOrderOption(order: OrderItem) {
-  const name = order.residentName || '未知顾客'
-  const no = order.orderNo || order.id
-  const time = order.createdAt || ''
-  return `${name} · ${no}${time ? ` · ${time}` : ''}`
-}
-
-async function loadOrderOptions() {
-  ordersLoading.value = true
+async function loadQuote() {
+  quoteLoading.value = true
   try {
-    const res = await merchantPortalApi.orders({
-      page: 1,
-      pageSize: 50,
-      sort: '-createdAt'
-    })
-    orderOptions.value = (res.list || []).filter((order) => order.residentId)
-    if (grantForm.orderId && !orderOptions.value.some((order) => order.id === grantForm.orderId)) {
-      grantForm.orderId = ''
-    }
+    const quote = await merchantPortalApi.pointQuote(100)
+    quotePointAmount.value = Number(quote.pointAmount) || 0
   } catch {
-    orderOptions.value = []
+    quotePointAmount.value = 0
   } finally {
-    ordersLoading.value = false
+    quoteLoading.value = false
   }
 }
 
@@ -243,7 +222,7 @@ async function loadPurchases(page = 1) {
 }
 
 async function reloadAll() {
-  await Promise.all([loadPurchases(1), loadApprovedPurchases(), loadOrderOptions()])
+  await Promise.all([loadPurchases(1), loadApprovedPurchases(), loadQuote()])
 }
 
 async function submitPurchase() {
@@ -279,8 +258,9 @@ async function submitGrant() {
     grantMsgType.value = 'error'
     return
   }
-  if (!grantForm.orderId || !selectedOrder.value?.residentId) {
-    grantMsg.value = '请从历史订单选择顾客'
+  const phone = grantForm.phone.trim()
+  if (!/^1\d{10}$/.test(phone)) {
+    grantMsg.value = '请输入正确的 11 位住户手机号'
     grantMsgType.value = 'error'
     return
   }
@@ -298,13 +278,13 @@ async function submitGrant() {
   grantMsg.value = ''
   try {
     await merchantPortalApi.grantPoints({
-      residentId: selectedOrder.value.residentId,
+      phone,
       pointAmount: grantForm.pointAmount,
       description: grantForm.description.trim() || undefined
     })
     grantMsg.value = '积分赠送成功'
     grantMsgType.value = 'success'
-    grantForm.orderId = ''
+    grantForm.phone = ''
     grantForm.pointAmount = 50
     grantForm.description = '消费赠送'
     await reloadAll()
@@ -337,6 +317,8 @@ onMounted(reloadAll)
 .balanceBox { margin-bottom: 16px; padding: 14px 16px; background: #f7f7fb; border-radius: 8px; }
 .balanceLabel { display: block; font-size: 13px; color: #5c5c66; margin-bottom: 6px; }
 .balanceValue { font-size: 28px; font-weight: 600; color: #5c5c9e; }
+.quoteBox { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 16px; padding: 14px 16px; background: #f7f7fb; border-radius: 8px; color: #5c5c66; font-size: 13px; }
+.quoteBox strong { color: #5c5c9e; font-size: 20px; }
 .hint { font-size: 12px; color: #8c8c9a; margin-top: 6px; }
 .hint.warn { color: #d48806; }
 .mono { font-family: ui-monospace, monospace; font-size: 12px; }

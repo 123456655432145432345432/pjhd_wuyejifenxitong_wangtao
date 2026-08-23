@@ -13,15 +13,30 @@ export const MERCHANT_LEVEL_LABEL: Record<string, string> = {
 }
 
 export const MERCHANT_AUDIT_STATUS = {
+  NONE: 'none',
   PENDING: 'pending_audit',
   APPROVED: 'approved',
-  REJECTED: 'rejected'
+  /** 历史遗留：新审核拒绝会物理删除记录，不再产生 rejected */
+  REJECTED: 'rejected',
+  KICKED: 'kicked',
+  STOPPED: 'stopped',
+  CLOSED: 'closed'
 } as const
 
 export const MERCHANT_AUDIT_STATUS_LABEL: Record<string, string> = {
+  none: '未申请',
   pending_audit: '待审核',
+  pending: '待审核',
   approved: '已通过',
-  rejected: '已拒绝'
+  rejected: '已拒绝',
+  kicked: '已被踢出',
+  stopped: '已停用',
+  closed: '已退出'
+}
+
+/** 体系 A：商品商家/技工/组长入驻待审（兼容后端偶发 `pending`） */
+export function isMerchantOnboardingPending(status?: string | null) {
+  return status === MERCHANT_AUDIT_STATUS.PENDING || status === 'pending'
 }
 
 /** 审核操作结果（POST /admin/merchants/{id}/audit 的 auditResult） */
@@ -30,12 +45,87 @@ export const AUDIT_RESULT = {
   REJECTED: 'rejected'
 } as const
 
+/** 住户楼栋变更申请状态 */
+export const BUILDING_CHANGE_STATUS = {
+  PENDING: 'pending',
+  PENDING_AUDIT: 'pending_audit',
+  APPROVED: 'approved',
+  REJECTED: 'rejected'
+} as const
+
+export const BUILDING_CHANGE_STATUS_LABEL: Record<string, string> = {
+  pending: '待审核',
+  pending_audit: '待审核',
+  approved: '已通过',
+  rejected: '已拒绝'
+}
+
+export const BUILDING_CHANGE_STATUS_OPTIONS = [
+  { value: '', label: '全部状态' },
+  { value: BUILDING_CHANGE_STATUS.PENDING, label: '待审核' },
+  { value: BUILDING_CHANGE_STATUS.APPROVED, label: '已通过' },
+  { value: BUILDING_CHANGE_STATUS.REJECTED, label: '已拒绝' }
+]
+
+/** [ENUM] 一级代理（个体负责人）住户申请状态，对齐住户端 pending / approved / rejected */
+export const INDIVIDUAL_LEADER_APPLICATION_STATUS = {
+  PENDING: 'pending',
+  PENDING_AUDIT: 'pending_audit',
+  APPROVED: 'approved',
+  REJECTED: 'rejected'
+} as const
+
+export const INDIVIDUAL_LEADER_APPLICATION_STATUS_LABEL: Record<string, string> = {
+  pending: '待审核',
+  pending_audit: '待审核',
+  approved: '已通过',
+  rejected: '已拒绝'
+}
+
+export const INDIVIDUAL_LEADER_APPLICATION_STATUS_OPTIONS = [
+  { value: '', label: '全部状态' },
+  { value: INDIVIDUAL_LEADER_APPLICATION_STATUS.PENDING, label: '待审核' },
+  { value: INDIVIDUAL_LEADER_APPLICATION_STATUS.APPROVED, label: '已通过' },
+  { value: INDIVIDUAL_LEADER_APPLICATION_STATUS.REJECTED, label: '已拒绝' }
+]
+
+export function isIndividualLeaderApplicationPending(status?: string | null) {
+  return (
+    status === INDIVIDUAL_LEADER_APPLICATION_STATUS.PENDING ||
+    status === INDIVIDUAL_LEADER_APPLICATION_STATUS.PENDING_AUDIT
+  )
+}
+
+/** 小区房号状态（§84 community_rooms） */
+export const COMMUNITY_ROOM_STATUS = {
+  VACANT: 'vacant',
+  OCCUPIED: 'occupied',
+  LOCKED: 'locked'
+} as const
+
+export const COMMUNITY_ROOM_STATUS_LABEL: Record<string, string> = {
+  vacant: '空置',
+  occupied: '已入住',
+  locked: '锁定'
+}
+
+export const COMMUNITY_ROOM_STATUS_OPTIONS = [
+  { value: '', label: '全部状态' },
+  { value: COMMUNITY_ROOM_STATUS.VACANT, label: '空置' },
+  { value: COMMUNITY_ROOM_STATUS.OCCUPIED, label: '已入住' },
+  { value: COMMUNITY_ROOM_STATUS.LOCKED, label: '锁定' }
+]
+
 export const MERCHANT_STATUS = {
   ACTIVE: 'active',
   FROZEN: 'frozen',
   DISABLED: 'disabled',
   INACTIVE: 'inactive',
-  KICKED: 'kicked'
+  STOPPED: 'stopped',
+  KICKED: 'kicked',
+  CLOSED: 'closed',
+  /** GET /merchants 管理端筛选码（§7.1） */
+  QUIT: 'quit'
 } as const
 
 export const MERCHANT_STATUS_LABEL: Record<string, string> = {
@@ -43,7 +133,24 @@ export const MERCHANT_STATUS_LABEL: Record<string, string> = {
   frozen: '已冻结',
   disabled: '已禁用',
   inactive: '已停业',
-  kicked: '已踢出'
+  stopped: '已停用',
+  kicked: '已踢出',
+  closed: '已退出',
+  quit: '已退出'
+}
+
+/** 被踢 / 停用 / 退出：终态，不得再展示「已通过 / 营业中」 */
+export function isMerchantTerminalStatus(status?: string | null) {
+  return (
+    status === MERCHANT_STATUS.KICKED ||
+    status === MERCHANT_STATUS.STOPPED ||
+    status === MERCHANT_STATUS.CLOSED ||
+    status === MERCHANT_STATUS.QUIT
+  )
+}
+
+export function canKickMerchant(status?: string | null) {
+  return !isMerchantTerminalStatus(status)
 }
 
 /** 商家来源（v4.1 merchants.merchant_source） */
@@ -156,21 +263,135 @@ export const ANNOUNCEMENT_STATUS_LABEL: Record<string, string> = {
 export const ORDER_STATUS = {
   PENDING: 'pending',
   PAID: 'paid',
+  PENDING_VERIFICATION: 'pending_verification',
+  VERIFIED: 'verified',
   DELIVERING: 'delivering',
   COMPLETED: 'completed',
   CANCELLED: 'cancelled',
   REFUNDING: 'refunding',
-  REFUNDED: 'refunded'
+  REFUNDED: 'refunded',
+  REFUND_REJECTED: 'refund_rejected'
 } as const
 
 export const ORDER_STATUS_LABEL: Record<string, string> = {
   pending: '待支付',
   paid: '已支付',
+  pending_verification: '待商家核实',
+  verified: '已核实（冻结中）',
   delivering: '配送中',
   completed: '已完成',
   cancelled: '已取消',
   refunding: '退款中',
-  refunded: '已退款'
+  refunded: '已退款',
+  refund_rejected: '退货已驳回'
+}
+
+export const ORDER_STATUS_OPTIONS = [
+  { value: ORDER_STATUS.PENDING, label: ORDER_STATUS_LABEL.pending },
+  { value: ORDER_STATUS.PAID, label: ORDER_STATUS_LABEL.paid },
+  { value: ORDER_STATUS.PENDING_VERIFICATION, label: ORDER_STATUS_LABEL.pending_verification },
+  { value: ORDER_STATUS.VERIFIED, label: ORDER_STATUS_LABEL.verified },
+  { value: ORDER_STATUS.DELIVERING, label: ORDER_STATUS_LABEL.delivering },
+  { value: ORDER_STATUS.COMPLETED, label: ORDER_STATUS_LABEL.completed },
+  { value: ORDER_STATUS.CANCELLED, label: ORDER_STATUS_LABEL.cancelled },
+  { value: ORDER_STATUS.REFUNDING, label: ORDER_STATUS_LABEL.refunding },
+  { value: ORDER_STATUS.REFUNDED, label: ORDER_STATUS_LABEL.refunded },
+  { value: ORDER_STATUS.REFUND_REJECTED, label: ORDER_STATUS_LABEL.refund_rejected }
+]
+
+/** 管理端退货审核 POST /admin/orders/refunds/{orderId}/audit 的 action */
+export const ORDER_REFUND_AUDIT_ACTION = {
+  APPROVE: 'approve',
+  REJECT: 'reject'
+} as const
+
+export const ORDER_REFUND_FILTER_OPTIONS = [
+  { value: '', label: '全部' },
+  { value: ORDER_STATUS.REFUNDING, label: '待审核' },
+  { value: ORDER_STATUS.REFUNDED, label: '已通过' },
+  { value: ORDER_STATUS.REFUND_REJECTED, label: '已驳回' }
+]
+
+const ORDER_REFUND_STATUS_ALIASES: Record<string, string> = {
+  refunding: ORDER_STATUS.REFUNDING,
+  退款中: ORDER_STATUS.REFUNDING,
+  待审核: ORDER_STATUS.REFUNDING,
+  pending_audit: ORDER_STATUS.REFUNDING,
+  pending_review: ORDER_STATUS.REFUNDING,
+  refunded: ORDER_STATUS.REFUNDED,
+  已退款: ORDER_STATUS.REFUNDED,
+  已通过: ORDER_STATUS.REFUNDED,
+  refund_rejected: ORDER_STATUS.REFUND_REJECTED,
+  已驳回: ORDER_STATUS.REFUND_REJECTED,
+  退货已驳回: ORDER_STATUS.REFUND_REJECTED
+}
+
+export function normalizeOrderRefundStatus(value?: string | null) {
+  const key = (value || '').trim()
+  if (!key) return ''
+  return ORDER_REFUND_STATUS_ALIASES[key] || ORDER_REFUND_STATUS_ALIASES[key.toLowerCase()] || key
+}
+
+export function isOrderRefundPending(status?: string | null) {
+  const normalized = normalizeOrderRefundStatus(status)
+  return Boolean(normalized) && normalized !== ORDER_STATUS.REFUNDED && normalized !== ORDER_STATUS.REFUND_REJECTED
+}
+
+export function isOrderPendingVerification(status?: string | null) {
+  return status === ORDER_STATUS.PENDING_VERIFICATION
+}
+
+/** 订单履约方式（API v5.7 §68） */
+export const FULFILLMENT_MODE = {
+  PENDING_CHOICE: 'pending_choice',
+  COURIER_HALL: 'courier_hall',
+  MERCHANT_SELF: 'merchant_self',
+  NONE: 'none'
+} as const
+
+export const FULFILLMENT_MODE_LABEL: Record<string, string> = {
+  pending_choice: '待选择配送方式',
+  courier_hall: '平台配送（抢单大厅）',
+  merchant_self: '商家自配',
+  none: '无需配送'
+}
+
+export const FULFILLMENT_MODE_OPTIONS = [
+  { value: '', label: '全部履约' },
+  ...Object.entries(FULFILLMENT_MODE_LABEL).map(([value, label]) => ({ value, label }))
+]
+
+/** 配送承运方（API v5.7 §68.5） */
+export const CARRIER_TYPE = {
+  COURIER: 'courier',
+  MERCHANT: 'merchant'
+} as const
+
+export const CARRIER_TYPE_LABEL: Record<string, string> = {
+  courier: '配送员',
+  merchant: '商家自配'
+}
+
+export const CARRIER_TYPE_OPTIONS = [
+  { value: '', label: '全部承运' },
+  ...Object.entries(CARRIER_TYPE_LABEL).map(([value, label]) => ({ value, label }))
+]
+
+/** 履约选择审计 action（fulfillment_choice_logs） */
+export const FULFILLMENT_CHOICE_ACTION = {
+  CHOOSE_MERCHANT_SELF: 'choose_merchant_self',
+  CHOOSE_COURIER_HALL: 'choose_courier_hall',
+  TIMEOUT: 'timeout',
+  OVERRIDE: 'override'
+} as const
+
+export const FULFILLMENT_CHOICE_ACTION_LABEL: Record<string, string> = {
+  choose_merchant_self: '商家选自配',
+  choose_courier_hall: '商家发大厅',
+  choose_self: '商家选自配',
+  choose_hall: '商家发大厅',
+  timeout: '超时自动发大厅',
+  override: '管理员改派'
 }
 
 export const PAYMENT_METHOD = {
@@ -223,6 +444,43 @@ export const RESIDENT_SHOP_VISIBILITY = {
 export const RESIDENT_SHOP_VISIBILITY_LABEL: Record<string, string> = {
   public: '对外展示',
   private: '不对外'
+}
+
+/** 体系 B：业主商户申请状态（§60；缴保证金后偶发 `pending_review`） */
+export const RESIDENT_MERCHANT_STATUS = {
+  PENDING_DEPOSIT: 'pending_deposit',
+  PENDING_AUDIT: 'pending_audit',
+  PENDING_REVIEW: 'pending_review',
+  ACTIVE: 'active',
+  SUSPENDED: 'suspended',
+  QUITTING: 'quitting',
+  CLOSED: 'closed',
+  REJECTED: 'rejected'
+} as const
+
+export const RESIDENT_MERCHANT_STATUS_LABEL: Record<string, string> = {
+  pending_deposit: '待缴保证金',
+  pending_audit: '待审核',
+  pending_review: '待审核',
+  active: '营业中',
+  suspended: '已暂停',
+  quitting: '退出冷却中',
+  closed: '已关闭',
+  rejected: '已拒绝'
+}
+
+export const RESIDENT_MERCHANT_STATUS_OPTIONS = [
+  { value: RESIDENT_MERCHANT_STATUS.PENDING_AUDIT, label: '待审核' },
+  { value: RESIDENT_MERCHANT_STATUS.PENDING_DEPOSIT, label: '待缴保证金' },
+  { value: RESIDENT_MERCHANT_STATUS.ACTIVE, label: '营业中' },
+  { value: RESIDENT_MERCHANT_STATUS.REJECTED, label: '已拒绝' }
+]
+
+export function isResidentMerchantPendingAudit(status?: string | null) {
+  return (
+    status === RESIDENT_MERCHANT_STATUS.PENDING_AUDIT ||
+    status === RESIDENT_MERCHANT_STATUS.PENDING_REVIEW
+  )
 }
 
 export const VOTE_OPTION = {
@@ -462,6 +720,12 @@ export const CONSULTATION_CATEGORY_OPTIONS = Object.entries(CONSULTATION_CATEGOR
 
 /** 二期业务错误码提示 */
 export const PHASE2_ERROR_MESSAGE: Record<number, string> = {
+  70021: '已超过履约选择时限，无法再选择',
+  70022: '本单无需配送，不可选择履约方式（团购单）',
+  70023: '请先选择履约方式',
+  70024: '配送未完成，不可完成订单',
+  70025: '履约方式已锁定，不可变更',
+  80010: '非配送员承运单，配送员不可抢单/操作',
   90101: '同一用户当日定向消息已达上限',
   90102: '物业公司当日定向推送任务已达上限',
   90103: '今日新聊人数已达上限',
@@ -472,13 +736,22 @@ export const PHASE2_ERROR_MESSAGE: Record<number, string> = {
   90108: '所有匹配商家均未响应，需求已关闭',
   90109: '超出管辖范围',
   90110: '该咨询师暂不可预约',
-  90111: '该店铺暂未对外展示'
+  90111: '该店铺暂未对外展示',
+  90120: '账号存在关联业务数据，无法彻底删除，请改用禁用或软删除',
+  90121: '账号已删除，无法再次操作',
+  99002: '微信支付接口异常',
+  99003: '微信支付签名校验失败',
+  99004: '微信支付未配置',
+  99010: '商家核实时限已过，系统已自动通过',
+  99011: '订单尚未通过商家核实',
+  99012: '冻结期已过，不可申请退货',
+  99013: '订单因商家超时未核实已自动通过'
 }
 
 /** 商家入驻/接单资质（v4.1.1） */
 export const MERCHANT_GATE_ERROR_MESSAGE: Record<number, string> = {
   60002: '入驻审核中，暂不能接单，请查看入驻进度',
-  60005: '商家已被踢出，无法接单或报价'
+  60005: '商家已被踢出，无法继续经营，可重新申请入驻'
 }
 
 export const RESIDENT_USER_TYPE = {
@@ -515,6 +788,34 @@ export const FAMILY_RELATION_LABEL: Record<string, string> = {
   sibling: '兄弟姐妹',
   other: '其他'
 }
+
+export const FAMILY_RELATION_OPTIONS = [
+  { value: FAMILY_RELATION.SPOUSE, label: '配偶' },
+  { value: FAMILY_RELATION.CHILD, label: '子女' },
+  { value: FAMILY_RELATION.PARENT, label: '父母' },
+  { value: FAMILY_RELATION.SIBLING, label: '兄弟姐妹' },
+  { value: FAMILY_RELATION.OTHER, label: '其他' }
+]
+
+/** 商家分类字典兜底（与 GET /merchant-categories 对齐；接口优先） */
+export const MERCHANT_CATEGORY_NAMES = [
+  '外卖',
+  '周围商家',
+  '自营',
+  '农家',
+  '外卖小吃',
+  '团购',
+  '酒店民宿',
+  '洗浴汗蒸',
+  '按摩足疗',
+  '美食',
+  '外卖小区'
+] as const
+
+export const MERCHANT_CATEGORY_OPTIONS = MERCHANT_CATEGORY_NAMES.map((name) => ({
+  value: name,
+  label: name
+}))
 
 export const RESIDENT_STATUS = {
   ACTIVE: 'active',
@@ -907,13 +1208,30 @@ export const MERCHANT_AUDIT_STATUS_OPTIONS = [
   { value: '', label: '全部审核状态' },
   { value: MERCHANT_AUDIT_STATUS.PENDING, label: '待审核' },
   { value: MERCHANT_AUDIT_STATUS.APPROVED, label: '已通过' },
+  /** 兼容历史数据；新审核拒绝会硬删，管理端不要再依赖此筛查看驳回记录 */
   { value: MERCHANT_AUDIT_STATUS.REJECTED, label: '已拒绝' }
+]
+
+export const MERCHANT_APPLY_ROLE_FILTER_OPTIONS = [
+  { value: '', label: '全部' },
+  { value: USER_ROLE.MERCHANT, label: '商品商家' },
+  { value: USER_ROLE.TECHNICIAN, label: ROLE_LABEL[USER_ROLE.TECHNICIAN] },
+  { value: USER_ROLE.ACTIVITY_LEADER, label: ROLE_LABEL[USER_ROLE.ACTIVITY_LEADER] }
 ]
 
 export const PLATFORM_MERCHANT_STATUS_OPTIONS = [
   { value: '', label: '全部状态' },
   { value: MERCHANT_STATUS.ACTIVE, label: '营业中' },
   { value: MERCHANT_STATUS.INACTIVE, label: '已停业' }
+]
+
+/** 物业商家列表营业状态筛选（§7.1 status，默认营业中以免与踢出历史叠在一起） */
+export const MERCHANT_OPERATING_STATUS_OPTIONS = [
+  { value: MERCHANT_STATUS.ACTIVE, label: '营业中' },
+  { value: MERCHANT_STATUS.KICKED, label: '已踢出' },
+  { value: MERCHANT_STATUS.INACTIVE, label: '已停业' },
+  { value: MERCHANT_STATUS.QUIT, label: '已退出' },
+  { value: '', label: '全部状态' }
 ]
 
 export const MERCHANT_LEVEL_OPTIONS = Object.entries(MERCHANT_LEVEL_LABEL).map(([value, label]) => ({
@@ -1000,6 +1318,8 @@ export const DELIVERY_STATUS = {
   ACCEPTED: 'accepted',
   GRABBED: 'grabbed',
   DELIVERING: 'delivering',
+  /** 商家自配进行中（API v5.7 §68） */
+  MERCHANT_SELF: 'merchant_self',
   /** 已送达（配送完成；配送侧可提现在 complete 成功后刷新 /courier-managers/my） */
   DELIVERED: 'delivered',
   /**
@@ -1015,6 +1335,7 @@ export const DELIVERY_STATUS_LABEL: Record<string, string> = {
   accepted: '已接单',
   grabbed: '已抢单',
   delivering: '配送中',
+  merchant_self: '商家自配中',
   delivered: '已送达',
   completed: '已完成',
   cancelled: '已取消',
@@ -1044,6 +1365,60 @@ export type AuditResult = (typeof AUDIT_RESULT)[keyof typeof AUDIT_RESULT]
 export function getEnumLabel(map: Record<string, string>, value?: string | null, fallback = '-') {
   if (!value) return fallback
   return map[value] ?? value
+}
+
+/** 终态优先：被踢/停用/退出时不得再展示「已通过」 */
+export function resolveMerchantAuditDisplayStatus(
+  auditStatus?: string | null,
+  operatingStatus?: string | null
+) {
+  if (isMerchantTerminalStatus(operatingStatus)) return operatingStatus as string
+  if (isMerchantTerminalStatus(auditStatus)) return auditStatus as string
+  return auditStatus || ''
+}
+
+export function getMerchantAuditDisplayLabel(
+  auditStatus?: string | null,
+  operatingStatus?: string | null,
+  fallback = '-'
+) {
+  return getEnumLabel(
+    MERCHANT_AUDIT_STATUS_LABEL,
+    resolveMerchantAuditDisplayStatus(auditStatus, operatingStatus),
+    fallback
+  )
+}
+
+/** 终态优先：被踢/停用/退出时不得再展示「营业中」 */
+export function resolveMerchantOperatingDisplayStatus(
+  operatingStatus?: string | null,
+  auditStatus?: string | null
+) {
+  if (isMerchantTerminalStatus(operatingStatus)) return operatingStatus as string
+  if (isMerchantTerminalStatus(auditStatus)) return auditStatus as string
+  return operatingStatus || ''
+}
+
+export function getMerchantOperatingDisplayLabel(
+  operatingStatus?: string | null,
+  auditStatus?: string | null,
+  fallback = '—'
+) {
+  return getEnumLabel(
+    MERCHANT_STATUS_LABEL,
+    resolveMerchantOperatingDisplayStatus(operatingStatus, auditStatus),
+    fallback
+  )
+}
+
+/** 30004 重复申请：按 data.auditStatus 展示真实状态，严禁默认 pending_audit */
+export function formatMerchantDuplicateBindingMessage(
+  data?: { auditStatus?: string | null } | null,
+  fallback = '该物业下已存在相同申请，请勿重复提交'
+) {
+  const status = data?.auditStatus
+  if (!status) return fallback
+  return `该物业下已存在相同申请（当前状态：${getMerchantAuditDisplayLabel(status, status)}），请勿重复提交`
 }
 
 export function getPhase2ErrorMessage(code?: number, fallback?: string) {
@@ -1437,6 +1812,12 @@ export const COMMUNITY_POST_STATUS_OPTIONS = [
   { value: COMMUNITY_POST_STATUS.DELETED, label: '已删除' }
 ]
 
+/** [ENUM] 社区论坛 — 评论状态 */
+export const COMMUNITY_COMMENT_STATUS = {
+  PUBLISHED: 'published',
+  DELETED: 'deleted'
+} as const
+
 /** [ENUM] 社区论坛 — 举报目标 */
 export const COMMUNITY_REPORT_TARGET = {
   POST: 'post',
@@ -1548,3 +1929,120 @@ export const API_ERROR_CODE = {
   PREVIEW_EXPIRED: 'PREVIEW_EXPIRED',
   ARREARS_REMINDER_DUPLICATE: 'ARREARS_REMINDER_DUPLICATE'
 } as const
+
+/** 新旧资金切分：上线前内部钱包 vs 上线后微信支付分账 */
+export const SETTLEMENT_CHANNEL = {
+  LEGACY: 'legacy',
+  CBK: 'cbk'
+} as const
+
+export const SETTLEMENT_CHANNEL_LABEL: Record<string, string> = {
+  legacy: '历史余额',
+  cbk: '微信支付分账'
+}
+
+/**
+ * CBK 收款主体。联调指南 / API §90 使用大写枚举（PLATFORM 等），
+ * 与仓库通用 snake_case 约定不同；请求体按此常量提交。
+ */
+export const CBK_OWNER_TYPE = {
+  PLATFORM: 'PLATFORM',
+  PROPERTY: 'PROPERTY',
+  MERCHANT: 'MERCHANT',
+  COORDINATOR: 'COORDINATOR',
+  SECTOR_LEADER: 'SECTOR_LEADER',
+  INDIVIDUAL_LEADER: 'INDIVIDUAL_LEADER',
+  COURIER: 'COURIER'
+} as const
+
+/** 平台主体 ownerId 固定值 */
+export const CBK_PLATFORM_OWNER_ID = 'PLATFORM'
+
+export const CBK_OWNER_TYPE_LABEL: Record<string, string> = {
+  PLATFORM: '平台抽成',
+  PROPERTY: '物业公司',
+  MERCHANT: '商家',
+  COORDINATOR: '统筹',
+  SECTOR_LEADER: '板块负责人',
+  INDIVIDUAL_LEADER: '个体负责人',
+  COURIER: '快递员',
+  platform: '平台抽成',
+  property: '物业公司',
+  merchant: '商家',
+  coordinator: '统筹',
+  sector_leader: '板块负责人',
+  individual_leader: '个体负责人',
+  courier: '快递员'
+}
+
+export const CBK_OWNER_ID_HINT: Record<string, string> = {
+  PLATFORM: '固定填 PLATFORM',
+  PROPERTY: '物业 ID（pc_xxx）',
+  MERCHANT: '商家 ID（mer_xxx）',
+  COORDINATOR: '统筹账号 ID',
+  SECTOR_LEADER: '板块负责人 ID',
+  INDIVIDUAL_LEADER: '个体负责人 ID',
+  COURIER: '快递员 ID（cour_xxx）'
+}
+
+export const CBK_OWNER_TYPE_OPTIONS = [
+  { value: '', label: '全部角色' },
+  { value: CBK_OWNER_TYPE.PLATFORM, label: CBK_OWNER_TYPE_LABEL.PLATFORM },
+  { value: CBK_OWNER_TYPE.PROPERTY, label: CBK_OWNER_TYPE_LABEL.PROPERTY },
+  { value: CBK_OWNER_TYPE.MERCHANT, label: CBK_OWNER_TYPE_LABEL.MERCHANT },
+  { value: CBK_OWNER_TYPE.COORDINATOR, label: CBK_OWNER_TYPE_LABEL.COORDINATOR },
+  { value: CBK_OWNER_TYPE.SECTOR_LEADER, label: CBK_OWNER_TYPE_LABEL.SECTOR_LEADER },
+  { value: CBK_OWNER_TYPE.INDIVIDUAL_LEADER, label: CBK_OWNER_TYPE_LABEL.INDIVIDUAL_LEADER },
+  { value: CBK_OWNER_TYPE.COURIER, label: CBK_OWNER_TYPE_LABEL.COURIER }
+]
+
+/** GET /admin/cbk/reconcile/failed 待人工介入状态 */
+export const CBK_RECONCILE_STATUS = {
+  FREEZE_FAILED: 'freeze_failed',
+  FINISH_FAILED: 'finish_failed',
+  WITHDRAW_FAILED: 'withdraw_failed',
+  REVERSE_FAILED: 'reverse_failed',
+  REFUND_FAILED: 'refund_failed',
+  SKIPPED: 'skipped'
+} as const
+
+export const CBK_RECONCILE_STATUS_LABEL: Record<string, string> = {
+  freeze_failed: '冻结分账失败',
+  finish_failed: '完结分账失败',
+  withdraw_failed: '结算提交失败',
+  reverse_failed: '冲正失败',
+  refund_failed: '退款失败',
+  skipped: '缺户跳过'
+}
+
+export const CBK_RECONCILE_STATUS_OPTIONS = [
+  { value: '', label: '默认（失败 + 缺户）' },
+  { value: CBK_RECONCILE_STATUS.SKIPPED, label: CBK_RECONCILE_STATUS_LABEL.skipped },
+  { value: CBK_RECONCILE_STATUS.FREEZE_FAILED, label: CBK_RECONCILE_STATUS_LABEL.freeze_failed },
+  { value: CBK_RECONCILE_STATUS.FINISH_FAILED, label: CBK_RECONCILE_STATUS_LABEL.finish_failed },
+  { value: CBK_RECONCILE_STATUS.WITHDRAW_FAILED, label: CBK_RECONCILE_STATUS_LABEL.withdraw_failed },
+  { value: CBK_RECONCILE_STATUS.REVERSE_FAILED, label: CBK_RECONCILE_STATUS_LABEL.reverse_failed },
+  { value: CBK_RECONCILE_STATUS.REFUND_FAILED, label: CBK_RECONCILE_STATUS_LABEL.refund_failed }
+]
+
+/** 订单详情分账三态（冻结中 → 已提交结算 → 已完结） */
+export const CBK_PAYOUT_STATUS = {
+  FROZEN: 'frozen',
+  WITHDRAWING: 'withdrawing',
+  ARRIVED: 'arrived'
+} as const
+
+export const CBK_PAYOUT_STATUS_LABEL: Record<string, string> = {
+  frozen: '冻结中',
+  withdrawing: '已提交结算',
+  arrived: '已完结'
+}
+
+export const CBK_ERROR_MESSAGE: Record<number, string> = {
+  97020: '订单已完成，不支持退款',
+  97021: '分账账户未就绪',
+  97022: '支付通道异常',
+  99002: '微信支付接口异常',
+  99003: '微信支付签名校验失败',
+  99004: '微信支付未配置'
+}

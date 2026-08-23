@@ -3,9 +3,7 @@
     <div class="header">
       <div>
         <h1 class="title">分成明细</h1>
-        <p class="desc">
-          订单账面分账记录（GET /distribution/records 或管理端镜像）。以后端份额为准；注意取消订单的负数冲账。
-        </p>
+        <p class="desc">查看每笔订单的商品分账和配送费分账。负数表示退款冲账。</p>
       </div>
     </div>
 

@@ -3,7 +3,7 @@
     <div class="header">
       <div>
         <h1 class="title">物业币提现审批</h1>
-        <p class="desc">审核住户物业币兑换 / 提现申请。</p>
+        <p class="desc">仅审核住户物业币兑换申请（与商品微信支付分账不是同一条链路）。商家、配送员现金提现请走对应提现审批页。</p>
       </div>
     </div>
 

@@ -5,7 +5,7 @@
         <h1 class="title">分成账户</h1>
         <p class="desc">
           物业公司账面分成余额（settlementBalance）。与「公司账户」（领导归集、无个人提现）不是同一账户。
-          金额为待结算/可提现口径，非通道实时到账；提现手续费按后端返回（通常 6‰）。
+          本页只消化上线前旧余额；新单走微信支付分账完结后不再申请提现。
         </p>
       </div>
       <button class="btnPrimary" :disabled="!companyId || loading || !balanceOk" @click="openApply">
@@ -24,6 +24,7 @@
 
     <p v-if="bannerError" class="bannerError">{{ bannerError }}</p>
     <p v-if="bannerSuccess" class="bannerSuccess">{{ bannerSuccess }}</p>
+    <p class="bannerInfo">提现手续费仍按后端返回（通常 6‰）。新订单不会增加本页可提现余额。</p>
 
     <div v-if="loading" class="hint">加载中...</div>
     <template v-else>
@@ -149,6 +150,7 @@ import { formatApiError } from '../../api/request'
 import {
   getEnumLabel,
   isWithdrawalPendingStatus,
+  SETTLEMENT_CHANNEL,
   USER_ROLE,
   WITHDRAWAL_AUDIT_STATUS_LABEL,
   WITHDRAWAL_AUDIT_STATUS_OPTIONS
@@ -236,7 +238,8 @@ async function loadWithdrawals(pageNo = 1) {
     const res = await propertySettlementApi.withdrawals(companyId.value, {
       page: pageNo,
       pageSize: 20,
-      status: statusFilter.value || undefined
+      status: statusFilter.value || undefined,
+      settlementChannel: SETTLEMENT_CHANNEL.LEGACY
     })
     records.value = res.list || []
     page.value = res.pagination?.page || pageNo
@@ -369,9 +372,10 @@ onMounted(loadAll)
 .muted { color: #8c8c9a; }
 .hint, .error { font-size: 14px; color: #8c8c9a; text-align: center; padding: 24px 0; }
 .error { color: #e05c5c; text-align: left; padding: 0; }
-.bannerError, .bannerSuccess { padding: 10px 12px; border-radius: 8px; margin-bottom: 12px; font-size: 13px; }
+.bannerError, .bannerSuccess, .bannerInfo { padding: 10px 12px; border-radius: 8px; margin-bottom: 12px; font-size: 13px; }
 .bannerError { background: #fff1f0; color: #cf1322; }
 .bannerSuccess { background: #f6ffed; color: #389e0d; }
+.bannerInfo { background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
 .hintInline { margin: 0 0 12px; font-size: 13px; color: #5c5c66; }
 .feePreview { margin: 0 0 12px; font-size: 12px; color: #8a6d1d; }
 .pager { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 12px; }

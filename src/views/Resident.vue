@@ -278,8 +278,8 @@
                 </select>
               </div>
               <div class="field">
-                <label class="label">年龄</label>
-                <input v-model.number="createForm.age" type="number" min="0" max="150" class="input" />
+                <label class="label">生日</label>
+                <input v-model="createForm.birthday" type="date" min="1920-01-01" :max="today" class="input" />
               </div>
             </div>
             <p v-if="formError" class="error">{{ formError }}</p>
@@ -324,6 +324,7 @@
               </div>
               <div class="familySection">
                 <h4 class="familyTitle">家庭成员（{{ familyMembers.length }}）</h4>
+                <p class="familyHint">加人须同一小区+楼栋+单元+房号（忽略楼层）。</p>
                 <div v-if="familyLoading" class="loadingText compact">加载家庭成员...</div>
                 <p v-else-if="!detailData.familyId" class="familyEmpty">该住户尚未加入家庭</p>
                 <p v-else-if="familyError" class="error">{{ familyError }}</p>
@@ -351,6 +352,34 @@
                   </tbody>
                 </table>
                 <p v-else class="familyEmpty">暂无家庭成员</p>
+                <div v-if="detailData.familyId && canMutateResident" class="familyAdd">
+                  <label class="label">添加家庭成员</label>
+                  <ResidentSearchSelect
+                    v-model="familyAddResidentId"
+                    :status="RESIDENT_STATUS.ACTIVE"
+                    @select="onFamilyAddSelect"
+                  />
+                  <select v-model="familyAddRelation" class="input">
+                    <option v-for="opt in FAMILY_RELATION_OPTIONS" :key="opt.value" :value="opt.value">
+                      {{ opt.label }}
+                    </option>
+                  </select>
+                  <input
+                    v-model="familyAddPhone"
+                    class="input"
+                    maxlength="11"
+                    placeholder="11位手机号（脱敏时请手填）"
+                  />
+                  <button
+                    type="button"
+                    class="btnSecondary"
+                    :disabled="familyAdding"
+                    @click="submitFamilyAdd"
+                  >
+                    {{ familyAdding ? '添加中...' : '添加成员' }}
+                  </button>
+                  <p v-if="familyAddError" class="error">{{ familyAddError }}</p>
+                </div>
               </div>
             </template>
             <p v-if="formError" class="error">{{ formError }}</p>
@@ -417,8 +446,12 @@
                   </select>
                 </div>
                 <div class="field">
-                  <label class="label">年龄</label>
-                  <input v-model.number="editForm.age" type="number" min="0" max="150" class="input" />
+                  <label class="label">生日</label>
+                  <input v-model="editForm.birthday" type="date" min="1920-01-01" :max="today" class="input" />
+                </div>
+                <div class="field">
+                  <label class="label">年龄（自动计算）</label>
+                  <input :value="calculateAge(editForm.birthday)" type="text" class="input" disabled />
                 </div>
               </div>
               <div class="field">
@@ -534,6 +567,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import IconSvg from '../components/IconSvg.vue'
+import ResidentSearchSelect from '../components/ResidentSearchSelect.vue'
 import SegmentedControl from '../components/SegmentedControl.vue'
 import { familyApi, propertyCompanyApi, residentApi, coinWithdrawalAdminApi } from '../api/services'
 import { ApiError } from '../api/request'
@@ -548,14 +582,18 @@ import {
   RESIDENT_USER_TYPE_LABEL,
   MARITAL_STATUS_OPTIONS,
   MARITAL_STATUS_LABEL,
+  FAMILY_RELATION,
   FAMILY_RELATION_LABEL,
+  FAMILY_RELATION_OPTIONS,
   USER_ROLE,
   ROLE_LABEL,
   getEnumLabel
 } from '../constants/enums'
 import { useAuthStore } from '../stores/auth'
+import { isSameHousing } from '../utils/housing'
 
 const PAGE_SIZE = 20
+const today = new Date().toISOString().slice(0, 10)
 
 const GENDER_OPTIONS = [
   { value: 0, label: '未知' },
@@ -600,6 +638,12 @@ const editLoading = ref(false)
 const withdrawBlockSubmitting = ref(false)
 const detailData = ref<ResidentItem | null>(null)
 const familyMembers = ref<FamilyMemberItem[]>([])
+const familyAddResidentId = ref('')
+const familyAddResident = ref<ResidentItem | null>(null)
+const familyAddRelation = ref(FAMILY_RELATION.SPOUSE)
+const familyAddPhone = ref('')
+const familyAddError = ref('')
+const familyAdding = ref(false)
 const familyLoading = ref(false)
 const familyError = ref('')
 const editingId = ref('')
@@ -617,13 +661,13 @@ const createForm = ref({
   unit: '',
   room: '',
   gender: 0 as number | undefined,
-  age: undefined as number | undefined
+  birthday: ''
 })
 
 const editForm = ref<ResidentUpdatePayload & { name?: string }>({
   name: '',
   gender: 0,
-  age: undefined,
+  birthday: '',
   maritalStatus: '',
   hasChildren: undefined,
   building: '',
@@ -678,6 +722,7 @@ const detailRows = computed(() => {
     { label: '楼栋/楼层/单元/房号', value: [d.building, d.floor, d.unit, d.room].filter(Boolean).join('-') || '—' },
     { label: '家庭 ID', value: d.familyId || '—' },
     { label: '性别', value: genderLabel },
+    { label: '生日', value: d.birthday || '—' },
     { label: '年龄', value: d.age !== undefined && d.age !== null ? String(d.age) : '—' },
     { label: '婚姻状态', value: getEnumLabel(MARITAL_STATUS_LABEL, d.maritalStatus, '—') },
     { label: '是否有子女', value: d.hasChildren === true ? '是' : d.hasChildren === false ? '否' : '—' },
@@ -701,6 +746,19 @@ const detailRows = computed(() => {
     { label: '更新时间', value: d.updatedAt || '—' }
   ]
 })
+
+function calculateAge(birthday?: string) {
+  if (!birthday) return '—'
+  const birth = new Date(`${birthday}T00:00:00`)
+  if (Number.isNaN(birth.getTime())) return '—'
+  const now = new Date()
+  let age = now.getFullYear() - birth.getFullYear()
+  const beforeBirthday =
+    now.getMonth() < birth.getMonth() ||
+    (now.getMonth() === birth.getMonth() && now.getDate() < birth.getDate())
+  if (beforeBirthday) age -= 1
+  return age >= 0 ? String(age) : '—'
+}
 
 function statusBadgeClass(status: string) {
   if (status === RESIDENT_STATUS.FROZEN) return 'orange'
@@ -853,10 +911,11 @@ function openCreateModal() {
     userType: RESIDENT_USER_TYPE.OWNER,
     communityId: '',
     building: '',
+    floor: '',
     unit: '',
     room: '',
     gender: 0,
-    age: undefined
+    birthday: ''
   }
   createModalOpen.value = true
   loadCommunities()
@@ -917,7 +976,7 @@ async function submitCreate() {
       unit: createForm.value.unit.trim() || undefined,
       room: createForm.value.room.trim() || undefined,
       gender: createForm.value.gender,
-      age: createForm.value.age
+      birthday: createForm.value.birthday || undefined
     })
     closeCreateModal()
     await loadResidents(currentPage.value)
@@ -961,6 +1020,11 @@ async function openDetailModal(id: string) {
   detailData.value = null
   familyMembers.value = []
   familyError.value = ''
+  familyAddResidentId.value = ''
+  familyAddResident.value = null
+  familyAddRelation.value = FAMILY_RELATION.SPOUSE
+  familyAddPhone.value = ''
+  familyAddError.value = ''
   detailModalOpen.value = true
   detailLoading.value = true
   familyLoading.value = false
@@ -991,8 +1055,56 @@ function closeDetailModal() {
   detailData.value = null
   familyMembers.value = []
   familyError.value = ''
+  familyAddResidentId.value = ''
+  familyAddResident.value = null
+  familyAddRelation.value = FAMILY_RELATION.SPOUSE
+  familyAddPhone.value = ''
+  familyAddError.value = ''
   familyLoading.value = false
   resetFormError()
+}
+
+function onFamilyAddSelect(item: ResidentItem) {
+  familyAddResident.value = item
+  familyAddError.value = ''
+  const phone = String(item.phone || '')
+  if (/^1\d{10}$/.test(phone)) familyAddPhone.value = phone
+}
+
+async function submitFamilyAdd() {
+  const owner = detailData.value
+  const familyId = owner?.familyId
+  if (!familyId) {
+    familyAddError.value = '该住户尚未加入家庭'
+    return
+  }
+  const phone = familyAddPhone.value.trim()
+  if (!/^1\d{10}$/.test(phone)) {
+    familyAddError.value = '请填写完整 11 位手机号'
+    return
+  }
+  if (familyAddResident.value && !isSameHousing(owner, familyAddResident.value)) {
+    familyAddError.value = '只能添加同一房号的住户（同一小区+楼栋+单元+房号，忽略楼层）'
+    return
+  }
+  familyAdding.value = true
+  familyAddError.value = ''
+  try {
+    await familyApi.addMember(familyId, {
+      phone,
+      name: familyAddResident.value?.name,
+      relation: familyAddRelation.value
+    })
+    const res = await familyApi.listMembers(familyId)
+    familyMembers.value = res.list || []
+    familyAddResidentId.value = ''
+    familyAddResident.value = null
+    familyAddPhone.value = ''
+  } catch (e) {
+    familyAddError.value = resolveErrorMessage(e)
+  } finally {
+    familyAdding.value = false
+  }
 }
 
 async function toggleResidentWithdrawBlock(resident: ResidentItem) {
@@ -1026,7 +1138,7 @@ async function openEditModal(id: string) {
     editForm.value = {
       name: data.name || '',
       gender: data.gender ?? 0,
-      age: data.age,
+      birthday: data.birthday || '',
       maritalStatus: data.maritalStatus || '',
       hasChildren: data.hasChildren,
       building: data.building || '',
@@ -1053,7 +1165,7 @@ function buildUpdatePayload(): ResidentUpdatePayload {
   const name = form.name?.trim()
   if (name) payload.name = name
   if (form.gender !== undefined && form.gender !== null) payload.gender = form.gender
-  if (form.age !== undefined && form.age !== null && !Number.isNaN(form.age)) payload.age = form.age
+  if (form.birthday?.trim()) payload.birthday = form.birthday.trim()
   const maritalStatus = form.maritalStatus?.trim()
   if (maritalStatus) payload.maritalStatus = maritalStatus
   if (form.hasChildren !== undefined) payload.hasChildren = form.hasChildren
@@ -1408,6 +1520,8 @@ onMounted(async () => {
 .arrearsBanner strong { font-size: 13px; }
 .arrearsLink { margin-left: auto; font-size: 13px; color: #5c5c9e; }
 .familySection { margin-top: 20px; padding-top: 16px; border-top: 1px solid #f0f0f3; }
+.familyHint { font-size: 12px; color: #8c8c9a; margin: 0 0 8px; }
+.familyAdd { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
 .familyTitle { margin: 0 0 12px; font-size: 14px; font-weight: 600; color: #1f1f2e; }
 .familyEmpty { margin: 0; font-size: 13px; color: #8c8c9a; }
 .familyTable { width: 100%; border-collapse: collapse; font-size: 13px; }

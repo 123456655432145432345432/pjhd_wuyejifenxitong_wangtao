@@ -3,7 +3,7 @@
     <div class="header">
       <div>
         <h1 class="title">订单管理</h1>
-        <p class="desc">查看和处理店铺订单。支付成功后系统会自动进入配送大厅；订单「确认完成」后本单收入立即计入可提现。</p>
+        <p class="desc">支付成功后 30 分钟内选择商家自配或发大厅；超时自动进大厅。整单商品分类均为「团购」时无需配送，需先核实；通过或超时未核实均进入冻结期再结算。</p>
       </div>
     </div>
 
@@ -52,8 +52,36 @@
             </div>
             <div class="mobileActions">
               <button class="linkBtn" @click="openDetail(order.id)">详情</button>
-              <button class="linkBtn" :disabled="sendId === order.id || !canSendDelivery(order) || hasCourier(order)" @click="sendDeliveryTask(order.id)">{{ sendId === order.id ? '发送中...' : '发送任务' }}</button>
-              <button class="linkBtn" :disabled="actionId === order.id || !canDeliver(order) || hasCourier(order)" @click="openAssign(order.id, order.deliveryId ?? undefined)">{{ actionId === order.id ? '处理中...' : '开始配送' }}</button>
+              <button
+                v-if="canMerchantVerify(order)"
+                class="linkBtn"
+                :disabled="verifyId === order.id"
+                @click="openVerify(order)"
+              >核实</button>
+              <button
+                v-if="canMerchantChoose(order)"
+                class="linkBtn"
+                :disabled="chooseId === order.id"
+                @click="chooseFulfillment(order.id, FULFILLMENT_MODE.MERCHANT_SELF)"
+              >商家自配</button>
+              <button
+                v-if="canMerchantChoose(order)"
+                class="linkBtn"
+                :disabled="chooseId === order.id"
+                @click="chooseFulfillment(order.id, FULFILLMENT_MODE.COURIER_HALL)"
+              >发大厅</button>
+              <button
+                v-if="canMerchantConfirmDelivery(order)"
+                class="linkBtn"
+                :disabled="confirmId === order.id"
+                @click="confirmMerchantArrival(order)"
+              >确认送达</button>
+              <button
+                v-if="canAssignCourier(order) && canDeliver(order)"
+                class="linkBtn"
+                :disabled="actionId === order.id || hasCourier(order)"
+                @click="openAssign(order.id, order.deliveryId ?? undefined)"
+              >开始配送</button>
               <button
                 v-if="canCompleteOrder(order)"
                 class="linkBtn"
@@ -74,6 +102,7 @@
               <th>支付</th>
               <th>配送地址</th>
               <th>状态</th>
+              <th>履约</th>
               <th>下单时间</th>
               <th>操作</th>
             </tr>
@@ -93,19 +122,37 @@
               <td>
                 <span class="tag" :class="statusClass(order)">{{ statusLabel(order) }}</span>
               </td>
+              <td>{{ fulfillmentModeLabelOf(order) }}</td>
               <td>{{ order.createdAt || '—' }}</td>
               <td class="actions">
                 <div class="actionsInner">
                   <button class="linkBtn" @click="openDetail(order.id)">详情</button>
                   <button
+                    v-if="canMerchantVerify(order)"
                     class="linkBtn"
-                    :class="{ greyed: !canSendDelivery(order) || hasCourier(order) }"
-                    :disabled="sendId === order.id || !canSendDelivery(order) || hasCourier(order)"
-                    @click="sendDeliveryTask(order.id)"
-                  >
-                    {{ sendId === order.id ? '发送中...' : '发送任务' }}
-                  </button>
+                    :disabled="verifyId === order.id"
+                    @click="openVerify(order)"
+                  >核实</button>
                   <button
+                    v-if="canMerchantChoose(order)"
+                    class="linkBtn"
+                    :disabled="chooseId === order.id"
+                    @click="chooseFulfillment(order.id, FULFILLMENT_MODE.MERCHANT_SELF)"
+                  >商家自配</button>
+                  <button
+                    v-if="canMerchantChoose(order)"
+                    class="linkBtn"
+                    :disabled="chooseId === order.id"
+                    @click="chooseFulfillment(order.id, FULFILLMENT_MODE.COURIER_HALL)"
+                  >发大厅</button>
+                  <button
+                    v-if="canMerchantConfirmDelivery(order)"
+                    class="linkBtn"
+                    :disabled="confirmId === order.id"
+                    @click="confirmMerchantArrival(order)"
+                  >确认送达</button>
+                  <button
+                    v-if="canAssignCourier(order)"
                     class="linkBtn"
                     :class="{ greyed: !canDeliver(order) || hasCourier(order) }"
                     :disabled="actionId === order.id || !canDeliver(order) || hasCourier(order)"
@@ -240,7 +287,7 @@
                     <li><span>抽佣比例</span><strong>{{ formatRate(calcResult.commissionRate) }}</strong></li>
                     <li><span>商家商品实得</span><strong>¥{{ formatMoney(calcResult.merchantGoodsShare) }}</strong></li>
                     <li><span>商家配送补贴</span><strong>¥{{ formatMoney(calcResult.merchantDeliverySubsidy) }}</strong></li>
-                    <li><span>商家最终实得</span><strong>¥{{ formatMoney(calcResult.merchantShare) }}</strong></li>
+                    <li><span>商家商品结算</span><strong>¥{{ formatMoney(calcResult.merchantShare) }}</strong></li>
                     <li>
                       <span>抽佣基础额</span>
                       <strong>¥{{ formatMoney(calcResult.commissionBaseAmount) }}</strong>
@@ -279,13 +326,23 @@
                     <li><span>配送结算基数</span><strong>¥{{ formatMoney(calcResult.deliverySettlementBase) }}</strong></li>
                     <li><span>公司配送收入</span><strong>¥{{ formatMoney(calcResult.platformDeliveryShare) }}</strong></li>
                     <li><span>配送员收入</span><strong>¥{{ formatMoney(calcResult.courierEarning) }}</strong></li>
+                    <li><span>商家配送费分成</span><strong>¥{{ formatMoney(calcResult.merchantDeliveryFeeShare) }}</strong></li>
                   </ul>
                   <p class="calcHint">
-                    商品分账与配送分账相互独立。满额减免时配送员收入仍按配送结算基数计算；
-                    配送员正式收入只读取 courierEarning。
+                    商品分账与配送分账相互独立。大厅：配送员拿剩余配送费，商家配送费分成=0；自配相反。金额以后端为准，不要把 merchantShare 与 merchantDeliveryFeeShare 合成一列。
                   </p>
                 </template>
                 <p v-else class="muted">暂无试算结果</p>
+              </section>
+
+              <section class="section">
+                <FulfillmentPanel
+                  :order="detail"
+                  variant="merchant"
+                  :busy="Boolean(chooseId || confirmId)"
+                  @choose="(mode) => chooseFulfillment(detail.id, mode)"
+                  @confirm-delivery="confirmMerchantArrival(detail)"
+                />
               </section>
 
               <section class="section">
@@ -294,6 +351,8 @@
                   <li><span>配送员</span><strong>{{ detail.courierName || '—' }}</strong></li>
                   <li><span>配送单号</span><strong>{{ detail.deliveryId || '—' }}</strong></li>
                   <li><span>支付时间</span><strong>{{ detail.paidAt || '—' }}</strong></li>
+                  <li><span>核实时间</span><strong>{{ detail.verifiedAt || '—' }}</strong></li>
+                  <li><span>冻结截止</span><strong>{{ detail.freezeEndDate || '—' }}</strong></li>
                   <li><span>完成时间</span><strong>{{ detail.completedAt || '—' }}</strong></li>
                   <li><span>取消时间</span><strong>{{ detail.cancelledAt || '—' }}</strong></li>
                   <li><span>更新时间</span><strong>{{ detail.updatedAt || '—' }}</strong></li>
@@ -303,14 +362,31 @@
           </div>
           <div v-if="detail" class="modalFooter">
             <button
+              v-if="canMerchantVerify(detail)"
               class="btnPrimary"
-              :class="{ greyed: !canSendDelivery(detail) || hasCourier(detail) }"
-              :disabled="sendId === detail.id || !canSendDelivery(detail) || hasCourier(detail)"
-              @click="sendDeliveryFromDetail"
-            >
-              {{ sendId === detail.id ? '发送中...' : '发送配送任务' }}
-            </button>
+              :disabled="verifyId === detail.id"
+              @click="openVerify(detail)"
+            >核实订单</button>
             <button
+              v-if="canMerchantChoose(detail)"
+              class="btnPrimary"
+              :disabled="chooseId === detail.id"
+              @click="chooseFulfillment(detail.id, FULFILLMENT_MODE.MERCHANT_SELF)"
+            >商家自配</button>
+            <button
+              v-if="canMerchantChoose(detail)"
+              class="btnPrimary"
+              :disabled="chooseId === detail.id"
+              @click="chooseFulfillment(detail.id, FULFILLMENT_MODE.COURIER_HALL)"
+            >发大厅</button>
+            <button
+              v-if="canMerchantConfirmDelivery(detail)"
+              class="btnPrimary"
+              :disabled="confirmId === detail.id"
+              @click="confirmMerchantArrival(detail)"
+            >确认送达</button>
+            <button
+              v-if="canAssignCourier(detail)"
               class="btnPrimary"
               :class="{ greyed: !canDeliver(detail) || hasCourier(detail) }"
               :disabled="actionId === detail.id || !canDeliver(detail) || hasCourier(detail)"
@@ -325,6 +401,53 @@
               @click="completeOrder(detail.id)"
             >
               {{ completeId === detail.id ? '完成中...' : '确认完成' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="verifyOpen" class="modalOverlay" @click.self="closeVerify">
+        <div class="modal assignModal" :class="{ mobileSheet: isMobile }">
+          <div class="modalHeader">
+            <h3 class="modalTitle">核实订单</h3>
+            <button class="modalClose" @click="closeVerify">&times;</button>
+          </div>
+          <div class="modalBody">
+            <p class="calcHint">仅整单均为团购商品的待核实订单可操作。通过后进入冻结期；拒绝将取消并退款；超时未核实由系统自动视为通过。</p>
+            <ul class="infoGrid">
+              <li><span>订单</span><strong>{{ verifyTarget?.orderNo || verifyTarget?.id || '—' }}</strong></li>
+              <li><span>顾客</span><strong>{{ verifyTarget?.residentName || '—' }}</strong></li>
+              <li><span>金额</span><strong>¥{{ formatMoney(verifyTarget?.totalAmount) }}</strong></li>
+            </ul>
+            <p v-if="verifyError" class="error">{{ verifyError }}</p>
+            <div class="verifyField">
+              <label>核实结果</label>
+              <div class="verifyRadios">
+                <label>
+                  <input v-model="verifyApproved" type="radio" :value="true" />
+                  通过
+                </label>
+                <label>
+                  <input v-model="verifyApproved" type="radio" :value="false" />
+                  拒绝
+                </label>
+              </div>
+            </div>
+            <div class="verifyField">
+              <label>{{ verifyApproved ? '备注（选填）' : '拒绝原因' }}</label>
+              <textarea
+                v-model="verifyReason"
+                class="verifyTextarea"
+                rows="3"
+                maxlength="200"
+                :placeholder="verifyApproved ? '核实备注' : '请填写拒绝原因'"
+              />
+            </div>
+          </div>
+          <div class="modalFooter">
+            <button class="btnGhost" @click="closeVerify">取消</button>
+            <button class="btnPrimary" :disabled="Boolean(verifyId)" @click="submitVerify">
+              {{ verifyId ? '提交中...' : '确认提交' }}
             </button>
           </div>
         </div>
@@ -375,17 +498,26 @@ import { onMounted, reactive, ref } from 'vue'
 import { distributionApi, merchantPortalApi } from '../../api/services'
 import type { DeliveryTaskItem, DistributionCalculateResult, OrderItem } from '../../api/types'
 import { ApiError, formatApiError } from '../../api/request'
+import FulfillmentPanel from '../../components/FulfillmentPanel.vue'
 import {
   DELIVERY_SUBSIDY_SPONSOR_LABEL,
+  FULFILLMENT_MODE,
   getEnumLabel,
   ORDER_STATUS,
   ORDER_STATUS_LABEL,
+  ORDER_STATUS_OPTIONS,
   PAYMENT_METHOD_LABEL
 } from '../../constants/enums'
 import { useIsMobile } from '../../composables/useIsMobile'
+import {
+  canAssignCourier,
+  canMerchantChoose,
+  canMerchantConfirmDelivery,
+  canMerchantVerify,
+  fulfillmentModeLabelOf
+} from '../../utils/fulfillment'
 
 const { isMobile } = useIsMobile()
-const ORDER_STATUS_OPTIONS = Object.entries(ORDER_STATUS_LABEL).map(([value, label]) => ({ value, label }))
 
 const orders = ref<OrderItem[]>([])
 const loading = ref(false)
@@ -395,8 +527,15 @@ const page = ref(1)
 const totalPages = ref(1)
 const total = ref(0)
 const actionId = ref('')
-const sendId = ref('')
+const chooseId = ref('')
+const confirmId = ref('')
 const completeId = ref('')
+const verifyId = ref('')
+const verifyOpen = ref(false)
+const verifyTarget = ref<OrderItem | null>(null)
+const verifyApproved = ref(true)
+const verifyReason = ref('')
+const verifyError = ref('')
 const filters = reactive({ orderStatus: '', startDate: '', endDate: '' })
 
 const detailOpen = ref(false)
@@ -436,9 +575,12 @@ function statusLabel(order: OrderItem) {
 function statusClass(order: OrderItem) {
   const status = orderStatus(order)
   if (status === ORDER_STATUS.PAID) return 'paid'
+  if (status === ORDER_STATUS.PENDING_VERIFICATION) return 'pendingVerification'
+  if (status === ORDER_STATUS.VERIFIED) return 'verified'
   if (status === ORDER_STATUS.DELIVERING) return 'delivering'
   if (status === ORDER_STATUS.COMPLETED) return 'completed'
-  if (status === ORDER_STATUS.CANCELLED || status === ORDER_STATUS.REFUNDED) return 'cancelled'
+  if (status === ORDER_STATUS.CANCELLED || status === ORDER_STATUS.REFUNDED || status === ORDER_STATUS.REFUND_REJECTED) return 'cancelled'
+  if (status === ORDER_STATUS.REFUNDING) return 'refunding'
   return ''
 }
 
@@ -463,16 +605,13 @@ function paymentSummary(order: OrderItem) {
   return order.paymentMethod || '—'
 }
 
-/** 已支付时可打开快递员指配弹窗 */
+/** 平台配送且未接单时，可指派配送员 */
 function canDeliver(order: OrderItem) {
-  return orderStatus(order) === ORDER_STATUS.PAID
-}
-
-/** 商家手动发送配送任务：
- *  适用场景为「已支付但尚无配送单」的订单（多用于历史数据或支付未自动建单的兜底）。
- *  若后端 pay 流程已自动创建配送单，此处一般不会触发按钮。 */
-function canSendDelivery(order: OrderItem) {
-  return orderStatus(order) === ORDER_STATUS.PAID && !order.deliveryId
+  const status = orderStatus(order)
+  return (
+    canAssignCourier(order) &&
+    (status === ORDER_STATUS.PAID || status === ORDER_STATUS.DELIVERING)
+  )
 }
 
 /** 订单已有配送员（已有人接单），按钮显示为灰色不可点击 */
@@ -480,9 +619,9 @@ function hasCourier(order: OrderItem) {
   return !!(order.courierId || order.courierName)
 }
 
-/** 配送中可确认完成 → PATCH orderStatus=completed，本单收入计入可提现 */
+/** 自配进行中先确认送达；完成后才允许标订单完成，避免 70024 绕过送达 */
 function canCompleteOrder(order: OrderItem) {
-  return orderStatus(order) === ORDER_STATUS.DELIVERING
+  return orderStatus(order) === ORDER_STATUS.DELIVERING && !canMerchantConfirmDelivery(order)
 }
 
 async function load(pageNo = 1) {
@@ -628,30 +767,42 @@ async function markDeliveringFromDetail() {
   openAssign(detail.value.id, detail.value.deliveryId)
 }
 
-async function sendDeliveryTask(id: string) {
-  if (sendId.value) return
-  sendId.value = id
+async function chooseFulfillment(id: string, mode: string) {
+  if (chooseId.value) return
+  chooseId.value = id
   error.value = ''
   success.value = ''
   try {
-    const res = await merchantPortalApi.sendDelivery(id)
-    success.value = res?.deliveryId
-      ? `配送任务已发送（单号 ${res.deliveryId}）`
-      : '配送任务已发送'
+    const res = await merchantPortalApi.chooseFulfillment(id, mode)
+    success.value = res?.statusLabel || (mode === FULFILLMENT_MODE.MERCHANT_SELF ? '已选商家自配' : '已发大厅')
     await load(page.value)
     if (detail.value?.id === id) {
       detail.value = await merchantPortalApi.getOrder(id)
     }
   } catch (e) {
-    error.value = e instanceof ApiError ? e.message : '发送配送任务失败'
+    error.value = formatApiError(e, '选择履约方式失败')
   } finally {
-    sendId.value = ''
+    chooseId.value = ''
   }
 }
 
-async function sendDeliveryFromDetail() {
-  if (!detail.value) return
-  await sendDeliveryTask(detail.value.id)
+async function confirmMerchantArrival(order: OrderItem) {
+  if (!order.deliveryId || confirmId.value) return
+  confirmId.value = order.id
+  error.value = ''
+  success.value = ''
+  try {
+    await merchantPortalApi.confirmMerchantDelivery(order.deliveryId)
+    success.value = '已确认送达'
+    await load(page.value)
+    if (detail.value?.id === order.id) {
+      detail.value = await merchantPortalApi.getOrder(order.id)
+    }
+  } catch (e) {
+    error.value = formatApiError(e, '确认送达失败')
+  } finally {
+    confirmId.value = ''
+  }
 }
 
 async function completeOrder(id: string) {
@@ -662,7 +813,6 @@ async function completeOrder(id: string) {
   success.value = ''
   try {
     const order = await merchantPortalApi.completeOrder(id)
-    // 入账触发：订单 completed 后立刻以接口返回为准刷新可提现（勿本地累加）
     const wallet = await merchantPortalApi.my().catch(() => null)
     const withdrawable = wallet?.withdrawableAmount
     const revenue = wallet?.totalRevenue
@@ -678,6 +828,45 @@ async function completeOrder(id: string) {
     error.value = e instanceof ApiError ? e.message : '确认完成失败'
   } finally {
     completeId.value = ''
+  }
+}
+
+function openVerify(order: OrderItem) {
+  verifyTarget.value = order
+  verifyApproved.value = true
+  verifyReason.value = ''
+  verifyError.value = ''
+  verifyOpen.value = true
+}
+
+function closeVerify() {
+  verifyOpen.value = false
+  verifyTarget.value = null
+  verifyError.value = ''
+}
+
+async function submitVerify() {
+  if (!verifyTarget.value || verifyId.value) return
+  if (!verifyApproved.value && !verifyReason.value.trim()) {
+    verifyError.value = '拒绝时请填写原因'
+    return
+  }
+  verifyId.value = verifyTarget.value.id
+  const approved = verifyApproved.value
+  verifyError.value = ''
+  try {
+    const res = await merchantPortalApi.verifyOrder(verifyTarget.value.id, {
+      approved,
+      reason: verifyReason.value.trim() || undefined
+    })
+    closeVerify()
+    closeDetail()
+    success.value = res.message || (approved ? '核实通过，已进入冻结期' : '已拒绝并退款')
+    await load(page.value)
+  } catch (e) {
+    verifyError.value = formatApiError(e, '核实失败')
+  } finally {
+    verifyId.value = ''
   }
 }
 
@@ -767,9 +956,16 @@ onMounted(() => load(1))
 .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #f4f5f7; color: #5c5c66; font-size: 12px; white-space: nowrap; }
 .tag.large { padding: 4px 12px; font-size: 13px; }
 .tag.paid { background: #e6f4ff; color: #1677ff; }
+.tag.pendingVerification { background: #fff7e6; color: #d48806; }
+.tag.verified { background: #f9f0ff; color: #722ed1; }
 .tag.delivering { background: #fff7e6; color: #d48806; }
 .tag.completed { background: #f6ffed; color: #389e0d; }
 .tag.cancelled { background: #fff1f0; color: #cf1322; }
+.tag.refunding { background: #fff7e6; color: #d48806; }
+.verifyField { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; font-size: 13px; color: #5c5c66; }
+.verifyRadios { display: flex; gap: 16px; }
+.verifyRadios label { display: flex; align-items: center; gap: 6px; cursor: pointer; color: #1f1f2e; }
+.verifyTextarea { width: 100%; min-height: 72px; padding: 8px 10px; border: 1px solid #e8e8ec; border-radius: 8px; resize: vertical; }
 .actions { height: 1px; }
 .actionsInner {
   display: flex;

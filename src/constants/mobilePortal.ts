@@ -33,10 +33,14 @@ const ADMIN_WORKBENCH_BASE: MobileWorkbenchSection[] = [
   {
     title: '审批与运营',
     items: [
+      { name: '商家入驻审核', icon: 'merchant', route: 'merchant-onboarding-approval', firstBatchOptimize: true },
       { name: '积分审批', icon: 'points', route: 'merchant-point-approval', firstBatchOptimize: true },
-      { name: '提现审批', icon: 'wallet', route: 'merchant-withdrawal-approval', firstBatchOptimize: true },
+      { name: '商家提现审批', icon: 'wallet', route: 'merchant-withdrawal-approval', firstBatchOptimize: true },
+      { name: '配送员提现审批', icon: 'wallet', route: 'role-withdrawal-approval', firstBatchOptimize: true },
       { name: '物业币提现审批', icon: 'coin', route: 'coin-withdrawal-approval', firstBatchOptimize: true },
       { name: '价格审批', icon: 'wallet', route: 'price-approvals', firstBatchOptimize: true },
+      { name: '楼栋变更审批', icon: 'home', route: 'building-change-approvals' },
+      { name: '退货审批', icon: 'wallet', route: 'order-refund-approvals', firstBatchOptimize: true },
       { name: '通告发布', icon: 'notice', route: 'notice', firstBatchOptimize: true },
       { name: '定向推送', icon: 'target', route: 'directed-message' }
     ]
@@ -51,7 +55,8 @@ const ADMIN_WORKBENCH_BASE: MobileWorkbenchSection[] = [
       { name: '送货管理', icon: 'delivery', route: 'delivery' },
       { name: '社区论坛', icon: 'notice', route: 'community-forum' },
       { name: '板块负责人', icon: 'people', route: 'sector-leaders' },
-      { name: '业主商户', icon: 'merchant', route: 'resident-merchants' },
+      { name: '一级代理', icon: 'people', route: 'individual-leaders' },
+      { name: '业主商户（分销）', icon: 'merchant', route: 'resident-merchants' },
       { name: '商家广告设置', icon: 'retail', route: 'merchant-ad-settings' },
       { name: '物业联系方式', icon: 'notice', route: 'property-contact' }
     ]
@@ -69,6 +74,8 @@ const ADMIN_WORKBENCH_BASE: MobileWorkbenchSection[] = [
       { name: '分成账户', icon: 'wallet', route: 'settlement-account' },
       { name: '分成明细', icon: 'history', route: 'distribution-records' },
       { name: '分成统计', icon: 'chart', route: 'distribution-stats' },
+      { name: '收款账户', icon: 'bank', route: 'cbk-accounts' },
+      { name: '分账对账台', icon: 'history', route: 'cbk-reconcile' },
       { name: '平台分成配置', icon: 'money', route: 'platform-share-config' },
       { name: '平台收益', icon: 'chart', route: 'platform-earnings' }
     ]

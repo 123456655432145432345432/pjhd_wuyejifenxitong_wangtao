@@ -2,10 +2,11 @@
   <div class="page">
     <div class="header">
       <div>
-        <h2 class="title">配送员/角色提现审批</h2>
-        <p class="desc">审核配送员及各级负责人的提现申请，并完成线下打款闭环。</p>
+        <h2 class="title">配送员提现审批</h2>
+        <p class="desc">审核配送员、组长等角色历史上线前钱包余额，并完成线下打款。新单走微信支付分账，不进本列表。</p>
       </div>
     </div>
+    <p class="bannerInfo">配送员新单在配送完成并分账完结后结算，不必再走本页打款。</p>
 
     <div class="stats">
       <div class="statCard">
@@ -221,6 +222,7 @@ import { ApiError, formatApiError } from '../../api/request'
 import {
   FILE_CATEGORY,
   ROLE_WITHDRAWAL_TYPE_OPTIONS,
+  SETTLEMENT_CHANNEL,
   WITHDRAWAL_AUDIT_STATUS,
   WITHDRAWAL_AUDIT_STATUS_LABEL,
   WITHDRAWAL_AUDIT_STATUS_OPTIONS,
@@ -323,7 +325,8 @@ async function loadData(page = currentPage.value) {
       auditStatus: filterStatus.value || undefined,
       keyword: appliedKeyword.value || undefined,
       startDate: startDate.value || undefined,
-      endDate: endDate.value || undefined
+      endDate: endDate.value || undefined,
+      settlementChannel: SETTLEMENT_CHANNEL.LEGACY
     })
     list.value = res.list || []
     total.value = res.pagination?.total ?? 0
@@ -344,7 +347,8 @@ async function calculateTypeSummary(type: string): Promise<RoleWithdrawalSummary
     const res = await adminRoleWithdrawalApi.list({
       page,
       pageSize: SUMMARY_PAGE_SIZE,
-      withdrawalType: type
+      withdrawalType: type,
+      settlementChannel: SETTLEMENT_CHANNEL.LEGACY
     })
     records.push(...(res.list || []))
     pages = res.pagination?.totalPages ?? 1
@@ -393,7 +397,9 @@ async function loadSummary() {
       summary.value = await calculateTypeSummary(withdrawalType.value)
       return
     }
-    summary.value = await adminRoleWithdrawalApi.summary()
+    summary.value = await adminRoleWithdrawalApi.summary({
+      settlementChannel: SETTLEMENT_CHANNEL.LEGACY
+    })
   } catch (error) {
     summary.value = null
     summaryHint.value = formatApiError(error, '角色提现汇总加载失败')
@@ -500,6 +506,7 @@ onMounted(() => {
 .header { margin-bottom: 20px; }
 .title { margin: 0 0 8px; font-size: 20px; color: #1f1f2e; }
 .desc { margin: 0; color: #8c8c9a; font-size: 14px; }
+.bannerInfo { margin: 0 0 16px; padding: 10px 14px; border-radius: 8px; background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; font-size: 13px; }
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 8px; }
 .statCard { padding: 16px 18px; background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.04); }
 .statCard .label { margin-bottom: 8px; color: #8c8c9a; font-size: 13px; }
