@@ -317,6 +317,56 @@ export async function request<T>(
   return json.data
 }
 
+/** CSV 等非 JSON 下载：走同一套鉴权与 propertyCompanyId 注入 */
+export async function requestBlob(
+  path: string,
+  options: RequestInit = {},
+  retried = false
+): Promise<Blob> {
+  const headers = new Headers(options.headers || {})
+  const { accessToken } = getTokens()
+  if (!accessToken) {
+    throw new ApiError(20001, '登录已过期，请重新登录')
+  }
+  headers.set('Authorization', `Bearer ${accessToken}`)
+  if (!headers.has('Accept')) {
+    headers.set('Accept', 'text/csv,application/json')
+  }
+
+  const res = await fetch(`${API_BASE_URL}${withCompanyQuery(path)}`, {
+    ...options,
+    headers
+  })
+
+  const contentType = res.headers.get('content-type') || ''
+  const looksJson = contentType.includes('application/json')
+  if (!res.ok || looksJson) {
+    const json = await parseResponse<unknown>(res)
+    if (res.status === 403 || FORBIDDEN_ERROR_CODES.has(json.code)) {
+      handleForbidden(json, res)
+    }
+    if (!retried && AUTH_ERROR_CODES.has(json.code)) {
+      if (json.code === 20002) {
+        await tryRefreshToken()
+        return requestBlob(path, options, true)
+      }
+      handleAuthFailure(json, res)
+    }
+    if (json.code !== 0 || !res.ok) {
+      const errors = (json as ApiResponse<unknown> & { errors?: ApiError['errors'] }).errors
+      throw new ApiError(
+        json.code || res.status,
+        json.message || '导出失败',
+        errors,
+        json.errorCode,
+        json.data
+      )
+    }
+  }
+
+  return res.blob()
+}
+
 export async function requestRaw<T>(
   path: string,
   options: RequestInit & RequestAuthOptions = {},

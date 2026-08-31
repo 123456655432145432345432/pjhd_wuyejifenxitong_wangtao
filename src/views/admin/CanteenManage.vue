@@ -518,6 +518,9 @@ import SegmentedControl from '../../components/SegmentedControl.vue'
 import { useAuthStore } from '../../stores/auth'
 
 const PAGE_SIZE = 20
+/** 列表接口 pageSize 上限 100；导出与文档一致最多 1000 条 */
+const EXPORT_PAGE_SIZE = 100
+const EXPORT_MAX_ROWS = 1000
 const auth = useAuthStore()
 const isPlatformAdmin = computed(() => auth.profile?.role === USER_ROLE.PLATFORM_ADMIN)
 const merchants = ref<MerchantItem[]>([])
@@ -1052,6 +1055,46 @@ function exportType() {
   return CANTEEN_EXPORT_TYPE.DIRECTED_FLOW
 }
 
+function csvCell(value: unknown) {
+  const text = value == null ? '' : String(value)
+  if (/[",\n\r]/.test(text)) return `"${text.replace(/"/g, '""')}"`
+  return text
+}
+
+function toCsvBlob(headers: string[], rows: unknown[][]) {
+  const lines = [headers, ...rows].map((row) => row.map(csvCell).join(','))
+  return new Blob([`\uFEFF${lines.join('\r\n')}`], { type: 'text/csv;charset=utf-8' })
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+async function collectExportList<T>(
+  fetchPage: (page: number) => Promise<{ list: T[]; pagination: { total: number } }>
+) {
+  const rows: T[] = []
+  let page = 1
+  while (rows.length < EXPORT_MAX_ROWS) {
+    const res = await fetchPage(page)
+    rows.push(...res.list)
+    if (
+      res.list.length < EXPORT_PAGE_SIZE ||
+      rows.length >= res.pagination.total ||
+      rows.length >= EXPORT_MAX_ROWS
+    ) {
+      break
+    }
+    page += 1
+  }
+  return rows.slice(0, EXPORT_MAX_ROWS)
+}
+
 async function loadFlows(page = 1) {
   flowsLoading.value = true
   flowsPage.value = page
@@ -1099,22 +1142,86 @@ async function loadFlows(page = 1) {
 async function exportCsv() {
   exporting.value = true
   bannerError.value = ''
+  bannerSuccess.value = ''
+  const common = {
+    pageSize: EXPORT_PAGE_SIZE,
+    startDate: flowFilter.startDate || undefined,
+    endDate: flowFilter.endDate || undefined
+  }
   try {
-    const blob = await adminCanteenApi.exportCsv({
-      type: exportType(),
-      merchantId:
-        flowTab.value === 'quota'
-          ? flowFilter.merchantId || undefined
-          : flowFilter.mainMerchantId || undefined,
-      startDate: flowFilter.startDate || undefined,
-      endDate: flowFilter.endDate || undefined
-    })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `canteen_${exportType()}_${new Date().toISOString().slice(0, 10)}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
+    let blob: Blob
+    let count = 0
+    if (flowTab.value === 'quota') {
+      const list = await collectExportList((page) =>
+        adminCanteenApi.listQuotaPurchases({
+          ...common,
+          page,
+          merchantId: flowFilter.merchantId || undefined,
+          status: flowFilter.status || undefined
+        })
+      )
+      count = list.length
+      blob = toCsvBlob(
+        ['流水ID', '支付金额', '手续费', '到账额度', '状态', '备注', '时间'],
+        list.map((item) => [
+          item.id,
+          money(item.amount),
+          money(item.feeAmount),
+          money(item.actualQuota),
+          quotaStatusLabel(item.status),
+          item.remark || '',
+          formatTime(item.createdAt)
+        ])
+      )
+    } else if (flowTab.value === 'recharge') {
+      const list = await collectExportList((page) =>
+        adminCanteenApi.listRecharges({
+          ...common,
+          page,
+          mainMerchantId: flowFilter.mainMerchantId || undefined,
+          residentId: flowFilter.residentId || undefined
+        })
+      )
+      count = list.length
+      blob = toCsvBlob(
+        ['主商家', '住户', '金额', '充后余额', '备注', '时间'],
+        list.map((item) => [
+          item.mainMerchantName || merchantName(item.mainMerchantId),
+          item.residentName || item.residentPhone || '',
+          money(item.amount),
+          money(item.balanceAfter),
+          item.remark || '',
+          formatTime(item.createdAt)
+        ])
+      )
+    } else {
+      const list = await collectExportList((page) =>
+        adminCanteenApi.listFlows({
+          ...common,
+          page,
+          mainMerchantId: flowFilter.mainMerchantId || undefined,
+          merchantId: flowFilter.merchantId || undefined,
+          residentId: flowFilter.residentId || undefined,
+          flowType: flowFilter.flowType || undefined
+        })
+      )
+      count = list.length
+      blob = toCsvBlob(
+        ['类型', '主商家体系', '消费商家', '金额', '变动后余额', '订单号', '时间'],
+        list.map((item) => [
+          flowTypeLabel(item.flowType),
+          item.mainMerchantName || merchantName(item.mainMerchantId),
+          item.merchantName || merchantName(item.merchantId),
+          money(item.amount),
+          money(item.balanceAfter),
+          item.orderNo || '',
+          formatTime(item.createdAt)
+        ])
+      )
+    }
+    downloadBlob(blob, `canteen_${exportType()}_${new Date().toISOString().slice(0, 10)}.csv`)
+    bannerSuccess.value =
+      count >= EXPORT_MAX_ROWS ? `已导出前 ${EXPORT_MAX_ROWS} 条` : `已导出 ${count} 条`
   } catch (e) {
     flashError(e, '导出失败')
   } finally {

@@ -1,4 +1,4 @@
-import { ApiError, buildQuery, request } from './request'
+import { ApiError, buildQuery, request, requestBlob } from './request'
 import { normalizeBuildingChangeApplication, normalizeMerchantItem } from './mappers'
 import { getAccessToken } from '../stores/tokenStore'
 import { normalizePageResult } from '../utils/pageResult'
@@ -3045,16 +3045,7 @@ export const arrearsReportApi = {
     building?: string
     feeType?: string
   } = {}) {
-    const { getAccessToken } = await import('../stores/tokenStore')
-    const { API_PATH_PREFIX, API_REMOTE_BASE_URL } = await import('../config/api')
-    const { isNativeApp } = await import('../utils/native')
-    const base = import.meta.env.DEV && !isNativeApp() ? API_PATH_PREFIX : API_REMOTE_BASE_URL
-    const token = getAccessToken()
-    const res = await fetch(`${base}/admin/property-fees/arrears-report/export${buildQuery(params)}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {}
-    })
-    if (!res.ok) throw new Error('导出失败')
-    return res.blob()
+    return requestBlob(`/admin/property-fees/arrears-report/export${buildQuery(params)}`)
   },
 
   /** POST /admin/property-fees/arrears-reminder/preview — v5.3 催缴快照 */
@@ -3379,16 +3370,7 @@ export const adminCanteenApi = {
     startDate?: string
     endDate?: string
   }) {
-    const { getAccessToken } = await import('../stores/tokenStore')
-    const { API_PATH_PREFIX, API_REMOTE_BASE_URL } = await import('../config/api')
-    const { isNativeApp } = await import('../utils/native')
-    const base = import.meta.env.DEV && !isNativeApp() ? API_PATH_PREFIX : API_REMOTE_BASE_URL
-    const token = getAccessToken()
-    const res = await fetch(`${base}/admin/canteen/export${buildQuery(params)}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {}
-    })
-    if (!res.ok) throw new Error('导出失败')
-    return res.blob()
+    return requestBlob(`/admin/canteen/export${buildQuery(params)}`)
   }
 }
 
