@@ -51,6 +51,7 @@ const ADMIN_WORKBENCH_BASE: MobileWorkbenchSection[] = [
       { name: '数据大盘', icon: 'dashboard', route: 'dashboard' },
       { name: '住户管理', icon: 'resident', route: 'resident', firstBatchOptimize: true },
       { name: '商家管理', icon: 'merchant', route: 'merchant', firstBatchOptimize: true },
+      { name: '社区食堂', icon: 'merchant', route: 'canteen-manage' },
       { name: '积分管理', icon: 'points', route: 'points' },
       { name: '送货管理', icon: 'delivery', route: 'delivery' },
       { name: '社区论坛', icon: 'notice', route: 'community-forum' },

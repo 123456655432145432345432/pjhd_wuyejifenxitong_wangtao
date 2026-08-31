@@ -1,5 +1,5 @@
 import { ApiError, buildQuery, request } from './request'
-import { normalizeBuildingChangeApplication } from './mappers'
+import { normalizeBuildingChangeApplication, normalizeMerchantItem } from './mappers'
 import { getAccessToken } from '../stores/tokenStore'
 import { normalizePageResult } from '../utils/pageResult'
 import { normalizeDistributionRecords } from '../utils/distribution'
@@ -252,7 +252,16 @@ import type {
   MerchantPostItem,
   MerchantPostPayload,
   CbkAccountItem,
-  CbkAccountUpsertPayload
+  CbkAccountUpsertPayload,
+  CanteenSettings,
+  CanteenBindingItem,
+  CanteenBindingCreatePayload,
+  CanteenMerchantCreatePayload,
+  CanteenQuotaAdjustPayload,
+  CanteenQuotaAdjustResult,
+  CanteenQuotaPurchaseItem,
+  CanteenAdminRechargeItem,
+  CanteenDirectedFlowItem
 } from './types'
 
 
@@ -610,11 +619,19 @@ export const merchantApi = {
     applyRole?: string
     /** 管理端营业状态：active / kicked / quit / inactive；不传返回全部 */
     status?: string
+    /** 商家角色类型：goods / technician / group_leader / canteen（§7.1） */
+    merchantType?: string
     propertyCompanyId?: string
     sort?: string
   } = {}) {
 
-    return request<PageResult<MerchantItem>>(`/merchants${buildQuery(params)}`)
+    return request<PageResult<MerchantItem>>(`/merchants${buildQuery(params)}`).then((raw) => {
+      const page = normalizePageResult<MerchantItem>(raw, params.page, params.pageSize)
+      return {
+        ...page,
+        list: page.list.map((item) => normalizeMerchantItem(item))
+      }
+    })
 
   },
 
@@ -635,7 +652,9 @@ export const merchantApi = {
   },
 
   get(id: string, propertyCompanyId?: string) {
-    return request<MerchantItem>(`/merchants/${id}${buildQuery({ propertyCompanyId })}`)
+    return request<MerchantItem>(`/merchants/${id}${buildQuery({ propertyCompanyId })}`).then(
+      (item) => normalizeMerchantItem(item)
+    )
   },
 
   update(id: string, payload: MerchantUpdatePayload, propertyCompanyId?: string) {
@@ -3239,6 +3258,137 @@ export const merchantPostApi = {
   },
   remove(id: string) {
     return request<{ id?: string }>(`/merchant-posts/${id}`, { method: 'DELETE' })
+  }
+}
+
+/** 管理端社区食堂：创建食堂商家 / 主商家标记 / 绑定 / 手续费 / 三类流水（API §73） */
+export const adminCanteenApi = {
+  createMerchant(payload: CanteenMerchantCreatePayload) {
+    return request<MerchantItem>('/admin/canteen/merchants', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }).then((item) => normalizeMerchantItem(item))
+  },
+
+  setMainMerchant(merchantId: string, main: boolean) {
+    return request<null>(`/admin/canteen/merchants/${merchantId}/main${buildQuery({ main })}`, {
+      method: 'PUT'
+    })
+  },
+
+  adjustQuota(merchantId: string, payload: CanteenQuotaAdjustPayload) {
+    return request<CanteenQuotaAdjustResult>(
+      `/admin/canteen/merchants/${merchantId}/quota-adjust`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    ).then((raw) => {
+      const row = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+      const remaining = row.remainingQuota ?? row.remaining_quota
+      const amount = row.amount
+      return {
+        merchantId: String(row.merchantId ?? row.merchant_id ?? merchantId),
+        amount: amount as number | string | undefined,
+        remainingQuota: remaining as number | string | undefined
+      }
+    })
+  },
+
+  createBinding(payload: CanteenBindingCreatePayload) {
+    return request<CanteenBindingItem>('/admin/canteen/bindings', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+
+  deleteBinding(id: string) {
+    return request<null>(`/admin/canteen/bindings/${id}`, { method: 'DELETE' })
+  },
+
+  updateBindingRate(id: string, supplyDiscountRate: number) {
+    return request<CanteenBindingItem>(`/admin/canteen/bindings/${id}/rate`, {
+      method: 'PUT',
+      body: JSON.stringify({ supplyDiscountRate })
+    })
+  },
+
+  listBindings(params: {
+    page?: number
+    pageSize?: number
+    mainMerchantId?: string
+    subMerchantId?: string
+  } = {}) {
+    return request<PageResult<CanteenBindingItem>>(
+      `/admin/canteen/bindings${buildQuery(params)}`
+    ).then((raw) => normalizePageResult<CanteenBindingItem>(raw, params.page, params.pageSize))
+  },
+
+  getSettings() {
+    return request<CanteenSettings>('/admin/canteen/settings')
+  },
+
+  updateSettings(payload: CanteenSettings) {
+    return request<CanteenSettings>('/admin/canteen/settings', {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
+  },
+
+  listQuotaPurchases(params: {
+    page?: number
+    pageSize?: number
+    merchantId?: string
+    status?: string
+    startDate?: string
+    endDate?: string
+  } = {}) {
+    return request<PageResult<CanteenQuotaPurchaseItem>>(
+      `/admin/canteen/quota-purchases${buildQuery(params)}`
+    ).then((raw) => normalizePageResult<CanteenQuotaPurchaseItem>(raw, params.page, params.pageSize))
+  },
+
+  listRecharges(params: {
+    page?: number
+    pageSize?: number
+    mainMerchantId?: string
+    residentId?: string
+    startDate?: string
+    endDate?: string
+  } = {}) {
+    return request<PageResult<CanteenAdminRechargeItem>>(
+      `/admin/canteen/recharges${buildQuery(params)}`
+    ).then((raw) => normalizePageResult<CanteenAdminRechargeItem>(raw, params.page, params.pageSize))
+  },
+
+  listFlows(params: {
+    page?: number
+    pageSize?: number
+    mainMerchantId?: string
+    merchantId?: string
+    residentId?: string
+    flowType?: string
+    startDate?: string
+    endDate?: string
+  } = {}) {
+    return request<PageResult<CanteenDirectedFlowItem>>(
+      `/admin/canteen/flows${buildQuery(params)}`
+    ).then((raw) => normalizePageResult<CanteenDirectedFlowItem>(raw, params.page, params.pageSize))
+  },
+
+  async exportCsv(params: {
+    type: string
+    merchantId?: string
+    startDate?: string
+    endDate?: string
+  }) {
+    const { getAccessToken } = await import('../stores/tokenStore')
+    const { API_PATH_PREFIX, API_REMOTE_BASE_URL } = await import('../config/api')
+    const { isNativeApp } = await import('../utils/native')
+    const base = import.meta.env.DEV && !isNativeApp() ? API_PATH_PREFIX : API_REMOTE_BASE_URL
+    const token = getAccessToken()
+    const res = await fetch(`${base}/admin/canteen/export${buildQuery(params)}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    })
+    if (!res.ok) throw new Error('导出失败')
+    return res.blob()
   }
 }
 

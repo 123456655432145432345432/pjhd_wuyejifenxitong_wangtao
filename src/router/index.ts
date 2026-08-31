@@ -45,6 +45,7 @@ import RoleAccounts from '../views/admin/RoleAccounts.vue'
 import CommunityForum from '../views/admin/CommunityForum.vue'
 import ResidentMerchants from '../views/admin/ResidentMerchants.vue'
 import MerchantAdSettings from '../views/admin/MerchantAdSettings.vue'
+import CanteenManage from '../views/admin/CanteenManage.vue'
 import Points from '../views/Points.vue'
 import Resident from '../views/Resident.vue'
 import Param from '../views/Param.vue'
@@ -278,6 +279,12 @@ const routes = [
         name: 'merchant-ad-settings',
         component: MerchantAdSettings,
         meta: { title: '商家广告设置', roles: ADMIN_ROLE_LIST }
+      },
+      {
+        path: 'canteen',
+        name: 'canteen-manage',
+        component: CanteenManage,
+        meta: { title: '社区食堂', roles: ADMIN_ROLE_LIST }
       },
       {
         path: 'resident-shop',

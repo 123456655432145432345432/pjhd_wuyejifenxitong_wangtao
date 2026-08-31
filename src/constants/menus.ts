@@ -18,7 +18,8 @@ export const adminMenus: Menu[] = [
       { name: '积分审批', icon: 'points', route: 'merchant-point-approval' },
       { name: '商家提现审批', icon: 'wallet', route: 'merchant-withdrawal-approval' },
       { name: '配送员提现审批', icon: 'wallet', route: 'role-withdrawal-approval' },
-      { name: '物业币提现审批', icon: 'coin', route: 'coin-withdrawal-approval' }
+      { name: '物业币提现审批', icon: 'coin', route: 'coin-withdrawal-approval' },
+      { name: '社区食堂', icon: 'merchant', route: 'canteen-manage' }
     ]
   },
   { name: '价格审批', icon: 'wallet', route: 'price-approvals' },

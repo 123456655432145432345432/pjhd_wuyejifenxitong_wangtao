@@ -171,6 +171,33 @@ export const MERCHANT_SOURCE_OPTIONS = [
   ...Object.entries(MERCHANT_SOURCE_LABEL).map(([value, label]) => ({ value, label }))
 ]
 
+/** 商家角色类型（v6.8 merchants.merchant_type / GET /merchants?merchantType=） */
+export const MERCHANT_TYPE = {
+  GOODS: 'goods',
+  TECHNICIAN: 'technician',
+  GROUP_LEADER: 'group_leader',
+  CANTEEN: 'canteen'
+} as const
+
+export const MERCHANT_TYPE_LABEL: Record<string, string> = {
+  goods: '普通商品',
+  technician: '技工',
+  group_leader: '组长小店',
+  canteen: '社区食堂'
+}
+
+export const MERCHANT_TYPE_OPTIONS = [
+  { value: '', label: '全部类型' },
+  { value: MERCHANT_TYPE.GOODS, label: MERCHANT_TYPE_LABEL.goods },
+  { value: MERCHANT_TYPE.CANTEEN, label: MERCHANT_TYPE_LABEL.canteen },
+  { value: MERCHANT_TYPE.TECHNICIAN, label: MERCHANT_TYPE_LABEL.technician },
+  { value: MERCHANT_TYPE.GROUP_LEADER, label: MERCHANT_TYPE_LABEL.group_leader }
+]
+
+export function isCanteenMerchantType(merchantType?: string | null) {
+  return merchantType === MERCHANT_TYPE.CANTEEN
+}
+
 /** 社区服务提供者类型（GET /services?providerType=） */
 export const PROVIDER_TYPE = {
   MERCHANT: 'merchant',
@@ -914,6 +941,52 @@ export const SERVICE_CATEGORY_OPTIONS = Object.entries(SERVICE_CATEGORY_LABEL).m
   value,
   label
 }))
+
+/** 社区食堂 — 额度购买状态（API §73） */
+export const CANTEEN_QUOTA_PURCHASE_STATUS = {
+  PENDING: 'pending',
+  PAID: 'paid',
+  REFUNDED: 'refunded',
+  CLOSED: 'closed'
+} as const
+
+export const CANTEEN_QUOTA_PURCHASE_STATUS_LABEL: Record<string, string> = {
+  pending: '待支付',
+  paid: '已到账',
+  refunded: '已退款',
+  closed: '已关闭'
+}
+
+/** 社区食堂 — 定向余额流水类型（API §73） */
+export const CANTEEN_DIRECTED_FLOW_TYPE = {
+  RECHARGE: 'recharge',
+  CONSUME_DEDUCT: 'consume_deduct',
+  REFUND_BACK: 'refund_back'
+} as const
+
+export const CANTEEN_DIRECTED_FLOW_TYPE_LABEL: Record<string, string> = {
+  recharge: '充值',
+  consume_deduct: '消费扣减',
+  refund_back: '退款退回'
+}
+
+/** 社区食堂 — 绑定状态（API §73） */
+export const CANTEEN_BINDING_STATUS = {
+  ACTIVE: 'active',
+  INACTIVE: 'inactive'
+} as const
+
+export const CANTEEN_BINDING_STATUS_LABEL: Record<string, string> = {
+  active: '启用',
+  inactive: '已解绑'
+}
+
+/** 社区食堂 — 管理端流水导出类型（API §73.8） */
+export const CANTEEN_EXPORT_TYPE = {
+  QUOTA_PURCHASE: 'quota_purchase',
+  RECHARGE: 'recharge',
+  DIRECTED_FLOW: 'directed_flow'
+} as const
 
 /** 板块类型（GET/POST /admin/sector-leaders） */
 export const SECTOR_TYPE = {
@@ -1927,7 +2000,8 @@ export const API_ERROR_CODE = {
   INVALID_SHARE_RATE_TOTAL: 'INVALID_SHARE_RATE_TOTAL',
   WECHAT_TEMPLATE_NOT_CONFIGURED: 'WECHAT_TEMPLATE_NOT_CONFIGURED',
   PREVIEW_EXPIRED: 'PREVIEW_EXPIRED',
-  ARREARS_REMINDER_DUPLICATE: 'ARREARS_REMINDER_DUPLICATE'
+  ARREARS_REMINDER_DUPLICATE: 'ARREARS_REMINDER_DUPLICATE',
+  CANTEEN_NOT_MAIN_MERCHANT: 'CANTEEN_NOT_MAIN_MERCHANT'
 } as const
 
 /** 新旧资金切分：上线前内部钱包 vs 上线后微信支付分账 */

@@ -19,7 +19,7 @@ import type {
   ResidentItem,
   RolePresetDto
 } from './types'
-import { getEnumLabel, ANNOUNCEMENT_STATUS, ANNOUNCEMENT_STATUS_LABEL, ANNOUNCEMENT_TYPE_LABEL, COURIER_STATUS, COURIER_STATUS_LABEL, DELIVERY_SCOPE_LABEL, DELIVERY_STATUS, DELIVERY_STATUS_LABEL, MERCHANT_LEVEL_LABEL, MERCHANT_SOURCE_LABEL, MERCHANT_STATUS_LABEL, PERMISSION_MODULE_LABEL, RESIDENT_STATUS, RESIDENT_STATUS_LABEL, RESIDENT_USER_TYPE, ROLE_LABEL, getMerchantAuditDisplayLabel, getMerchantOperatingDisplayLabel, resolveMerchantAuditDisplayStatus, resolveMerchantOperatingDisplayStatus, normalizeAnnouncementType, formatAnnouncementTargetRoles } from '../constants/enums'
+import { getEnumLabel, ANNOUNCEMENT_STATUS, ANNOUNCEMENT_STATUS_LABEL, ANNOUNCEMENT_TYPE_LABEL, COURIER_STATUS, COURIER_STATUS_LABEL, DELIVERY_SCOPE_LABEL, DELIVERY_STATUS, DELIVERY_STATUS_LABEL, MERCHANT_LEVEL_LABEL, MERCHANT_SOURCE_LABEL, MERCHANT_STATUS_LABEL, MERCHANT_TYPE, MERCHANT_TYPE_LABEL, PERMISSION_MODULE_LABEL, RESIDENT_STATUS, RESIDENT_STATUS_LABEL, RESIDENT_USER_TYPE, ROLE_LABEL, getMerchantAuditDisplayLabel, getMerchantOperatingDisplayLabel, resolveMerchantAuditDisplayStatus, resolveMerchantOperatingDisplayStatus, normalizeAnnouncementType, formatAnnouncementTargetRoles } from '../constants/enums'
 
 const avatarColors = ['#5c5c9e', '#3aaf7d', '#f5a623', '#e05c5c', '#6a6aae']
 
@@ -371,6 +371,49 @@ export function resolvePlatformMerchantId(item: MerchantItem): string | null {
   return null
 }
 
+function readRecord(item: unknown): Record<string, unknown> {
+  return item && typeof item === 'object' ? (item as Record<string, unknown>) : {}
+}
+
+function pickString(raw: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = raw[key]
+    if (typeof value === 'string' && value) return value
+  }
+  return undefined
+}
+
+function pickBool(raw: Record<string, unknown>, keys: string[]): boolean | undefined {
+  for (const key of keys) {
+    if (!(key in raw) || raw[key] === undefined || raw[key] === null) continue
+    const value = raw[key]
+    if (typeof value === 'boolean') return value
+    if (value === 1 || value === '1' || value === 'true') return true
+    if (value === 0 || value === '0' || value === 'false') return false
+  }
+  return undefined
+}
+
+/** 兼容列表/详情的 camelCase、snake_case，以及 Java Boolean isXxx 序列化成的 canteenMainMerchant */
+export function normalizeMerchantItem(item: MerchantItem | Record<string, unknown> | null | undefined): MerchantItem {
+  const raw = readRecord(item)
+  const base = (item || {}) as MerchantItem
+  const merchantType = pickString(raw, ['merchantType', 'merchant_type'])
+  const isCanteenMainMerchant = pickBool(raw, [
+    'isCanteenMainMerchant',
+    'is_canteen_main_merchant',
+    'canteenMainMerchant',
+    'canteen_main_merchant',
+    'isCanteenMain',
+    'is_canteen_main'
+  ])
+  return {
+    ...base,
+    merchantType: merchantType || base.merchantType,
+    isCanteenMainMerchant: isCanteenMainMerchant ?? base.isCanteenMainMerchant
+  }
+}
+
 export function formatMerchantServiceScope(item: MerchantItem) {
   if (item.serveAllCommunities) return '全部小区'
   const names = (item.communityNames || []).map(name => name.trim()).filter(Boolean)
@@ -382,28 +425,36 @@ export function formatMerchantServiceScope(item: MerchantItem) {
 
 export function mapMerchants(list: MerchantItem[]) {
   return list.map(item => {
-    const auditStatusCode = resolveMerchantAuditDisplayStatus(item.auditStatus, item.status)
-    const status = resolveMerchantOperatingDisplayStatus(item.status, item.auditStatus)
+    const row = normalizeMerchantItem(item)
+    const auditStatusCode = resolveMerchantAuditDisplayStatus(row.auditStatus, row.status)
+    const status = resolveMerchantOperatingDisplayStatus(row.status, row.auditStatus)
     return {
-      id: item.id,
-      platformMerchantId: resolvePlatformMerchantId(item),
-      name: item.name,
-      category: item.category || '-',
-      categoryCode: item.category?.includes('餐') ? 'dining' as const : 'retail' as const,
-      merchantLevel: getEnumLabel(MERCHANT_LEVEL_LABEL, item.merchantLevel),
-      merchantSource: getEnumLabel(MERCHANT_SOURCE_LABEL, item.merchantSource, '—'),
-      auditStatus: getMerchantAuditDisplayLabel(item.auditStatus, item.status),
+      id: row.id,
+      platformMerchantId: resolvePlatformMerchantId(row),
+      name: row.name,
+      category: row.category || '-',
+      categoryCode: row.category?.includes('餐') ? 'dining' as const : 'retail' as const,
+      merchantLevel: getEnumLabel(MERCHANT_LEVEL_LABEL, row.merchantLevel),
+      merchantSource: getEnumLabel(MERCHANT_SOURCE_LABEL, row.merchantSource, '—'),
+      merchantType: row.merchantType || MERCHANT_TYPE.GOODS,
+      merchantTypeLabel: getEnumLabel(
+        MERCHANT_TYPE_LABEL,
+        row.merchantType || MERCHANT_TYPE.GOODS,
+        MERCHANT_TYPE_LABEL.goods
+      ),
+      isCanteenMainMerchant: !!row.isCanteenMainMerchant,
+      auditStatus: getMerchantAuditDisplayLabel(row.auditStatus, row.status),
       auditStatusCode,
       status,
-      statusLabel: getMerchantOperatingDisplayLabel(item.status, item.auditStatus),
-      commissionRate: item.commissionRate !== undefined ? `${formatPercent(item.commissionRate)}%` : '-',
-      pointsRatio: item.pointExchangeRate !== undefined ? `1元=${item.pointExchangeRate}积分` : '-',
-      cashbackRate: item.coinRebateRate !== undefined ? `${formatPercent(item.coinRebateRate)}%` : '0%',
-      ownerPrice: item.memberDiscountPrice ? `${item.memberDiscountPrice}元` : '-',
-      contactPhone: item.contactPhone || '—',
-      createdAt: item.createdAt || '—',
-      rejectReason: item.rejectReason?.trim() || '',
-      serviceScope: formatMerchantServiceScope(item)
+      statusLabel: getMerchantOperatingDisplayLabel(row.status, row.auditStatus),
+      commissionRate: row.commissionRate !== undefined ? `${formatPercent(row.commissionRate)}%` : '-',
+      pointsRatio: row.pointExchangeRate !== undefined ? `1元=${row.pointExchangeRate}积分` : '-',
+      cashbackRate: row.coinRebateRate !== undefined ? `${formatPercent(row.coinRebateRate)}%` : '0%',
+      ownerPrice: row.memberDiscountPrice ? `${row.memberDiscountPrice}元` : '-',
+      contactPhone: row.contactPhone || '—',
+      createdAt: row.createdAt || '—',
+      rejectReason: row.rejectReason?.trim() || '',
+      serviceScope: formatMerchantServiceScope(row)
     }
   })
 }

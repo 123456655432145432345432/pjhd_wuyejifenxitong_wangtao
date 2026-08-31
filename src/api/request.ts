@@ -2,7 +2,7 @@ import { API_PATH_PREFIX, API_REMOTE_BASE_URL } from '../config/api'
 import type { ApiResponse } from './types'
 import { getAccessToken, getRefreshToken } from '../stores/tokenStore'
 import { isNativeApp } from '../utils/native'
-import { formatMerchantDuplicateBindingMessage } from '../constants/enums'
+import { formatMerchantDuplicateBindingMessage, API_ERROR_CODE } from '../constants/enums'
 
 /**
  * - 浏览器开发：Vite 代理同源前缀
@@ -68,8 +68,17 @@ const KNOWN_ERROR_MESSAGES: Record<number, string> = {
   80010: '非配送员承运单，配送员不可抢单/操作',
   30004: '该物业下已存在相同申请，请勿重复提交',
   60005: '商家已被踢出，无法继续经营，可重新申请入驻',
+  60001: '商家不存在',
+  80021: '不是食堂主商家，请先创建或标记主店',
+  80022: '该窗口已绑到这个主店',
+  80023: '绑定关系不存在',
+  30001: '店主手机号未在该物业注册',
   90120: '账号存在关联业务数据，无法彻底删除，请改用禁用或软删除',
   90121: '账号已删除，无法再次操作'
+}
+
+const KNOWN_ERROR_CODE_MESSAGES: Record<string, string> = {
+  [API_ERROR_CODE.CANTEEN_NOT_MAIN_MERCHANT]: '仅社区食堂主商家可调整可用充值额度'
 }
 
 const PAY_CHANNEL_BRAND_RE = /扫呗|利楚商服|利楚|LCSW|lcsw/i
@@ -89,7 +98,12 @@ export function formatApiError(e: unknown, fallback = '操作失败') {
       const data = e.data as { auditStatus?: string } | undefined
       return formatMerchantDuplicateBindingMessage(data, e.message || KNOWN_ERROR_MESSAGES[30004] || fallback)
     }
-    return sanitizePayChannelMessage(e.message || KNOWN_ERROR_MESSAGES[e.code] || fallback)
+    return sanitizePayChannelMessage(
+      e.message ||
+        (e.errorCode ? KNOWN_ERROR_CODE_MESSAGES[e.errorCode] : '') ||
+        KNOWN_ERROR_MESSAGES[e.code] ||
+        fallback
+    )
   }
   if (e instanceof Error) return sanitizePayChannelMessage(e.message || fallback)
   return fallback

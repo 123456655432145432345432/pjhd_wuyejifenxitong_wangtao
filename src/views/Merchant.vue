@@ -179,6 +179,16 @@
             </select>
             <select
               v-if="viewMode === 'property' && !isOnboardingAudit"
+              v-model="selectedMerchantType"
+              class="filterSelect"
+              @change="applyFilters"
+            >
+              <option v-for="opt in MERCHANT_TYPE_OPTIONS" :key="opt.value || 'all-type'" :value="opt.value">
+                {{ opt.label }}
+              </option>
+            </select>
+            <select
+              v-if="viewMode === 'property' && !isOnboardingAudit"
               v-model="selectedMerchantStatus"
               class="filterSelect"
               @change="applyFilters"
@@ -313,6 +323,7 @@
               <span class="badge">{{ merchant.merchantLevel }}</span>
             </div>
             <div class="merchantMeta">
+              <span>类型：{{ merchant.merchantTypeLabel }}{{ merchant.isCanteenMainMerchant ? '（主店）' : '' }}</span>
               <span>审核：{{ merchant.auditStatus }}</span>
               <span>申请身份：{{ applyRoleLabel(merchantListCache[merchant.id]) }}</span>
               <span>营业：{{ merchant.statusLabel }}</span>
@@ -347,6 +358,7 @@
           <thead>
             <tr>
               <th>商家名称</th>
+              <th>类型</th>
               <th>申请身份</th>
               <th>等级</th>
               <th>审核状态</th>
@@ -359,10 +371,10 @@
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td colspan="9" class="emptyCell">加载中...</td>
+              <td colspan="10" class="emptyCell">加载中...</td>
             </tr>
             <tr v-else-if="!merchants.length">
-              <td colspan="9" class="emptyCell">{{ emptyMerchantHint }}</td>
+              <td colspan="10" class="emptyCell">{{ emptyMerchantHint }}</td>
             </tr>
             <tr v-for="merchant in merchants" v-else :key="merchant.id" class="merchantRow">
               <td>
@@ -373,6 +385,10 @@
                     <div class="category">{{ merchant.category }}</div>
                   </div>
                 </div>
+              </td>
+              <td>
+                {{ merchant.merchantTypeLabel }}
+                <span v-if="merchant.merchantType === MERCHANT_TYPE.CANTEEN && merchant.isCanteenMainMerchant">（主店）</span>
               </td>
               <td>{{ applyRoleLabel(merchantListCache[merchant.id]) }}</td>
               <td>{{ merchant.merchantLevel }}</td>
@@ -1150,8 +1166,11 @@ import {
   MERCHANT_LEVEL_LABEL,
   MERCHANT_LEVEL_OPTIONS,
   MERCHANT_SOURCE_LABEL,
+  MERCHANT_TYPE_LABEL,
   MERCHANT_STATUS,
   MERCHANT_STATUS_LABEL,
+  MERCHANT_TYPE,
+  MERCHANT_TYPE_OPTIONS,
   PLATFORM_MERCHANT_STATUS_OPTIONS,
   PROPERTY_COIN_SOURCE,
   USER_ROLE,
@@ -1176,7 +1195,7 @@ const pageTitle = computed(() => (isOnboardingAudit.value ? '商家入驻审核'
 const pageDesc = computed(() =>
   isOnboardingAudit.value
     ? '审核住户 App「商家入驻」。拒绝后申请记录会清除，住户可随时重新提交；「已拒绝」筛选仅兼容历史数据。不要在此审核业主商户分销。'
-    : '配置并监控平台商家及其财务参数。被踢/停用/退出的商家不再展示为已通过或营业中。住户「商家入驻」请到「商家入驻审核」。'
+    : '配置并监控平台商家及其财务参数。被踢/停用/退出的商家不再展示为已通过或营业中。住户「商家入驻」请到「商家入驻审核」。社区食堂请到「社区食堂」菜单创建，勿把普通店标成食堂。'
 )
 
 const viewMode = ref<ViewMode>('property')
@@ -1212,6 +1231,7 @@ const appliedKeyword = ref('')
 const selectedCategory = ref('')
 const selectedAuditStatus = ref('')
 const selectedMerchantStatus = ref(MERCHANT_STATUS.ACTIVE)
+const selectedMerchantType = ref('')
 const selectedApplyRole = ref('')
 const onlyOfficialRecommended = ref('')
 const recommendSortDraft = ref(0)
@@ -1389,6 +1409,8 @@ const detailBasicRows = computed(() => {
     { label: '分类', value: d.category || '—' },
     { label: '等级', value: getEnumLabel(MERCHANT_LEVEL_LABEL, d.merchantLevel) },
     { label: '商家来源', value: getEnumLabel(MERCHANT_SOURCE_LABEL, d.merchantSource) },
+    { label: '商家类型', value: getEnumLabel(MERCHANT_TYPE_LABEL, d.merchantType || MERCHANT_TYPE.GOODS) },
+    { label: '食堂主店', value: d.merchantType === MERCHANT_TYPE.CANTEEN ? (d.isCanteenMainMerchant ? '是' : '否（窗口）') : '—' },
     { label: '申请身份', value: applyRoleLabel(d) },
     { label: '等级权重', value: d.levelWeight !== undefined ? String(d.levelWeight) : '—' },
     { label: '审核状态', value: getMerchantAuditDisplayLabel(d.auditStatus, d.status) },
@@ -1605,7 +1627,8 @@ async function loadMerchants(page = currentPage.value) {
         : await merchantApi.list({
             ...listParams,
             auditStatus: selectedAuditStatus.value || undefined,
-            status: isOnboardingAudit.value ? undefined : selectedMerchantStatus.value || undefined
+            status: isOnboardingAudit.value ? undefined : selectedMerchantStatus.value || undefined,
+            merchantType: isOnboardingAudit.value ? undefined : selectedMerchantType.value || undefined
           })
     const list = res.list || []
     list.forEach(item => {
@@ -2091,7 +2114,7 @@ async function submitEarnModal() {
 
 function canAuditMerchant(id: string) {
   const raw = merchantListCache.value[id]
-  return !!raw && isMerchantOnboardingPending(raw.auditStatus)
+  return !!raw && isMerchantOnboardingPending(raw.auditStatus) && raw.merchantType !== MERCHANT_TYPE.CANTEEN
 }
 
 function openAuditModal(id: string, name: string, auditResult = AUDIT_RESULT.APPROVED) {

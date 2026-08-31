@@ -368,6 +368,10 @@ export interface MerchantItem {
   status?: string
   /** 商家来源：platform / group_leader / technician（v4.1） */
   merchantSource?: string
+  /** 商家角色类型：goods / technician / group_leader / canteen（v6.8） */
+  merchantType?: string
+  /** 是否社区食堂主商家（仅 merchantType=canteen 有意义） */
+  isCanteenMainMerchant?: boolean
   /** 住户入驻时申请的业务身份 */
   applyRole?: string
   intendedRole?: string
@@ -1227,6 +1231,10 @@ export interface MyMerchantDetail {
   status?: string
   /** 商家来源：platform / group_leader / technician（v4.1） */
   merchantSource?: string
+  /** 商家角色类型：goods / technician / group_leader / canteen（v6.8） */
+  merchantType?: string
+  /** 是否社区食堂主商家（仅 merchantType=canteen 有意义） */
+  isCanteenMainMerchant?: boolean
   totalOrders?: number
   totalRevenue?: number
   /** 可提现余额（§A1） */
@@ -3438,4 +3446,96 @@ export interface CbkReconcileItem {
   remark?: string
   createdAt?: string
   updatedAt?: string
+}
+
+/* ---------- §73 社区食堂（管理端） ---------- */
+
+export interface CanteenSettings {
+  quotaFeeRate: number
+}
+
+export interface CanteenBindingItem {
+  id: string
+  mainMerchantId: string
+  mainMerchantName?: string
+  subMerchantId: string
+  subMerchantName?: string
+  supplyDiscountRate?: number
+  status?: string
+  createdAt?: string
+}
+
+export interface CanteenBindingCreatePayload {
+  mainMerchantId: string
+  subMerchantId: string
+  supplyDiscountRate?: number
+}
+
+/** POST /admin/canteen/merchants — 创建食堂主商家或窗口 */
+export interface CanteenMerchantCreatePayload {
+  name: string
+  contactPhone: string
+  propertyCompanyId: string
+  isMain?: boolean
+  category?: string
+  description?: string
+  address?: string
+  businessHours?: string
+  videoUrl?: string
+  coverUrls?: string[]
+  deliveryFee?: number
+  freeDeliveryThreshold?: number
+  deliveryScope?: string
+}
+
+/** POST /admin/canteen/merchants/{id}/quota-adjust */
+export interface CanteenQuotaAdjustPayload {
+  amount: number
+  remark?: string
+}
+
+export interface CanteenQuotaAdjustResult {
+  merchantId?: string
+  amount?: number | string
+  remainingQuota?: number | string
+}
+
+export interface CanteenQuotaPurchaseItem {
+  id: string
+  type?: string
+  amount?: number | string
+  feeAmount?: number | string
+  actualQuota?: number | string
+  status?: string
+  remark?: string
+  createdAt?: string
+}
+
+export interface CanteenAdminRechargeItem {
+  id: string
+  mainMerchantId?: string
+  mainMerchantName?: string
+  residentId?: string
+  residentName?: string
+  residentPhone?: string
+  amount?: number | string
+  balanceAfter?: number | string
+  operatorId?: string
+  remark?: string
+  createdAt?: string
+}
+
+export interface CanteenDirectedFlowItem {
+  id: string
+  flowType?: string
+  mainMerchantId?: string
+  mainMerchantName?: string
+  merchantId?: string
+  merchantName?: string
+  residentId?: string
+  amount?: number | string
+  balanceAfter?: number | string
+  orderNo?: string | null
+  remark?: string
+  createdAt?: string
 }
