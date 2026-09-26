@@ -333,6 +333,7 @@
             </div>
             <div class="merchantCardActions">
               <button class="cardActionBtn" @click="openDetailModal(merchant.id, merchant.category)">详情</button>
+              <button class="cardActionBtn" @click="openApplyment(merchant.id)">微信进件</button>
               <button
                 v-if="canAuditMerchant(merchant.id)"
                 class="cardActionBtn primary"
@@ -407,6 +408,9 @@
                 <div class="actions">
                   <button class="actionBtn detail" title="详情" @click="openDetailModal(merchant.id, merchant.category)">
                     <IconSvg name="eye" />
+                  </button>
+                  <button class="actionBtn detail" title="微信进件" @click="openApplyment(merchant.id)">
+                    微
                   </button>
                   <button
                     v-if="canAuditMerchant(merchant.id)"
@@ -581,13 +585,24 @@
                 </div>
               </section>
             </template>
-            <div v-if="detailData && !detailData.isOfficialRecommended" class="recommendSortRow">
+            <div
+              v-if="detailData && !(typeof detailData.isRecommended === 'boolean' ? detailData.isRecommended : detailData.isOfficialRecommended)"
+              class="recommendSortRow"
+            >
               <label class="label">设为官方推荐时的排序（越大越靠前）</label>
               <input v-model.number="recommendSortDraft" type="number" min="0" class="input sortInput" />
             </div>
             <p v-if="formError" class="error">{{ formError }}</p>
             <div class="modalFooter">
               <button type="button" class="btnSecondary" @click="closeDetailModal">关闭</button>
+              <button
+                v-if="detailData"
+                type="button"
+                class="btnSecondary"
+                @click="openApplyment(detailData.id)"
+              >
+                微信进件
+              </button>
               <button
                 v-if="detailData && canAuditMerchant(detailData.id)"
                 type="button"
@@ -603,7 +618,7 @@
                 :disabled="recommendSubmittingId === detailData.id"
                 @click="toggleRecommend(detailData)"
               >
-                {{ detailData.isOfficialRecommended ? '取消官方推荐' : '设为官方推荐' }}
+                {{ (typeof detailData?.isRecommended === 'boolean' ? detailData.isRecommended : detailData?.isOfficialRecommended) ? '取消官方推荐' : '设为官方推荐' }}
               </button>
               <button
                 v-if="detailData"
@@ -913,7 +928,7 @@
           </div>
           <form class="modalBody" @submit.prevent="submitEarnModal">
             <p class="formHint">
-              将向商家「{{ earnTargetName }}」关联的居民账户发放物业币（无需再查 residentId）。
+              将向商家「{{ earnTargetName }}」关联的居民账户发放物业币（无需再查住户编号）。
             </p>
             <div class="field">
               <label class="label">发放金额 <span class="required">*</span></label>
@@ -1124,7 +1139,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import IconSvg from '../components/IconSvg.vue'
 import MediaUploader from '../components/MediaUploader.vue'
 import MerchantDistanceModal from '../components/MerchantDistanceModal.vue'
@@ -1185,6 +1200,7 @@ import { useIsMobile } from '../composables/useIsMobile'
 const PAGE_SIZE = 20
 
 const route = useRoute()
+const router = useRouter()
 const auth = useAuthStore()
 const { isMobile } = useIsMobile()
 
@@ -1195,7 +1211,7 @@ const pageTitle = computed(() => (isOnboardingAudit.value ? '商家入驻审核'
 const pageDesc = computed(() =>
   isOnboardingAudit.value
     ? '审核住户 App「商家入驻」。拒绝后申请记录会清除，住户可随时重新提交；「已拒绝」筛选仅兼容历史数据。不要在此审核业主商户分销。'
-    : '配置并监控平台商家及其财务参数。被踢/停用/退出的商家不再展示为已通过或营业中。住户「商家入驻」请到「商家入驻审核」。社区食堂请到「社区食堂」菜单创建，勿把普通店标成食堂。'
+    : '配置并监控平台商家及其财务参数。列表「抽佣比例」只读，用于查看各商家分成。点详情可设/取消官方推荐。被踢/停用/退出的商家不再展示为已通过或营业中。住户「商家入驻」请到「商家入驻审核」。社区食堂请到「社区食堂」菜单创建，勿把普通店标成食堂。'
 )
 
 const viewMode = ref<ViewMode>('property')
@@ -1405,7 +1421,7 @@ const detailBasicRows = computed(() => {
   if (!d) return []
   return [
     { label: '商家名称', value: d.name || '—' },
-    { label: '平台商家 ID', value: d.platformMerchantId || '—' },
+    { label: '平台商家编号', value: d.platformMerchantId || '—' },
     { label: '分类', value: d.category || '—' },
     { label: '等级', value: getEnumLabel(MERCHANT_LEVEL_LABEL, d.merchantLevel) },
     { label: '商家来源', value: getEnumLabel(MERCHANT_SOURCE_LABEL, d.merchantSource) },
@@ -1435,14 +1451,14 @@ const detailDeliveryRows = computed(() => {
     },
     { label: '满额免配送', value: d.freeDeliveryThreshold !== undefined && d.freeDeliveryThreshold !== null && d.freeDeliveryThreshold !== '' ? `¥${formatMoney(Number(d.freeDeliveryThreshold))}` : '未设置' },
     { label: '排序权重', value: d.rankOrder !== undefined ? String(d.rankOrder) : '—' },
-    { label: '官方推荐', value: d.isOfficialRecommended ? `是${d.recommendedSort != null ? `（排序 ${d.recommendedSort}）` : ''}` : '否' }
+    { label: '官方推荐', value: (typeof d.isRecommended === 'boolean' ? d.isRecommended : d.isOfficialRecommended) ? `是${d.recommendedSort != null ? `（排序 ${d.recommendedSort}）` : ''}` : '否' }
   ]
 })
 
 function applyRoleLabel(merchant?: MerchantItem | null) {
   const role = merchant?.applyRole || merchant?.intendedRole || USER_ROLE.MERCHANT
   if (role === USER_ROLE.MERCHANT) return '商品商家'
-  return getEnumLabel(ROLE_LABEL, role, role)
+  return getEnumLabel(ROLE_LABEL, role, '—')
 }
 
 function isProductMerchantApply(merchant?: MerchantItem | null) {
@@ -1528,7 +1544,7 @@ const platformDetailRows = computed(() => {
   const d = platformDetailData.value
   if (!d) return []
   return [
-    { label: '平台商家 ID', value: d.id || '—' },
+    { label: '平台商家编号', value: d.id || '—' },
     { label: '商家名称', value: d.name || '—' },
     { label: '分类', value: d.category || '—' },
     { label: '状态', value: getEnumLabel(MERCHANT_STATUS_LABEL, d.status, '—') },
@@ -1787,6 +1803,10 @@ function changePage(page: number) {
 function resolveCategory(id: string, category?: string | null) {
   if (category && category !== '-') return category
   return merchantListCache.value[id]?.category
+}
+
+function openApplyment(id: string) {
+  void router.push({ name: 'merchant-applyment', params: { id } })
 }
 
 async function openDetailModal(id: string, listCategory?: string) {
@@ -2272,7 +2292,12 @@ async function submitAdQuota() {
 
 async function toggleRecommend(merchant: MerchantItem) {
   if (!merchant.id || recommendSubmittingId.value) return
-  const next = !merchant.isOfficialRecommended
+  // §95.20：优先用 isRecommended（v8.7 新字段），fallback isOfficialRecommended
+  const isCurrentlyRecommended =
+    typeof merchant.isRecommended === 'boolean'
+      ? merchant.isRecommended
+      : Boolean(merchant.isOfficialRecommended)
+  const next = !isCurrentlyRecommended
   const sort = Number(recommendSortDraft.value)
   recommendSubmittingId.value = merchant.id
   resetFormError()
@@ -2282,8 +2307,10 @@ async function toggleRecommend(merchant: MerchantItem) {
       recommendedSort: next ? (Number.isFinite(sort) ? sort : 100) : 0
     })
     if (detailData.value?.id === merchant.id) {
+      // §95.20：同步更新两个字段，向后兼容老后端 / 老缓存
       detailData.value = {
         ...detailData.value,
+        isRecommended: next,
         isOfficialRecommended: next,
         recommendedSort: next ? (Number.isFinite(sort) ? sort : 100) : undefined
       }

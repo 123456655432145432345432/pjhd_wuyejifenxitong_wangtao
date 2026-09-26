@@ -272,7 +272,7 @@
                 <li><span>订单号</span><strong>{{ detail.orderNo || detail.id }}</strong></li>
                 <li><span>住户</span><strong>{{ detail.residentName || '—' }}</strong></li>
                 <li><span>商家</span><strong>{{ detail.merchantName || '—' }}</strong></li>
-                <li><span>订单状态</span><strong>{{ detail.orderStatus || detail.status || '—' }}</strong></li>
+                <li><span>订单状态</span><strong>{{ getEnumLabel(ORDER_STATUS_LABEL, detail.orderStatus || detail.status) }}</strong></li>
               </ul>
               <FulfillmentPanel
                 :order="detail"
@@ -329,6 +329,7 @@ import {
   DELIVERY_STATUS_LABEL,
   FULFILLMENT_MODE_LABEL,
   FULFILLMENT_MODE_OPTIONS,
+  ORDER_STATUS_LABEL,
   getEnumLabel
 } from '../constants/enums'
 import { useIsMobile } from '../composables/useIsMobile'
@@ -389,7 +390,7 @@ const overrideMode = ref('')
 const overrideRemark = ref('')
 
 const overrideModeLabel = computed(() =>
-  getEnumLabel(FULFILLMENT_MODE_LABEL, overrideMode.value, overrideMode.value)
+  getEnumLabel(FULFILLMENT_MODE_LABEL, overrideMode.value, '—')
 )
 
 const visibleAdminOrders = computed(() => {

@@ -83,7 +83,7 @@
 
       <div class="card">
         <div class="cardHead">食堂商家列表</div>
-        <p class="cardDesc">仅展示 merchantType=canteen。角色以商家详情里的 isCanteenMainMerchant 为准（列表接口可能不带该字段）。</p>
+        <p class="cardDesc">仅展示食堂类型商家。角色以商家详情里的「是否主店」为准（列表接口可能不带该字段）。</p>
         <div v-if="merchantsLoading" class="hint">加载中...</div>
         <div v-else-if="!merchants.length" class="hint">暂无食堂商家，请先创建主店和窗口。</div>
         <div v-else class="tableWrap">
@@ -109,7 +109,7 @@
                 <td>{{ merchantTypeLabel(merchant.merchantType) }}</td>
                 <td>{{ merchant.contactPhone || '—' }}</td>
                 <td>{{ statusLabel(merchant.status, merchant.auditStatus) }}</td>
-                <td>{{ merchant.auditStatus || '—' }}</td>
+                <td>{{ getMerchantAuditDisplayLabel(merchant.auditStatus, merchant.status) }}</td>
                 <td>
                   <div class="ops">
                     <button
@@ -381,7 +381,7 @@
           <table v-if="flowTab === 'quota'" class="table">
             <thead>
               <tr>
-                <th>流水 ID</th>
+                <th>流水编号</th>
                 <th>支付金额</th>
                 <th>手续费</th>
                 <th>到账额度</th>
@@ -505,12 +505,12 @@ import {
   CANTEEN_QUOTA_PURCHASE_STATUS,
   CANTEEN_QUOTA_PURCHASE_STATUS_LABEL,
   ENTITY_STATUS,
-  MERCHANT_AUDIT_STATUS,
   MERCHANT_TYPE,
   MERCHANT_TYPE_LABEL,
   USER_ROLE,
   canKickMerchant,
   getEnumLabel,
+  getMerchantAuditDisplayLabel,
   getMerchantOperatingDisplayLabel,
   isMerchantTerminalStatus
 } from '../../constants/enums'
@@ -755,8 +755,8 @@ async function createMerchant() {
     const typeOk = created.merchantType === MERCHANT_TYPE.CANTEEN
     const roleText = mainFlag ? '主商家' : '窗口'
     bannerSuccess.value = typeOk
-      ? `已创建${roleText}「${created.name}」，类型 ${created.merchantType}，审核 ${created.auditStatus || MERCHANT_AUDIT_STATUS.APPROVED}`
-      : `已创建「${created.name}」，但返回类型不是 canteen，请核对`
+      ? `已创建${roleText}「${created.name}」，类型 ${getEnumLabel(MERCHANT_TYPE_LABEL, created.merchantType)}，审核 ${getMerchantAuditDisplayLabel(created.auditStatus, created.status, '已通过')}`
+      : `已创建「${created.name}」，但返回类型不是食堂商家，请核对`
     if (isMain && created.isCanteenMainMerchant === false) {
       bannerError.value = '创建已成功，但详情未标记为主商家。请点「标为主店」补一次。'
     }
@@ -1162,7 +1162,7 @@ async function exportCsv() {
       )
       count = list.length
       blob = toCsvBlob(
-        ['流水ID', '支付金额', '手续费', '到账额度', '状态', '备注', '时间'],
+        ['流水编号', '支付金额', '手续费', '到账额度', '状态', '备注', '时间'],
         list.map((item) => [
           item.id,
           money(item.amount),

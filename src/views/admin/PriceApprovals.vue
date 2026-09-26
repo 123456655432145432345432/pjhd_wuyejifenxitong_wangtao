@@ -534,7 +534,7 @@ function companyLabel(id?: string) {
 
 function applicantLabel(item: PriceApprovalItem) {
   const roleText = item.applicantRole
-    ? getEnumLabel(ROLE_LABEL, item.applicantRole, item.applicantRole)
+    ? getEnumLabel(ROLE_LABEL, item.applicantRole, '—')
     : ''
   const name = item.applicantName || item.applicantId || '—'
   return roleText ? `${name}（${roleText}）` : name

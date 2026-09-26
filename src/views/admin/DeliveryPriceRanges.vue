@@ -16,8 +16,8 @@
 
     <div class="toolbar">
       <select v-if="isPlatformAdmin" v-model="selectedPropertyId" class="input" @change="load">
-        <option value="">请选择物业公司</option>
-        <option v-for="pc in propertyCompanies" :key="pc.id" :value="pc.id">{{ pc.name }}</option>
+        <option value="">{{ propertyCompanies.length ? '请选择物业公司' : '暂无物业公司' }}</option>
+        <option v-for="pc in propertyCompanies" :key="pc.id" :value="String(pc.id)">{{ pc.name || pc.id }}</option>
       </select>
       <select v-model="filterDistanceType" class="input" @change="load">
         <option value="">全部距离</option>
@@ -31,9 +31,9 @@
     </div>
 
     <div class="panel">
-      <div v-if="isPlatformAdmin && !selectedPropertyId" class="hint">请先选择物业公司</div>
+      <p v-if="error" class="error">{{ error }}</p>
+      <div v-else-if="isPlatformAdmin && !selectedPropertyId" class="hint">请先选择物业公司</div>
       <div v-else-if="loading" class="hint">加载中...</div>
-      <p v-else-if="error" class="error">{{ error }}</p>
       <div v-else-if="list.length && isMobile" class="mobileList">
         <article v-for="item in list" :key="item.id" class="mobileCard">
           <div class="mobileCardHead">
@@ -215,12 +215,22 @@ async function loadScopeOptions() {
 async function loadPropertyCompanies() {
   if (!isPlatformAdmin.value) return
   try {
-    const res = await propertyCompanyApi.list({ pageSize: 100 })
+    // 第二参须带 Token；测服无 Token 会返回空列表
+    const res = await propertyCompanyApi.list(
+      { page: 1, pageSize: 100, status: ENTITY_STATUS.ACTIVE, sort: '-createdAt' },
+      true
+    )
     propertyCompanies.value = res.list || []
-    if (!selectedPropertyId.value && auth.propertyCompanyId) {
-      selectedPropertyId.value = auth.propertyCompanyId
+    if (!selectedPropertyId.value) {
+      const preferred =
+        auth.propertyCompanyId ||
+        auth.profile?.propertyCompanyId ||
+        propertyCompanies.value[0]?.id ||
+        ''
+      selectedPropertyId.value = preferred ? String(preferred) : ''
     }
   } catch (e) {
+    propertyCompanies.value = []
     error.value = formatApiError(e, '物业列表加载失败')
   }
 }

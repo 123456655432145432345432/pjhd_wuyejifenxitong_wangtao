@@ -28,7 +28,7 @@
             <td>{{ item.phone || '—' }}</td>
             <td>{{ formatCommunityIds(item.communityIds) }}</td>
             <td>{{ formatList(item.buildingNos) }}</td>
-            <td>{{ item.status || item.statusCode || '—' }}</td>
+            <td>{{ getEnumLabel(ACCOUNT_STATUS_LABEL, item.status || item.statusCode) }}</td>
             <td class="actions">
               <button type="button" class="linkBtn" @click="openScope(item)">改范围</button>
               <button
@@ -112,7 +112,7 @@ import { onMounted, ref } from 'vue'
 import { propertyCompanyApi, propertyOperatorApi } from '../api/services'
 import { ApiError } from '../api/request'
 import type { PropertyCompanyCommunity, PropertyOperatorItem } from '../api/types'
-import { ENTITY_STATUS } from '../constants/enums'
+import { ACCOUNT_STATUS_LABEL, ENTITY_STATUS, getEnumLabel } from '../constants/enums'
 import { useAuthStore } from '../stores/auth'
 
 const authStore = useAuthStore()

@@ -3,7 +3,7 @@
     <div class="header">
       <div>
         <h1 class="title">特惠推送</h1>
-        <p class="desc">统筹级特惠推送管理</p>
+        <p class="desc">统筹级特惠推送（需具备特惠推送权限；仅本物业；住户端仅见已发布且在有效期内）</p>
       </div>
       <button class="btnPrimary" @click="openCreate">新建特惠</button>
     </div>
@@ -43,9 +43,25 @@
             <td>{{ item.discountInfo || '—' }}</td>
             <td>{{ item.startTime || '—' }} ~ {{ item.endTime || '—' }}</td>
             <td>
-              <span class="statusTag" :class="normalizeSpecialOfferStatusClass(item.status)">{{ getEnumLabel(SPECIAL_OFFER_STATUS_LABEL, item.status) }}</span>
+              <span class="statusTag" :class="normalizeSpecialOfferStatusClass(item.status)">{{ offerStatusText(item) }}</span>
             </td>
-            <td>
+            <td class="actions">
+              <button
+                v-if="canPublish(item.status)"
+                class="btnLink"
+                :disabled="actionId === item.id"
+                @click="publishOffer(item.id)"
+              >
+                立即发布
+              </button>
+              <button
+                v-if="canUnpublish(item.status)"
+                class="btnLink"
+                :disabled="actionId === item.id"
+                @click="unpublishOffer(item.id)"
+              >
+                下架
+              </button>
               <button
                 class="btnDanger"
                 :disabled="!isOfferRemovable(item.status) || removingId === item.id"
@@ -117,8 +133,9 @@
             <div class="field">
               <label class="label">状态</label>
               <select v-model="form.status" class="input">
-                <option v-for="opt in statusOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                <option v-for="opt in statusFormOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
               </select>
+              <p class="hint">住户端仅展示「已发布」且在有效期内的特惠；草稿不会在住户端展示。也可保存草稿后在列表点「立即发布」。</p>
             </div>
           </div>
           <div class="modalFooter">
@@ -142,15 +159,18 @@ import {
   getEnumLabel,
   isSpecialOfferArchived,
   MERCHANT_LEVEL,
+  normalizeSpecialOfferStatus,
   normalizeSpecialOfferStatusClass,
   SPECIAL_OFFER_STATUS,
   SPECIAL_OFFER_STATUS_LABEL,
   SPECIAL_OFFER_STATUS_OPTIONS,
+  SPECIAL_OFFER_STATUS_FORM_OPTIONS,
   SPECIAL_OFFER_TARGET_TYPE,
   SPECIAL_OFFER_TARGET_TYPE_LABEL,
   SPECIAL_OFFER_COORDINATOR_TARGET_TYPE_OPTIONS
 } from '../../constants/enums'
 import { useIsMobile } from '../../composables/useIsMobile'
+import { toApiDateTime } from '../../utils/datetime'
 
 const offers = ref<SpecialOfferItem[]>([])
 const { isMobile } = useIsMobile()
@@ -162,12 +182,27 @@ const totalPages = ref(1)
 const targetTypeFilter = ref('')
 const statusFilter = ref('')
 const removingId = ref('')
+const actionId = ref('')
 const modalOpen = ref(false)
 const submitting = ref(false)
 const formError = ref('')
 
 const targetTypeOptions = SPECIAL_OFFER_COORDINATOR_TARGET_TYPE_OPTIONS
 const statusOptions = SPECIAL_OFFER_STATUS_OPTIONS
+const statusFormOptions = SPECIAL_OFFER_STATUS_FORM_OPTIONS
+
+function offerStatusText(item: SpecialOfferItem) {
+  return item.statusLabel || getEnumLabel(SPECIAL_OFFER_STATUS_LABEL, item.status)
+}
+
+function canPublish(status?: string) {
+  const s = normalizeSpecialOfferStatus(status)
+  return s === SPECIAL_OFFER_STATUS.DRAFT || s === SPECIAL_OFFER_STATUS.ENDED
+}
+
+function canUnpublish(status?: string) {
+  return normalizeSpecialOfferStatus(status) === SPECIAL_OFFER_STATUS.PUBLISHED
+}
 
 const form = reactive({
   title: '',
@@ -178,16 +213,11 @@ const form = reactive({
   minConsumption: undefined as number | undefined,
   startTime: '',
   endTime: '',
-  status: SPECIAL_OFFER_STATUS.DRAFT
+  status: SPECIAL_OFFER_STATUS.PUBLISHED
 })
 
 function isOfferRemovable(status?: string) {
   return !isSpecialOfferArchived(status)
-}
-
-function toApiDateTime(value: string) {
-  if (!value) return ''
-  return `${value.replace('T', ' ')}:00`
 }
 
 function defaultRange() {
@@ -250,7 +280,7 @@ function openCreate() {
   form.merchantId = ''
   form.discountInfo = ''
   form.minConsumption = undefined
-  form.status = SPECIAL_OFFER_STATUS.DRAFT
+  form.status = SPECIAL_OFFER_STATUS.PUBLISHED
   submitting.value = false
   defaultRange()
   formError.value = ''
@@ -292,7 +322,7 @@ async function submitCreate() {
         form.targetType === SPECIAL_OFFER_TARGET_TYPE.ROLE ? form.merchantId : undefined,
       discountInfo: form.discountInfo.trim() || undefined,
       minConsumption: form.minConsumption,
-      status: form.status || SPECIAL_OFFER_STATUS.DRAFT
+      status: form.status || SPECIAL_OFFER_STATUS.PUBLISHED
     })
     closeModal()
     await load(1)
@@ -300,6 +330,33 @@ async function submitCreate() {
     formError.value = e instanceof ApiError ? e.message : '创建失败，请确认是否有特惠推送权限'
   } finally {
     submitting.value = false
+  }
+}
+
+async function publishOffer(id: string) {
+  actionId.value = id
+  error.value = ''
+  try {
+    await specialOfferApi.publish(id)
+    await load(page.value)
+  } catch (e) {
+    error.value = e instanceof ApiError ? e.message : '发布失败'
+  } finally {
+    actionId.value = ''
+  }
+}
+
+async function unpublishOffer(id: string) {
+  if (!confirm('确认下架？住户端将立即看不到该特惠。')) return
+  actionId.value = id
+  error.value = ''
+  try {
+    await specialOfferApi.unpublish(id)
+    await load(page.value)
+  } catch (e) {
+    error.value = e instanceof ApiError ? e.message : '下架失败'
+  } finally {
+    actionId.value = ''
   }
 }
 
@@ -346,6 +403,9 @@ onMounted(async () => {
 .statusTag.ended { background: #f0f0f3; color: #5c5c66; }
 .statusTag.archived { background: #f5f5f5; color: #8c8c9a; }
 .statusTag.default { background: #f0f0f3; color: #5c5c66; }
+.actions { white-space: nowrap; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.btnLink { border: none; background: none; color: #5c5c9e; cursor: pointer; padding: 0; font-size: 13px; }
+.btnLink:disabled { color: #c0c0c8; cursor: not-allowed; }
 .btnDanger { padding: 6px 12px; border-radius: 6px; background: #fff1f0; color: #cf1322; border: 1px solid #ffa39e; cursor: pointer; font-size: 13px; }
 .btnDanger:disabled { opacity: 0.5; cursor: not-allowed; }
 .pager { display: flex; align-items: center; gap: 12px; margin-top: 16px; font-size: 14px; }
@@ -359,6 +419,7 @@ onMounted(async () => {
 .field { margin-bottom: 14px; }
 .fieldRow { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .label { display: block; font-size: 13px; color: #8c8c9a; margin-bottom: 6px; }
+.hint { margin: 6px 0 0; font-size: 12px; color: #8c8c9a; line-height: 1.4; }
 .textarea { width: 100%; padding: 8px 12px; border: 1px solid #e8e8ec; border-radius: 8px; resize: vertical; box-sizing: border-box; }
 @media (max-width: 768px) {
   .page { max-width: none; }.header { flex-direction: column; margin-bottom: 16px; }

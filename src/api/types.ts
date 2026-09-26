@@ -406,6 +406,8 @@ export interface MerchantItem {
   deliveryFees?: DeliveryFeeTier[]
   isOfficialRecommended?: boolean
   recommendedSort?: number
+  /** v8.7 §7.1 列表项新增字段：是否被官方/物业推荐（合并语义，含原 isOfficialRecommended） */
+  isRecommended?: boolean
 }
 
 export interface MerchantUpdatePayload {
@@ -830,6 +832,9 @@ export interface PropertyCompanyUpdatePayload {
   merchantPointShareRate?: number
   coinPointShareRate?: number
   sharedPointShareRate?: number
+  /** 自动提现（测服无 coin-withdrawals/settings 时兜底写入详情） */
+  autoWithdrawalEnabled?: boolean
+  autoWithdrawalPeriodDays?: number
 }
 
 export interface PropertyCompanyItem {
@@ -842,6 +847,40 @@ export interface PropertyCompanyItem {
   communityEntityIds?: string[]
   status?: string
   createdAt?: string
+}
+
+/** POST /property-companies — §14.3 / §51.2：name / contactPhone / communities / adminAccount 均必填 */
+export interface PropertyCompanyCreatePayload {
+  name: string
+  contactPhone: string
+  address?: string
+  communities: Array<{
+    name: string
+    address?: string
+    totalBuildings?: number
+    totalUnits?: number
+  }>
+  adminAccount: { name: string; phone: string; email?: string }
+}
+
+/** 创建成功响应（v8.1：adminAccount.initialPassword 仅此一次返回） */
+export interface PropertyCompanyCreateResult extends PropertyCompanyItem {
+  communities?: Array<{ id?: string; name?: string; totalBuildings?: number; totalUnits?: number; status?: string }>
+  adminAccount?: {
+    id?: string
+    name?: string
+    phone?: string
+    role?: string
+    /** 仅创建响应返回一次，默认 admin123456 */
+    initialPassword?: string
+  }
+  defaultConfigs?: string
+}
+
+export interface CoordinatorCreatePayload {
+  residentId: string
+  propertyCompanyId: string
+  description?: string
 }
 
 export interface PropertyCompanyConfig {
@@ -876,6 +915,10 @@ export interface PropertyCompanyConfig {
   pointExchangeRate?: number
   deliveryPerKgFee?: number
   perKgFee?: number
+  /** §93.2 积分归属：property / resident */
+  pointsAttributionMode?: string
+  /** §93.2 奖励金归属 */
+  rewardAttributionMode?: string
 }
 
 export interface PointPool {
@@ -1402,6 +1445,8 @@ export interface AdminMerchantWithdrawalItem {
   auditResult?: string
   /** 资金来源切分：legacy 历史余额 / cbk 新单（新单不应出现在待审列表） */
   settlementChannel?: string
+  /** v8.5：提现申请角色类型 - merchant 商品商家 / technician 技工 / activity_leader 组长 */
+  applyRole?: string
 }
 
 /** 管理员 - 提现审核请求体 */
@@ -1764,6 +1809,7 @@ export interface CourierManagerUpdatePayload {
   communityId?: string
   responsibleArea?: string
   deliveryTimeConfig?: string
+  shareRate?: number
   status?: string
 }
 
@@ -1990,6 +2036,20 @@ export interface IndividualLeaderApplicationItem {
   auditedAt?: string
 }
 
+/** POST /admin/individual-leaders/applications/{applicationId}/audit 响应（v8.2） */
+export interface IndividualLeaderApplicationAuditResult {
+  applicationId?: string
+  auditStatus?: string
+  residentId?: string
+  residentName?: string
+  sector?: string
+  rejectReason?: string
+  auditedAt?: string
+  individualLeaderId?: string | null
+  /** 通过时非空；拒绝时为 null */
+  individualLeader?: IndividualLeaderItem | null
+}
+
 /** POST /admin/individual-leaders/applications/{applicationId}/audit */
 export interface IndividualLeaderApplicationAuditPayload {
   auditResult: string
@@ -2004,7 +2064,7 @@ export interface IndividualLeaderApplicationAuditPayload {
 export interface SectorLeaderMerchantAuditPayload {
   merchantId: string
   approved: boolean
-  reason?: string
+  remark?: string
 }
 
 /** PUT /coordinators/{id}/merchant-audit */
@@ -2111,6 +2171,8 @@ export interface DistributorProductItem {
   billingCycle?: string
   wholesalePrice?: number
   suggestedRetailPrice?: number
+  stock?: number
+  serviceScope?: string
   status?: string
   createdAt?: string
 }
@@ -2185,7 +2247,12 @@ export interface SectorLeaderDetail {
   /** v4.8 可提现余额 */
   withdrawableAmount?: number
   status?: string
+  /** v8.3：与 status 同值（active/inactive） */
+  statusCode?: string
+  /** v8.3：启用 / 停用 */
+  statusLabel?: string
   createdAt?: string
+  appointedAt?: string
   updatedAt?: string
 }
 
@@ -2218,17 +2285,19 @@ export interface CoordinatorDetail {
   propertyCompanyId?: string
   propertyCompanyName?: string
   description?: string
+  commissionRate?: number
   sectorCount?: number
   sectorLeaderCount?: number
   merchantCount?: number
   individualLeaderCount?: number
   activeSpecialOfferCount?: number
-  commissionRate?: number
   totalEarnings?: number
   /** v4.8 可提现余额 */
   withdrawableAmount?: number
   status?: string
   createdAt?: string
+  /** 与 createdAt 同义（v8.1 兼容别名） */
+  appointedAt?: string
   updatedAt?: string
 }
 
@@ -2461,6 +2530,7 @@ export interface SpecialOfferItem {
   content?: string
   targetType?: string
   targetTags?: string
+  publisherId?: string
   publisherName?: string
   publisherRole?: string
   merchantId?: string
@@ -2475,6 +2545,8 @@ export interface SpecialOfferItem {
   perUserQuota?: number
   usedQuota?: number
   status?: string
+  /** v8.3：后端中文展示，优先于前端映射 */
+  statusLabel?: string
   createdAt?: string
 }
 
@@ -2531,6 +2603,7 @@ export interface DirectedMessageCreatePayload {
   filterGender?: string
   filterAgeBracketIds?: string[]
   merchantIds?: string[]
+  productIds?: string[]
   propertyCompanyId?: string
 }
 
@@ -2937,6 +3010,8 @@ export interface ResidentMerchantSettlementItem {
 export interface ResidentMerchantSettings {
   defaultDepositAmount?: number
   platformCommissionRate?: number
+  /** §94.10 销售一级经销商货品平台佣金，默认 0.10 */
+  distributorProductCommissionRate?: number
   refundWindowDays?: number
 }
 
@@ -2947,7 +3022,22 @@ export interface DistributorProductCreatePayload {
   wholesalePrice: number
   suggestedRetailPrice: number
   stock?: number
+  serviceScope?: string
   description?: string
+}
+
+/** PUT /admin/distributor-products/{id} — §60.12（2026-09-07），全部可选 */
+export interface DistributorProductUpdatePayload {
+  name?: string
+  coverUrl?: string
+  category?: string
+  description?: string
+  wholesalePrice?: number
+  suggestedRetailPrice?: number
+  stock?: number
+  serviceScope?: string
+  /** true 下架 / false 恢复上架 */
+  inactive?: boolean
 }
 
 /** 设备推送 token 上报（极光 registrationId） */
@@ -3538,4 +3628,256 @@ export interface CanteenDirectedFlowItem {
   orderNo?: string | null
   remark?: string
   createdAt?: string
+}
+
+/* ---------- §94 v7.1 需求对齐 ---------- */
+
+export interface RewardGrantItem {
+  id: string
+  grantType?: string
+  targetResidentId?: string
+  targetResidentName?: string
+  targetResidentPhone?: string
+  applicantId?: string
+  applicantName?: string
+  pointAmount?: number
+  reason?: string
+  status?: string
+  remark?: string
+  createdAt?: string
+  auditedAt?: string
+}
+
+export interface RewardGrantAuditPayload {
+  action: string
+  remark?: string
+}
+
+export interface SettlementConfig {
+  wechatSplitEnabled?: boolean
+  propertyShareRate?: number
+  platformShareRate?: number
+  coordinatorShareRate?: number
+  sectorLeaderRate?: number
+  individualLeaderRate?: number
+}
+
+export interface PlatformConfigItem {
+  rewardAttributionMode?: string
+  withdrawalGranularity?: string
+  shareDimension?: string
+}
+
+export interface NavigationItem {
+  id: string
+  module?: string
+  name?: string
+  icon?: string
+  route?: string
+  linkType?: string
+  sortOrder?: number
+  status?: string
+  createdAt?: string
+}
+
+export interface NavigationItemPayload {
+  module: string
+  name: string
+  icon?: string
+  route?: string
+  linkType?: string
+  sortOrder?: number
+  status?: string
+}
+
+export interface PropertyBankCardItem {
+  id: string
+  purpose?: string
+  bankName?: string
+  accountNo?: string
+  accountName?: string
+  isDefault?: boolean
+  status?: string
+  createdAt?: string
+}
+
+export interface PropertyBankCardPayload {
+  purpose: string
+  bankName?: string
+  accountNo: string
+  accountName?: string
+  isDefault?: boolean
+}
+
+export interface RegionQuotaItem {
+  id: string
+  sector?: string
+  quotaType?: string
+  quotaAmount?: number
+  usedAmount?: number
+  periodStart?: string
+  periodEnd?: string
+  status?: string
+  createdAt?: string
+}
+
+export interface RegionQuotaPayload {
+  sector: string
+  quotaType: string
+  quotaAmount: number
+  periodStart?: string
+  periodEnd?: string
+}
+
+export interface ActivityGroupReviewItem {
+  id: string
+  name?: string
+  leaderName?: string
+  leaderPhone?: string
+  status?: string
+  remark?: string
+  createdAt?: string
+}
+
+export interface ActivityGroupReviewPayload {
+  action: string
+  remark?: string
+}
+
+export interface ResidentDeletionRequestItem {
+  id: string
+  residentId?: string
+  residentName?: string
+  residentPhone?: string
+  status?: string
+  requestedAt?: string
+  propertyCompanyName?: string
+}
+
+export interface ResidentDeletionReviewPayload {
+  action: string
+  rejectReason?: string
+}
+
+export interface SectorLeaderEarnings {
+  totalEarnings?: number
+  withdrawableAmount?: number
+  records?: Array<{
+    id?: string
+    amount?: number
+    type?: string
+    description?: string
+    createdAt?: string
+  }>
+}
+
+export interface SectorLeaderMerchantRevenueItem {
+  merchantId?: string
+  merchantName?: string
+  revenue?: number
+  orderCount?: number
+  myShare?: number
+}
+
+export interface SectorLeaderApprovalItem {
+  id: string
+  type?: string
+  merchantId?: string
+  merchantName?: string
+  status?: string
+  commissionRate?: number
+  remark?: string
+  createdAt?: string
+}
+
+export interface SectorLeaderApprovalAuditPayload {
+  approved: boolean
+  remark?: string
+}
+
+export interface IndividualLeaderMerchantRevenueItem {
+  merchantId?: string
+  merchantName?: string
+  revenue?: number
+  orderCount?: number
+  myShare?: number
+  auditStatus?: string
+  commissionRate?: number
+}
+
+/* ---------- v8.5 §97 电商收付通 ---------- */
+
+export interface ApplymentDetail {
+  merchantId?: string
+  applymentState?: string
+  wxState?: string
+  organizationType?: string
+  merchantShortname?: string
+  merchantCategory?: string
+  contactMobile?: string
+  bankAccountType?: string
+  bankName?: string
+  submitted?: boolean
+  legalValidationUrl?: string | null
+  signUrl?: string | null
+  rejectReason?: string | null
+  subMchid?: string | null
+  submitMode?: string
+  retryCount?: number
+  lastError?: string | null
+}
+
+export interface ApplymentSubmitPayload {
+  organizationType: string
+  merchantShortname: string
+  merchantCategory?: string
+  contactName: string
+  contactMobile: string
+  contactEmail?: string
+  idCardName: string
+  idCardNumber: string
+  idCardCopyMedia: string
+  idCardNationalMedia: string
+  businessLicenseMedia?: string
+  bankAccountType: string
+  bankAccountName: string
+  bankAccountNumber: string
+  bankName: string
+}
+
+export interface ApplymentMediaUploadResult {
+  mediaId?: string
+}
+
+export interface TransferAccountItem {
+  id: string
+  ownerType?: string
+  channel?: string
+  openid?: string | null
+  bankName?: string | null
+  verified?: boolean
+}
+
+export interface BindTransferAccountPayload {
+  channel: string
+  openid?: string
+  bankAccountNo?: string
+  bankName?: string
+  accountName?: string
+}
+
+export interface SplitRecoveryItem {
+  id: string
+  splitRecordId?: string
+  orderId?: string
+  ownerType?: string
+  ownerId?: string
+  amount?: number | string
+  status?: string
+  remark?: string | null
+  createdAt?: string
+}
+
+export interface UpdateRecoveryPayload {
+  remark?: string
 }

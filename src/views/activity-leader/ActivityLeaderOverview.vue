@@ -31,6 +31,7 @@
             <RouterLink class="actionBtn" :to="{ name: 'activity-leader-groups' }">管理我的活动组</RouterLink>
             <RouterLink class="actionBtn" :to="{ name: 'activity-leader-products' }">我的小店</RouterLink>
             <RouterLink class="actionBtn" :to="{ name: 'activity-leader-withdrawals' }">提现管理</RouterLink>
+            <RouterLink class="actionBtn" :to="{ name: 'wechat-applyment' }">微信收款</RouterLink>
           </div>
           <ul class="tips">
             <li>手机号登录后即可管理本人担任组长的活动组</li>

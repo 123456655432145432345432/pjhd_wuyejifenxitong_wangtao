@@ -47,7 +47,7 @@
             <td>{{ getEnumLabel(CONSULTATION_CATEGORY_LABEL, item.category) }}</td>
             <td>{{ item.title || '—' }} · {{ item.organization || '—' }}</td>
             <td>{{ item.chatPrice ?? '—' }}</td>
-            <td>{{ item.status || item.auditStatus || item.statusCode || '—' }}</td>
+            <td>{{ getEnumLabel(MERCHANT_AUDIT_STATUS_LABEL, item.status || item.auditStatus || item.statusCode) }}</td>
             <td class="actions">
               <button type="button" class="linkBtn" @click="openEdit(item)">编辑</button>
               <button type="button" class="linkBtn" @click="audit(item.id, AUDIT_RESULT.APPROVED)">通过</button>
@@ -169,6 +169,7 @@ import {
   CONSULTATION_CATEGORY,
   CONSULTATION_CATEGORY_LABEL,
   CONSULTATION_CATEGORY_OPTIONS,
+  MERCHANT_AUDIT_STATUS_LABEL,
   getEnumLabel
 } from '../../constants/enums'
 

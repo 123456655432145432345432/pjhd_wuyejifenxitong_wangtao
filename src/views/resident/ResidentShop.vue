@@ -13,11 +13,11 @@
       <div class="card">
         <div class="row">
           <span class="label">店铺状态</span>
-          <strong>{{ detail.status || detail.statusCode || '—' }}</strong>
+          <strong>{{ getEnumLabel(RESIDENT_MERCHANT_STATUS_LABEL, detail.status || detail.statusCode) }}</strong>
         </div>
         <div class="row">
           <span class="label">保证金</span>
-          <span>{{ detail.depositAmount ?? '—' }}（{{ detail.depositStatus || '—' }}）</span>
+          <span>{{ detail.depositAmount ?? '—' }}（{{ getEnumLabel(RESIDENT_MERCHANT_DEPOSIT_STATUS_LABEL, detail.depositStatus) }}）</span>
         </div>
         <div class="row">
           <span class="label">上架商品</span>
@@ -44,7 +44,7 @@
           <p v-if="toggleError" class="error">{{ toggleError }}</p>
           <p v-if="toggleSuccess" class="success">{{ toggleSuccess }}</p>
         </div>
-        <p v-else class="hint warn">仅营业中（status=active）的店主可切换对外展示。</p>
+        <p v-else class="hint warn">仅营业中的店主可切换对外展示。</p>
 
         <div class="actions">
           <RouterLink
@@ -74,6 +74,8 @@ import {
   ENTITY_STATUS,
   getEnumLabel,
   getPhase2ErrorMessage,
+  RESIDENT_MERCHANT_DEPOSIT_STATUS_LABEL,
+  RESIDENT_MERCHANT_STATUS_LABEL,
   RESIDENT_SHOP_VISIBILITY,
   RESIDENT_SHOP_VISIBILITY_LABEL
 } from '../../constants/enums'

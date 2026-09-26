@@ -12,7 +12,7 @@
         v-if="isPlatformAdmin"
         v-model.trim="propertyCompanyId"
         class="input"
-        placeholder="物业公司 ID（可选）"
+        placeholder="物业公司编号（可选）"
       />
       <input
         v-model="startDate"

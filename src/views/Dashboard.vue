@@ -15,6 +15,7 @@
       </div>
       <div v-if="loading" class="loading">加载中...</div>
       <template v-else>
+        <div v-if="shareRatesText" class="shareRatesBanner">{{ shareRatesText }}</div>
         <div class="stats">
           <div
             v-for="(stat, index) in stats"
@@ -277,7 +278,7 @@
             </div>
             <div v-if="auditForm.merchantId" class="field">
               <label class="label">申请身份</label>
-              <div class="readonly">{{ getEnumLabel(ROLE_LABEL, auditForm.applyRole, auditForm.applyRole) }}</div>
+              <div class="readonly">{{ getEnumLabel(ROLE_LABEL, auditForm.applyRole, '—') }}</div>
             </div>
             <div class="field">
               <label class="label">审核结果</label>
@@ -425,8 +426,8 @@ import IconSvg from '../components/IconSvg.vue'
 import ResidentSearchSelect from '../components/ResidentSearchSelect.vue'
 import FreezeRecordSelect from '../components/FreezeRecordSelect.vue'
 import PendingMerchantSelect from '../components/PendingMerchantSelect.vue'
-import { dashboardApi, announcementApi, merchantApi, operationLogApi, propertyCoinApi, residentApi } from '../api/services'
-import type { AnnouncementCreatePayload, MerchantAuditPayload, MerchantItem, ResidentItem } from '../api/types'
+import { dashboardApi, announcementApi, merchantApi, operationLogApi, platformShareApi, propertyCoinApi, residentApi } from '../api/services'
+import type { AnnouncementCreatePayload, MerchantAuditPayload, MerchantItem, PlatformShareRates, ResidentItem } from '../api/types'
 import { formatMoney, mapDashboardStats, mapOperationLogs, mapPeriodDescription, mapRecentActivity, mapTopMerchants } from '../api/mappers'
 import { ApiError } from '../api/request'
 import { useIsMobile } from '../composables/useIsMobile'
@@ -449,7 +450,9 @@ import {
 } from '../constants/enums'
 
 const { isMobile } = useIsMobile()
+const auth = useAuthStore()
 const loading = ref(true)
+const shareRates = ref<PlatformShareRates | null>(null)
 const periodDesc = ref('今日运营数据及最近动态')
 const stats = ref<ReturnType<typeof mapDashboardStats>>([])
 const topMerchants = ref<ReturnType<typeof mapTopMerchants>>([])
@@ -467,6 +470,29 @@ const allLogsTotalPages = ref(1)
 const ALL_LOGS_PAGE_SIZE = 20
 
 const displayedLogs = computed(() => (logsExpanded.value ? allLogs.value : operationLogs.value))
+
+function formatShareRate(value?: number) {
+  if (value === undefined || value === null || Number.isNaN(Number(value))) return '—'
+  const n = Number(value)
+  const pct = n <= 1 ? n * 100 : n
+  return `${pct.toFixed(1)}%`
+}
+
+const shareRatesText = computed(() => {
+  if (!shareRates.value) return ''
+  const r = shareRates.value
+  return `与平台分成：我们公司 ${formatShareRate(r.platformShareRate)} · 物业 ${formatShareRate(r.propertyShareRate)} · 管理盘（统筹 ${formatShareRate(r.coordinatorShareRate)} / 板块 ${formatShareRate(r.sectorLeaderRate)} / 个体 ${formatShareRate(r.individualLeaderRate)}）。改比例请到「参数配置 → 分账」或「平台分成配置」。`
+})
+
+async function loadShareRates() {
+  const role = auth.profile?.role
+  if (role !== USER_ROLE.PLATFORM_ADMIN && role !== USER_ROLE.PROPERTY_ADMIN) return
+  try {
+    shareRates.value = await platformShareApi.getRates()
+  } catch {
+    shareRates.value = null
+  }
+}
 
 type CoinModalType = 'freeze' | 'unfreeze'
 const coinModal = ref<CoinModalType | null>(null)
@@ -888,9 +914,9 @@ onMounted(async () => {
     recentActivity.value = mapRecentActivity(overview)
   } catch (e) {
     console.error(e)
-  } finally {
-    loading.value = false
   }
+  await loadShareRates()
+  loading.value = false
   loadOperationLogs()
 })
 </script>
@@ -901,6 +927,7 @@ onMounted(async () => {
 .header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 24px; }
 .title { font-size: 24px; font-weight: 600; color: #1f1f2e; margin-bottom: 8px; }
 .desc { font-size: 14px; color: #8c8c9a; }
+.shareRatesBanner { margin-bottom: 16px; padding: 12px 16px; border-radius: 10px; background: #f6f6fb; color: #4a4a6a; font-size: 13px; line-height: 1.6; }
 .actions { display: flex; gap: 12px; }
 .actionsMobile { width: 100%; flex-wrap: wrap; }
 .btnSecondary { padding: 10px 18px; border-radius: 8px; border: 1px solid #e8e8ec; background: #ffffff; color: #5c5c66; font-size: 14px; transition: all 0.2s; text-decoration: none; display: inline-block; }

@@ -169,7 +169,7 @@ function statusLabel(value?: string) {
   if (!current || current === ORDER_STATUS.REFUNDING) return '待审核'
   if (current === ORDER_STATUS.REFUNDED) return '已通过'
   if (current === ORDER_STATUS.REFUND_REJECTED) return '已驳回'
-  return getEnumLabel(ORDER_STATUS_LABEL, current, current)
+  return getEnumLabel(ORDER_STATUS_LABEL, current, '—')
 }
 
 function badgeClass(value?: string) {

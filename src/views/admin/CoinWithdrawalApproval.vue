@@ -38,7 +38,7 @@
           <input
             v-model="searchKeyword"
             type="search"
-            placeholder="搜索住户姓名 / 手机 / ID"
+            placeholder="搜索住户姓名 / 手机 / 编号"
             enterkeyhint="search"
             @input="onSearchInput"
           />
@@ -133,7 +133,7 @@
           <form class="modalBody" @submit.prevent="submitAudit">
             <div class="auditInfo">
               <div class="infoRow"><span class="infoLabel">申请人</span><span>{{ auditTarget ? applicantName(auditTarget) : '—' }}</span></div>
-              <div class="infoRow"><span class="infoLabel">申请人ID</span><span>{{ auditTarget ? applicantId(auditTarget) : '—' }}</span></div>
+              <div class="infoRow"><span class="infoLabel">申请人编号</span><span>{{ auditTarget ? applicantId(auditTarget) : '—' }}</span></div>
               <div class="infoRow"><span class="infoLabel">手机</span><span>{{ auditTarget ? applicantPhone(auditTarget) : '—' }}</span></div>
               <div class="infoRow"><span class="infoLabel">小区/物业</span><span>{{ auditTarget ? communityLabel(auditTarget) : '—' }}</span></div>
               <div class="infoRow"><span class="infoLabel">兑换币额</span><span>{{ formatMoney(auditTarget ? coinAmountOf(auditTarget) : null) }}</span></div>
@@ -332,7 +332,7 @@ function resolveStatus(item: AdminCoinWithdrawalItem | null | undefined): string
 function statusLabel(item: AdminCoinWithdrawalItem) {
   const status = resolveStatus(item)
   if (!status) return '—'
-  return WITHDRAWAL_AUDIT_STATUS_LABEL[status] || status
+  return WITHDRAWAL_AUDIT_STATUS_LABEL[status] || '—'
 }
 
 function isPending(item: AdminCoinWithdrawalItem) {

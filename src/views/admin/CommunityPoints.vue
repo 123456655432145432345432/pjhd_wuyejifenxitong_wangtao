@@ -40,7 +40,7 @@
           <tbody>
             <tr v-for="(r, i) in records" :key="r.id || i">
               <td>{{ formatMoney(r.amount) }}</td>
-              <td>{{ r.source || '—' }}</td>
+              <td>{{ getEnumLabel(COMMUNITY_POINT_SOURCE_LABEL, r.source, '—') }}</td>
               <td>{{ r.remark || '—' }}</td>
               <td>{{ r.createdAt || '—' }}</td>
             </tr>
@@ -58,6 +58,7 @@ import { communityPointApi, propertyCompanyApi } from '../../api/services'
 import { formatMoney } from '../../api/mappers'
 import { formatApiError } from '../../api/request'
 import type { CommunityPointPool, CommunityPointRecord, PropertyCompanyCommunity } from '../../api/types'
+import { COMMUNITY_POINT_SOURCE_LABEL, getEnumLabel } from '../../constants/enums'
 import { useAuthStore } from '../../stores/auth'
 
 const auth = useAuthStore()

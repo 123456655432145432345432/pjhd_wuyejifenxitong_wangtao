@@ -3,7 +3,7 @@
     <header class="header">
       <div>
         <h1>转给物业对账</h1>
-        <p>住户主动把积分或物业币转给物业，即时扣款、无需审批。本页仅用于对账查看。</p>
+        <p>住户主动把积分或物业币转给物业，即时扣款、无需审批；物业币仅来源于家庭池。</p>
       </div>
     </header>
 
@@ -17,7 +17,7 @@
             物业币
           </button>
         </div>
-        <input v-model="residentId" class="input" placeholder="住户 ID（可选）" @keyup.enter="load(1)" />
+        <input v-model="residentId" class="input" placeholder="住户编号（可选）" @keyup.enter="load(1)" />
         <button type="button" @click="load(1)">查询</button>
       </div>
 

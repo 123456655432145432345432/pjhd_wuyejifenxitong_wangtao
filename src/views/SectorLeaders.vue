@@ -15,6 +15,10 @@
         placeholder="搜索姓名/手机号"
         @keyup.enter="reload"
       />
+      <select v-model="sectorFilter" class="input" @change="reload">
+        <option value="">全部板块</option>
+        <option v-for="opt in sectorOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+      </select>
       <select v-model="statusFilter" class="input" @change="reload">
         <option v-for="opt in statusOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
       </select>
@@ -44,13 +48,13 @@
               <div class="sub">{{ item.residentPhone || '' }}</div>
             </td>
             <td>{{ item.sectorName || getEnumLabel(SECTOR_TYPE_LABEL, item.sector) }}</td>
-            <td>{{ item.coordinatorName || '—' }}</td>
-            <td>{{ item.propertyCompanyName || '—' }}</td>
+            <td>{{ item.coordinatorName || item.coordinatorId || '—' }}</td>
+            <td>{{ item.propertyCompanyName || item.propertyCompanyId || '—' }}</td>
             <td>{{ item.individualLeaderCount ?? '—' }}</td>
             <td>
-              <span class="statusTag" :class="item.status">{{ statusLabel(item.status) }}</span>
+              <span class="statusTag" :class="item.status">{{ item.statusLabel || statusLabel(item.status) }}</span>
             </td>
-            <td>{{ item.createdAt || '—' }}</td>
+            <td>{{ item.createdAt || item.appointedAt || '—' }}</td>
             <td class="actions">
               <button class="btnGhostSm" @click="openDetail(item.id)">详情</button>
               <button class="btnGhostSm" @click="openEdit(item)">编辑</button>
@@ -89,15 +93,15 @@
               <li><span>负责人</span><strong>{{ detailData.residentName || '—' }}</strong></li>
               <li><span>手机号</span><strong>{{ detailData.residentPhone || detailData.phone || '—' }}</strong></li>
               <li><span>负责板块</span><strong>{{ detailData.sectorName || getEnumLabel(SECTOR_TYPE_LABEL, detailData.sector) }}</strong></li>
-              <li><span>统筹负责人</span><strong>{{ detailData.coordinatorName || '—' }}</strong></li>
-              <li><span>物业公司</span><strong>{{ detailData.propertyCompanyName || '—' }}</strong></li>
+              <li><span>统筹负责人</span><strong>{{ detailData.coordinatorName || detailData.coordinatorId || '—' }}</strong></li>
+              <li><span>物业公司</span><strong>{{ detailData.propertyCompanyName || detailData.propertyCompanyId || '—' }}</strong></li>
               <li><span>下级个体负责人</span><strong>{{ detailData.individualLeaderCount ?? '—' }} 人</strong></li>
               <li><span>板块商家</span><strong>{{ detailData.merchantCount ?? '—' }}</strong></li>
               <li><span>进行中特惠</span><strong>{{ detailData.activeSpecialOfferCount ?? '—' }}</strong></li>
               <li><span>累计收益</span><strong>¥{{ formatMoney(detailData.totalEarnings) }}</strong></li>
               <li><span>工作说明</span><strong>{{ detailData.description || '—' }}</strong></li>
-              <li><span>状态</span><strong>{{ statusLabel(detailData.status) }}</strong></li>
-              <li><span>创建时间</span><strong>{{ detailData.createdAt || '—' }}</strong></li>
+              <li><span>状态</span><strong>{{ detailData.statusLabel || statusLabel(detailData.status) }}</strong></li>
+              <li><span>创建时间</span><strong>{{ detailData.createdAt || detailData.appointedAt || '—' }}</strong></li>
               <li><span>更新时间</span><strong>{{ detailData.updatedAt || '—' }}</strong></li>
             </ul>
           </div>
@@ -188,23 +192,27 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import ResidentSearchSelect from '../components/ResidentSearchSelect.vue'
-import { distributionApi, sectorLeaderAdminApi } from '../api/services'
-import type { SectorLeaderDetail } from '../api/types'
+import { coordinatorAdminApi, propertyCompanyApi, sectorLeaderAdminApi } from '../api/services'
+import type { PropertyCompanyItem, SectorLeaderDetail } from '../api/types'
 import { ApiError } from '../api/request'
 import {
   ENTITY_STATUS,
+  ENTITY_STATUS_LABEL,
   ENTITY_STATUS_OPTIONS,
   getEnumLabel,
   RESIDENT_STATUS,
   SECTOR_TYPE,
   SECTOR_TYPE_LABEL,
-  SECTOR_TYPE_OPTIONS
+  SECTOR_TYPE_OPTIONS,
+  normalizeSectorType
 } from '../constants/enums'
 
 const leaders = ref<SectorLeaderDetail[]>([])
+const propertyCompanies = ref<PropertyCompanyItem[]>([])
 const loading = ref(false)
 const error = ref('')
 const keyword = ref('')
+const sectorFilter = ref('')
 const statusFilter = ref('')
 const page = ref(1)
 const totalPages = ref(1)
@@ -237,11 +245,7 @@ const form = reactive({
 })
 
 function statusLabel(status?: string) {
-  return status === ENTITY_STATUS.ACTIVE
-    ? '启用'
-    : status === ENTITY_STATUS.INACTIVE
-      ? '停用'
-      : status || '—'
+  return getEnumLabel(ENTITY_STATUS_LABEL, status, '—')
 }
 
 function formatMoney(value?: number) {
@@ -249,34 +253,92 @@ function formatMoney(value?: number) {
   return Number(value).toFixed(2)
 }
 
+function pickStr(raw: Record<string, unknown>, ...keys: string[]) {
+  for (const key of keys) {
+    const v = raw[key]
+    if (typeof v === 'string' && v.trim()) return v.trim()
+  }
+  return ''
+}
+
+function pickNum(raw: Record<string, unknown>, ...keys: string[]) {
+  for (const key of keys) {
+    const v = raw[key]
+    if (typeof v === 'number' && Number.isFinite(v)) return v
+    if (typeof v === 'string' && v.trim() && !Number.isNaN(Number(v))) return Number(v)
+  }
+  return undefined
+}
+
+/** 兼容后端字段别名，并用本地物业/统筹列表补全名称 */
+function normalizeSectorLeader(item: SectorLeaderDetail | Record<string, unknown>): SectorLeaderDetail {
+  const raw = item as Record<string, unknown>
+  const propertyCompanyId =
+    pickStr(raw, 'propertyCompanyId', 'property_company_id') || undefined
+  const coordinatorId = pickStr(raw, 'coordinatorId', 'coordinator_id') || undefined
+  const fromPc = propertyCompanyId
+    ? propertyCompanies.value.find((pc) => pc.id === propertyCompanyId)
+    : undefined
+  const fromCoo = coordinatorId
+    ? coordinatorOptions.value.find((c) => c.id === coordinatorId)
+    : undefined
+  const statusCode = pickStr(raw, 'statusCode', 'status_code', 'status')
+  return {
+    id: pickStr(raw, 'id') || (item as SectorLeaderDetail).id,
+    residentId: pickStr(raw, 'residentId', 'resident_id') || undefined,
+    residentName: pickStr(raw, 'residentName', 'resident_name', 'name') || undefined,
+    residentPhone: pickStr(raw, 'residentPhone', 'resident_phone', 'phone') || undefined,
+    phone: pickStr(raw, 'phone') || undefined,
+    coordinatorId,
+    coordinatorName:
+      pickStr(raw, 'coordinatorName', 'coordinator_name') || fromCoo?.name || undefined,
+    sector: pickStr(raw, 'sector') || undefined,
+    sectorName: pickStr(raw, 'sectorName', 'sector_name') || undefined,
+    propertyCompanyId,
+    propertyCompanyName:
+      pickStr(raw, 'propertyCompanyName', 'property_company_name') || fromPc?.name || undefined,
+    description: pickStr(raw, 'description') || undefined,
+    individualLeaderCount: pickNum(raw, 'individualLeaderCount', 'individual_leader_count'),
+    merchantCount: pickNum(raw, 'merchantCount', 'merchant_count'),
+    activeSpecialOfferCount: pickNum(raw, 'activeSpecialOfferCount', 'active_special_offer_count'),
+    totalEarnings: pickNum(raw, 'totalEarnings', 'total_earnings'),
+    withdrawableAmount: pickNum(raw, 'withdrawableAmount', 'withdrawable_amount'),
+    status: statusCode || undefined,
+    createdAt: pickStr(raw, 'createdAt', 'created_at', 'appointedAt', 'appointed_at') || undefined,
+    appointedAt: pickStr(raw, 'appointedAt', 'appointed_at') || undefined,
+    updatedAt: pickStr(raw, 'updatedAt', 'updated_at') || undefined
+  }
+}
+
+async function loadCompanies() {
+  try {
+    const res = await propertyCompanyApi.list({ page: 1, pageSize: 100, status: ENTITY_STATUS.ACTIVE }, true)
+    propertyCompanies.value = res.list || []
+  } catch {
+    propertyCompanies.value = []
+  }
+}
+
 async function loadCoordinatorOptions() {
   coordinatorLoading.value = true
   coordinatorLoadError.value = ''
-  const map = new Map<string, string>()
   try {
-    const res = await sectorLeaderAdminApi.list({ page: 1, pageSize: 100, sort: '-createdAt' })
-    for (const item of res.list || []) {
-      if (item.coordinatorId) {
-        map.set(item.coordinatorId, item.coordinatorName || item.coordinatorId)
-      }
-    }
-  } catch {
-    /* ignore, try next source */
-  }
-  try {
-    const stats = await distributionApi.stats()
-    for (const item of stats.byCoordinator || []) {
-      if (item.coordinatorId) {
-        map.set(item.coordinatorId, item.name || item.coordinatorId)
-      }
-    }
+    const res = await coordinatorAdminApi.list({
+      page: 1,
+      pageSize: 100,
+      status: ENTITY_STATUS.ACTIVE,
+      sort: '-createdAt'
+    })
+    coordinatorOptions.value = (res.list || []).map((item) => ({
+      id: item.id,
+      name: item.residentName || item.residentPhone || item.phone || item.id
+    }))
   } catch (e) {
-    if (!map.size) {
-      coordinatorLoadError.value = e instanceof ApiError ? e.message : '统筹负责人加载失败'
-    }
+    coordinatorLoadError.value = e instanceof ApiError ? e.message : '统筹负责人加载失败'
+    coordinatorOptions.value = []
+  } finally {
+    coordinatorLoading.value = false
   }
-  coordinatorOptions.value = Array.from(map.entries()).map(([id, name]) => ({ id, name }))
-  coordinatorLoading.value = false
 }
 
 async function load(pageNo = 1) {
@@ -287,10 +349,11 @@ async function load(pageNo = 1) {
       page: pageNo,
       pageSize: 20,
       keyword: keyword.value.trim() || undefined,
+      sector: sectorFilter.value || undefined,
       status: statusFilter.value || undefined,
       sort: '-createdAt'
     })
-    leaders.value = res.list || []
+    leaders.value = (res.list || []).map((item) => normalizeSectorLeader(item))
     page.value = res.pagination?.page || pageNo
     totalPages.value = res.pagination?.totalPages || 1
   } catch (e) {
@@ -330,7 +393,7 @@ function openEdit(item: SectorLeaderDetail) {
   editingId.value = item.id
   form.residentId = item.residentId || ''
   form.coordinatorId = item.coordinatorId || ''
-  form.sector = item.sector || SECTOR_TYPE.CLEANING
+  form.sector = normalizeSectorType(item.sector || item.sectorName, SECTOR_TYPE.CLEANING)
   form.description = item.description || ''
   form.status = item.status || ENTITY_STATUS.ACTIVE
   formError.value = ''
@@ -358,7 +421,7 @@ async function openDetail(id: string) {
   detailError.value = ''
   detailData.value = null
   try {
-    detailData.value = await sectorLeaderAdminApi.get(id)
+    detailData.value = normalizeSectorLeader(await sectorLeaderAdminApi.get(id))
   } catch (e) {
     detailError.value = e instanceof ApiError ? e.message : '详情加载失败'
   } finally {
@@ -396,7 +459,7 @@ async function submitForm() {
         status?: string
         coordinatorId?: string
       } = {
-        sector: form.sector,
+        sector: normalizeSectorType(form.sector, SECTOR_TYPE.CLEANING),
         description: form.description.trim() || undefined,
         status: form.status
       }
@@ -406,7 +469,7 @@ async function submitForm() {
       await sectorLeaderAdminApi.create({
         residentId: form.residentId,
         coordinatorId: form.coordinatorId,
-        sector: form.sector,
+        sector: normalizeSectorType(form.sector, SECTOR_TYPE.CLEANING),
         description: form.description.trim() || undefined
       })
     }
@@ -433,7 +496,7 @@ async function removeLeader(item: SectorLeaderDetail) {
 }
 
 onMounted(async () => {
-  await loadCoordinatorOptions()
+  await Promise.all([loadCompanies(), loadCoordinatorOptions()])
   await load(1)
 })
 </script>

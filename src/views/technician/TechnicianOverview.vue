@@ -35,6 +35,7 @@
             <RouterLink class="actionBtn" :to="{ name: 'technician-tasks' }">我的工单</RouterLink>
             <RouterLink class="actionBtn" :to="{ name: 'technician-services' }">我的服务</RouterLink>
             <RouterLink class="actionBtn" :to="{ name: 'technician-withdrawals' }">提现管理</RouterLink>
+            <RouterLink class="actionBtn" :to="{ name: 'wechat-applyment' }">微信收款</RouterLink>
           </div>
           <ul class="tips">
             <li>在「我的工单」中查看分配给您的维修/上门任务</li>

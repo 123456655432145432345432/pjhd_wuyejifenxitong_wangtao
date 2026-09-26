@@ -32,19 +32,25 @@
     </div>
     <p v-if="summaryHint" class="summaryHint">{{ summaryHint }}</p>
 
-    <div class="table">
+      <div class="table">
       <div class="toolbar">
         <form class="search" @submit.prevent="submitSearch">
           <IconSvg name="search" />
           <input
             v-model="searchKeyword"
             type="search"
-            placeholder="搜索商家名称或ID"
+            placeholder="搜索商家名称或编号"
             enterkeyhint="search"
             @input="onSearchInput"
           />
           <button type="submit" class="searchBtn">搜索</button>
         </form>
+        <select v-model="filterApplyRole" class="filterSelect" @change="applyFilters">
+          <option value="">全部角色</option>
+          <option value="merchant">商品商家</option>
+          <option value="technician">技工</option>
+          <option value="activity_leader">活动组组长</option>
+        </select>
         <select v-model="filterStatus" class="filterSelect" @change="applyFilters">
           <option v-for="opt in WITHDRAWAL_AUDIT_STATUS_OPTIONS" :key="opt.value || 'all'" :value="opt.value">
             {{ opt.label }}
@@ -59,8 +65,9 @@
       <table class="content">
         <thead>
           <tr>
-            <th>商家ID</th>
+            <th>商家编号</th>
             <th>商家名称</th>
+            <th>角色类型</th>
             <th>提现金额</th>
             <th>手续费</th>
             <th>实际到账</th>
@@ -71,20 +78,21 @@
         </thead>
         <tbody>
           <tr v-if="loading">
-            <td colspan="8" class="emptyCell">加载中...</td>
+            <td colspan="9" class="emptyCell">加载中...</td>
           </tr>
           <tr v-else-if="loadError">
-            <td colspan="8" class="emptyCell errorCell">
+            <td colspan="9" class="emptyCell errorCell">
               <p>{{ loadError }}</p>
               <button type="button" class="retryBtn" @click="loadData(currentPage)">重新加载</button>
             </td>
           </tr>
           <tr v-else-if="!list.length">
-            <td colspan="8" class="emptyCell">暂无数据</td>
+            <td colspan="9" class="emptyCell">暂无数据</td>
           </tr>
           <tr v-for="item in list" v-else :key="item.id" class="dataRow">
             <td>{{ item.merchantId }}</td>
             <td>{{ item.merchantName }}</td>
+            <td>{{ getApplyRoleLabel(item.applyRole) }}</td>
             <td>¥{{ formatMoney(item.amount) }}</td>
             <td>¥{{ formatMoney(item.feeAmount) }}</td>
             <td>¥{{ formatMoney(item.actualAmount) }}</td>
@@ -131,7 +139,8 @@
           <form class="modalBody" @submit.prevent="submitAudit">
             <div class="auditInfo">
               <div class="infoRow"><span class="infoLabel">商家名称</span><span>{{ auditTarget?.merchantName }}</span></div>
-              <div class="infoRow"><span class="infoLabel">商家ID</span><span>{{ auditTarget?.merchantId }}</span></div>
+              <div class="infoRow"><span class="infoLabel">商家编号</span><span>{{ auditTarget?.merchantId }}</span></div>
+              <div class="infoRow"><span class="infoLabel">角色类型</span><span>{{ getApplyRoleLabel(auditTarget?.applyRole) }}</span></div>
               <div class="infoRow"><span class="infoLabel">提现金额</span><span>¥{{ auditTarget?.amount ? formatMoney(auditTarget.amount) : '-' }}</span></div>
               <div class="infoRow"><span class="infoLabel">手续费</span><span>¥{{ auditTarget?.feeAmount ? formatMoney(auditTarget.feeAmount) : '-' }}</span></div>
               <div class="infoRow"><span class="infoLabel">实际到账</span><span>¥{{ auditTarget?.actualAmount ? formatMoney(auditTarget.actualAmount) : '-' }}</span></div>
@@ -187,7 +196,8 @@ import {
   WITHDRAWAL_AUDIT_STATUS_LABEL,
   WITHDRAWAL_AUDIT_STATUS_OPTIONS,
   isWithdrawalPendingStatus,
-  isWithdrawalTerminalStatus
+  isWithdrawalTerminalStatus,
+  ROLE_LABEL
 } from '../../constants/enums'
 
 import {
@@ -212,6 +222,7 @@ const summaryHint = ref('')
 
 const searchKeyword = ref('')
 const appliedKeyword = ref('')
+const filterApplyRole = ref('')
 const filterStatus = ref('')
 const startDate = ref('')
 const endDate = ref('')
@@ -248,6 +259,12 @@ function formatMoney(val: number | string | undefined): string {
   return Number(val).toFixed(2)
 }
 
+/** 获取角色类型标签 */
+function getApplyRoleLabel(applyRole?: string) {
+  if (!applyRole) return '—'
+  return ROLE_LABEL[applyRole] || applyRole
+}
+
 /** 兼容 status / auditStatus；商家申请落库可能为 pending */
 function resolveWithdrawalStatus(item: AdminMerchantWithdrawalItem | null | undefined): string {
   if (!item) return ''
@@ -258,7 +275,7 @@ function resolveWithdrawalStatus(item: AdminMerchantWithdrawalItem | null | unde
 function statusLabel(item: AdminMerchantWithdrawalItem) {
   const status = resolveWithdrawalStatus(item)
   if (!status) return '—'
-  return WITHDRAWAL_AUDIT_STATUS_LABEL[status] || status
+  return WITHDRAWAL_AUDIT_STATUS_LABEL[status] || '—'
 }
 
 function isPendingWithdrawal(item: AdminMerchantWithdrawalItem) {
@@ -411,6 +428,7 @@ async function loadData(page = currentPage.value) {
     const isNameSearch = Boolean(term && !isLikelyMerchantId(term))
     const baseParams = {
       auditStatus: filterStatus.value || undefined,
+      applyRole: filterApplyRole.value || undefined,
       startDate: startDate.value || undefined,
       endDate: endDate.value || undefined,
       sort: '-createdAt' as const,

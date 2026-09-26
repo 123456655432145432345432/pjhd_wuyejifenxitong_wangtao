@@ -21,6 +21,10 @@
 
     <p v-if="saveSuccess" class="bannerSuccess">{{ saveSuccess }}</p>
     <p v-if="saveError" class="bannerError">{{ saveError }}</p>
+    <p v-if="applymentBanner" class="bannerWarn">
+      {{ applymentBanner }}
+      <RouterLink class="inlineLink" :to="{ name: 'wechat-applyment' }">去微信收款</RouterLink>
+    </p>
 
     <div v-if="loading" class="loading">加载中...</div>
     <p v-else-if="error" class="error">{{ error }}</p>
@@ -195,7 +199,8 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { merchantPortalApi } from '../../api/services'
+import { RouterLink } from 'vue-router'
+import { merchantApplymentApi, merchantPortalApi } from '../../api/services'
 import type { DeliveryFeeTier, MyMerchantDetail } from '../../api/types'
 import { ApiError } from '../../api/request'
 import {
@@ -206,10 +211,12 @@ import {
   MERCHANT_LEVEL_LABEL,
   MERCHANT_SOURCE_LABEL,
   getMerchantAuditDisplayLabel,
-  getPhase2ErrorMessage
+  getPhase2ErrorMessage,
+  isApplymentFinished
 } from '../../constants/enums'
 import { useIsMobile } from '../../composables/useIsMobile'
 import MediaUploader from '../../components/MediaUploader.vue'
+import { applymentStateHint, isApplymentNotFound } from '../../utils/ecommerce'
 
 const { isMobile } = useIsMobile()
 const shop = ref<MyMerchantDetail | null>(null)
@@ -219,6 +226,7 @@ const editing = ref(false)
 const error = ref('')
 const saveError = ref('')
 const saveSuccess = ref('')
+const applymentBanner = ref('')
 
 const form = reactive({
   name: '',
@@ -240,7 +248,7 @@ function formatMoney(value?: number | string | null) {
 }
 
 function sponsorLabel(value?: string) {
-  return getEnumLabel(DELIVERY_SUBSIDY_SPONSOR_LABEL, value, value || '—')
+  return getEnumLabel(DELIVERY_SUBSIDY_SPONSOR_LABEL, value, '—')
 }
 
 const thresholdEstimate = computed(() => {
@@ -291,6 +299,7 @@ async function load() {
   loading.value = true
   error.value = ''
   saveSuccess.value = ''
+  applymentBanner.value = ''
   try {
     shop.value = await merchantPortalApi.my()
     if (shop.value) syncFormFromShop(shop.value)
@@ -299,6 +308,16 @@ async function load() {
     error.value = e instanceof ApiError ? getPhase2ErrorMessage(e.code, e.message) : '店铺信息加载失败'
   } finally {
     loading.value = false
+  }
+  try {
+    const applyment = await merchantApplymentApi.getMine()
+    if (!isApplymentFinished(applyment?.applymentState)) {
+      applymentBanner.value = applymentStateHint(applyment?.applymentState)
+    }
+  } catch (e) {
+    if (isApplymentNotFound(e)) {
+      applymentBanner.value = applymentStateHint()
+    }
   }
 }
 
@@ -408,6 +427,8 @@ onMounted(load)
 .btnPrimary:disabled, .btnSecondary:disabled, .btnGhost:disabled { opacity: 0.5; cursor: not-allowed; }
 .bannerSuccess { background: #f6ffed; color: #389e0d; padding: 10px 14px; border-radius: 8px; margin-bottom: 12px; font-size: 13px; }
 .bannerError { background: #fff1f0; color: #cf1322; padding: 10px 14px; border-radius: 8px; margin-bottom: 12px; font-size: 13px; }
+.bannerWarn { background: #fff7e6; color: #7c4a03; padding: 10px 14px; border-radius: 8px; margin-bottom: 12px; font-size: 13px; }
+.inlineLink { margin-left: 8px; color: #2563eb; }
 .loading, .error { font-size: 14px; padding: 24px 0; }
 .error { color: #e05c5c; }
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }

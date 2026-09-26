@@ -4,7 +4,7 @@
       <div>
         <h1 class="title">公司账户</h1>
         <p class="desc">
-          物业领导相关收益计入本账户，不走个人提现。注意：订单分成进「分成账户」（settlementBalance），与本页不是同一资金池。
+          物业领导相关收益计入本账户，不走个人提现。注意：订单分成进「分成账户」，与本页不是同一资金池。
         </p>
       </div>
       <button v-if="isPlatformAdmin" class="btnPrimary" @click="openAdjust">手动调整</button>

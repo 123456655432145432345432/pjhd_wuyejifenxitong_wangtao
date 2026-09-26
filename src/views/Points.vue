@@ -18,9 +18,9 @@
           <div class="main">
             <div class="header">
               <span>物业币发行总览</span>
-              <span class="sub">Property Coin Total Metrics</span>
+              <span class="sub">全平台发行与流通汇总</span>
             </div>
-            <div class="value">{{ formattedTotal }}<span class="unit">PCoin</span></div>
+            <div class="value">{{ formattedTotal }}<span class="unit">物业币</span></div>
           </div>
           <div class="stats">
             <div class="stat">
@@ -225,7 +225,7 @@
                 <td class="num">{{ formatMoney(row.amount) }}</td>
                 <td class="num">{{ formatMoney(row.balanceBefore) }}</td>
                 <td class="num">{{ formatMoney(row.balanceAfter ?? row.balance) }}</td>
-                <td class="source">{{ row.description || row.remark || row.source || '—' }}</td>
+                <td class="source">{{ poolRecordSourceText(row) }}</td>
                 <td class="time">{{ row.createdAt || '—' }}</td>
               </tr>
             </tbody>
@@ -271,7 +271,7 @@
           <ul v-else-if="consumeItems.length" class="consumeList">
             <li v-for="(item, idx) in consumeItems" :key="item.source || idx" class="consumeItem">
               <div class="consumeHead">
-                <span>{{ item.source || '其他' }}</span>
+                <span>{{ getEnumLabel(POINT_POOL_RECORD_TYPE_LABEL, item.source, '其他') }}</span>
                 <strong>{{ item.amount ?? 0 }}（{{ formatConsumePct(item) }}）</strong>
               </div>
               <div class="consumeBarTrack">
@@ -427,7 +427,7 @@
             </div>
             <div class="field">
               <label class="label">来源</label>
-              <div class="readonly">手动发放（manual）</div>
+              <div class="readonly">手动发放</div>
             </div>
             <div class="field">
               <label class="label">描述（选填）</label>
@@ -573,6 +573,12 @@ function poolRecordTypeLabel(type?: string) {
   return getEnumLabel(POINT_POOL_RECORD_TYPE_LABEL, type, '—')
 }
 
+function poolRecordSourceText(row: PointPoolRecordItem) {
+  if (row.description?.trim()) return row.description
+  if (row.remark?.trim()) return row.remark
+  return getEnumLabel(POINT_POOL_RECORD_TYPE_LABEL, row.source, '—')
+}
+
 function matchPoolRecordType(row: PointPoolRecordItem, filter: string): boolean {
   if (!filter) return true
   const raw = resolvePoolRecordType(row)
@@ -638,7 +644,7 @@ async function loadPoolRecords(page = 1) {
     poolRecords.value = []
     const msg = e instanceof ApiError ? e.message : '积分池流水加载失败'
     recordsError.value = msg.includes('NullPointer')
-      ? `${msg}（多为后端积分池流水映射空指针，请后端排查 GET /admin/point-pools/records）`
+      ? `${msg}（多为后端积分池流水映射异常，请后端排查积分池流水接口）`
       : msg
   } finally {
     recordsLoading.value = false
@@ -708,12 +714,12 @@ const detailRows = computed(() => {
     { label: '账户状态', value: getEnumLabel(RESIDENT_STATUS_LABEL, d.status) },
     { label: '物业币状态', value: d.coinFrozen ? '已冻结' : '正常' },
     { label: '物业币显示', value: d.coinHidden ? '用户已隐藏' : '显示中' },
-    { label: '个人积分', value: `${formatMoney(d.pointBalance)} pts` },
+    { label: '个人积分', value: `${formatMoney(d.pointBalance)} 积分` },
     {
       label: '家庭积分',
-      value: d.familyPointBalance == null ? '—（无家庭）' : `${formatMoney(d.familyPointBalance)} pts`
+      value: d.familyPointBalance == null ? '—（无家庭）' : `${formatMoney(d.familyPointBalance)} 积分`
     },
-    { label: '物业币余额', value: `${formatMoney(d.coinBalance)} PCoin` },
+    { label: '物业币余额', value: `${formatMoney(d.coinBalance)} 物业币` },
     { label: '累计消费', value: d.totalConsumption !== undefined ? `¥${formatMoney(d.totalConsumption)}` : '—' },
     { label: '累计订单', value: d.totalOrders !== undefined ? String(d.totalOrders) : '—' },
     { label: '注册时间', value: d.createdAt || '—' },
@@ -991,6 +997,11 @@ onMounted(async () => {
     ])
     poolOverview.value = mapPointPoolOverview(pool)
     overview.value = mapPointsOverview(pool, dashOverview)
+  } catch (e) {
+    // 测服常见：积分池未初始化 → 404「积分池不存在」，不阻断页面
+    poolOverview.value = null
+    overview.value = mapPointsOverview(undefined, undefined)
+    console.warn('[Points] 积分池概览加载失败', e)
   } finally {
     poolLoading.value = false
   }

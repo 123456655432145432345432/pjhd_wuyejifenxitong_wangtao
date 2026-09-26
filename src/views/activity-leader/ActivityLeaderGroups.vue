@@ -32,7 +32,7 @@
               {{ item.monthlyFee != null ? `¥${formatMoney(item.monthlyFee)}` : '—' }}
             </td>
             <td data-label="状态">
-              {{ item.status === ENTITY_STATUS.ACTIVE ? '启用' : item.status || '—' }}
+              {{ item.status === ENTITY_STATUS.ACTIVE ? '启用' : getEnumLabel(ENTITY_STATUS_LABEL, item.status) }}
             </td>
             <td data-label="操作" class="ops">
               <button type="button" class="btnGhostSm" @click="openEdit(item)">编辑资料</button>
@@ -224,7 +224,7 @@ import MediaUploader from '../../components/MediaUploader.vue'
 import { activityGroupApi } from '../../api/services'
 import type { ActivityGroupItem, ActivityPricingTierPayload } from '../../api/types'
 import { ApiError } from '../../api/request'
-import { BILLING_CYCLE, BILLING_CYCLE_OPTIONS, ENTITY_STATUS } from '../../constants/enums'
+import { BILLING_CYCLE, BILLING_CYCLE_OPTIONS, ENTITY_STATUS, ENTITY_STATUS_LABEL, getEnumLabel } from '../../constants/enums'
 import { useIsMobile } from '../../composables/useIsMobile'
 
 interface TierRow extends ActivityPricingTierPayload {

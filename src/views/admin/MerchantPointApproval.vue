@@ -14,7 +14,7 @@
           <input
             v-model="searchKeyword"
             type="search"
-            placeholder="搜索商家名称或ID"
+            placeholder="搜索商家名称或编号"
             enterkeyhint="search"
             @input="onSearchInput"
           />
@@ -34,7 +34,7 @@
       <table class="content">
         <thead>
           <tr>
-            <th>商家ID</th>
+            <th>商家编号</th>
             <th>商家名称</th>
             <th>购买积分</th>
             <th>支付金额</th>
@@ -104,7 +104,7 @@
           <form class="modalBody" @submit.prevent="submitAudit">
             <div class="auditInfo">
               <div class="infoRow"><span class="infoLabel">商家名称</span><span>{{ auditTarget?.merchantName }}</span></div>
-              <div class="infoRow"><span class="infoLabel">商家ID</span><span>{{ auditTarget?.merchantId }}</span></div>
+              <div class="infoRow"><span class="infoLabel">商家编号</span><span>{{ auditTarget?.merchantId }}</span></div>
               <div class="infoRow"><span class="infoLabel">购买积分</span><span>{{ auditTarget?.pointAmount }}</span></div>
               <div class="infoRow"><span class="infoLabel">支付金额</span><span>¥{{ auditTarget?.payAmount ? formatMoney(auditTarget.payAmount) : '-' }}</span></div>
             </div>
@@ -216,7 +216,7 @@ function resolvePurchaseStatus(item: AdminMerchantPointPurchaseItem | null | und
 
 function purchaseStatusLabel(item: AdminMerchantPointPurchaseItem) {
   const status = resolvePurchaseStatus(item)
-  return POINT_PURCHASE_AUDIT_STATUS_LABEL[status] || status || '—'
+  return POINT_PURCHASE_AUDIT_STATUS_LABEL[status] || '—'
 }
 
 function isPendingPurchase(item: AdminMerchantPointPurchaseItem) {

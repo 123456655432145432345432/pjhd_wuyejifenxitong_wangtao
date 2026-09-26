@@ -106,14 +106,30 @@
             </div>
           </div>
           <div class="field">
-            <label class="label">按消费商家筛选（可选，每行一个商家 ID）</label>
+            <label class="label">按消费商家筛选（可选，每行一个商家编号）</label>
             <textarea
               v-model="form.merchantIdsText"
               class="textarea"
               rows="2"
-              placeholder="mch_demo001&#10;mch_mch01"
+              placeholder="每行一个商家编号，如&#10;mch_demo001"
             />
-            <p class="note">筛选曾在这些商家消费过的住户；可与楼栋/性别/年龄段组合使用</p>
+            <p class="note">筛选曾在这些商家消费过的住户；可与楼栋/性别/年龄段组合</p>
+          </div>
+          <div class="field">
+            <label class="label">按商品筛选（可选）</label>
+            <select
+              v-model="form.productIds"
+              class="input selectMultiple"
+              multiple
+              :disabled="productsLoading"
+            >
+              <option v-if="productsLoading" disabled value="">加载商品中...</option>
+              <option v-else-if="!productOptions.length" disabled value="">暂无商品可选</option>
+              <option v-for="p in productOptions" :key="p.id" :value="p.id">
+                {{ p.name || p.id }}（{{ p.id }}）
+              </option>
+            </select>
+            <p class="note">按住 Ctrl / Cmd 可多选；筛选曾购买过这些商品的住户</p>
           </div>
           <p v-if="formError" class="error">{{ formError }}</p>
           <p v-if="formSuccess" class="success">{{ formSuccess }}</p>
@@ -255,13 +271,14 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import MediaUploader from '../components/MediaUploader.vue'
-import { directedMessageApi, residentApi } from '../api/services'
+import { directedMessageApi, merchantPortalApi, residentApi } from '../api/services'
 import { ApiError } from '../api/request'
 import { useIsMobile } from '../composables/useIsMobile'
 import type {
   AgeBracketItem,
   DirectedMessageTaskItem,
   DirectedMessageRecipientItem,
+  ProductItem,
   ResidentItem
 } from '../api/types'
 import { useAuthStore } from '../stores/auth'
@@ -295,10 +312,13 @@ const form = ref({
   filterGender: FILTER_GENDER.ALL,
   filterBuildings: [] as string[],
   filterAgeBracketIds: [] as string[],
-  merchantIdsText: ''
+  merchantIdsText: '',
+  productIds: [] as string[]
 })
 const selectAllBuildings = ref(true)
 const buildingOptions = ref<string[]>([])
+const productOptions = ref<ProductItem[]>([])
+const productsLoading = ref(false)
 const residentLookup = ref<Map<string, ResidentItem>>(new Map())
 const submitting = ref(false)
 const formError = ref('')
@@ -412,7 +432,7 @@ function displayGender(gender?: string | number) {
 
 function displayReadStatus(r: DirectedMessageRecipientItem) {
   const status = r.readStatus || r.readStatusCode
-  return getEnumLabel(READ_STATUS_LABEL, status, status || '—')
+  return getEnumLabel(READ_STATUS_LABEL, status, '—')
 }
 
 /** 兼容 camelCase / snake_case / 嵌套住户对象的收件人字段 */
@@ -676,6 +696,7 @@ async function submitSend() {
     .split(/[\n,]/)
     .map((s) => s.trim())
     .filter(Boolean)
+  const productIds = [...form.value.productIds]
 
   submitting.value = true
   try {
@@ -693,12 +714,14 @@ async function submitSend() {
         ? [...form.value.filterAgeBracketIds]
         : undefined,
       merchantIds: merchantIds.length ? merchantIds : undefined,
+      productIds: productIds.length ? productIds : undefined,
       propertyCompanyId: auth.propertyCompanyId || undefined
     })
     formSuccess.value = `已发送，覆盖 ${result.recipientCount ?? 0} 人`
     form.value.title = ''
     form.value.content = ''
     form.value.imageUrls = []
+    form.value.productIds = []
     await loadTasks(1)
   } catch (e) {
     formError.value = resolveError(e)
@@ -795,8 +818,20 @@ async function loadRecipients(p = 1) {
   }
 }
 
+async function loadProducts() {
+  productsLoading.value = true
+  try {
+    const res = await merchantPortalApi.products({ page: 1, pageSize: 100, sort: '-createdAt' })
+    productOptions.value = res.list || []
+  } catch {
+    productOptions.value = []
+  } finally {
+    productsLoading.value = false
+  }
+}
+
 onMounted(async () => {
-  await Promise.all([loadBuildingOptions(), loadAgeBrackets(), loadTasks(1)])
+  await Promise.all([loadBuildingOptions(), loadAgeBrackets(), loadProducts(), loadTasks(1)])
 })
 
 watch(detailOpen, (open, wasOpen) => {
@@ -821,6 +856,7 @@ watch(detailOpen, (open, wasOpen) => {
 .input, .textarea { width: 100%; border: 1px solid #e8e8ec; border-radius: 8px; padding: 10px 14px; font-size: 14px; color: #1f1f2e; background: #fafafc; outline: none; box-sizing: border-box; font-family: inherit; }
 .input:focus, .textarea:focus { border-color: #5c5c9e; background: #ffffff; }
 .input.sm { width: 140px; }
+.selectMultiple { min-height: 120px; }
 .checkboxGroup { display: flex; flex-wrap: wrap; gap: 10px 16px; }
 .checkbox { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: #5c5c66; cursor: pointer; }
 .note { font-size: 12px; color: #8c8c9a; margin-top: 6px; }

@@ -59,14 +59,14 @@ let debounceTimer: ReturnType<typeof setTimeout>
 
 function formatMeta(merchant: MerchantItem) {
   const role = merchant.applyRole || merchant.intendedRole || USER_ROLE.MERCHANT
-  const parts = [getEnumLabel(ROLE_LABEL, role, role), merchant.category || '未分类', '待审核']
+  const parts = [getEnumLabel(ROLE_LABEL, role, '—'), merchant.category || '未分类', '待审核']
   if (merchant.address) parts.push(merchant.address)
   return parts.join(' · ')
 }
 
 function formatLabel(merchant: MerchantItem) {
   const role = merchant.applyRole || merchant.intendedRole || USER_ROLE.MERCHANT
-  return `${merchant.name} · ${getEnumLabel(ROLE_LABEL, role, role)} · ${merchant.category || '未分类'}`
+  return `${merchant.name} · ${getEnumLabel(ROLE_LABEL, role, '—')} · ${merchant.category || '未分类'}`
 }
 
 async function fetchMerchants() {

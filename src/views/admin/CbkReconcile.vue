@@ -11,9 +11,9 @@
     </div>
 
     <p class="bannerInfo">
-      skipped 表示收款方账户未录入。先到
+      「未录入」表示收款方账户尚未配置。先到
       <RouterLink :to="{ name: 'cbk-accounts' }">收款账户</RouterLink>
-      补录，再点重试走缺户补冻。通道单号对应微信 transaction_id / 商户订单号。状态用冻结中、已提交结算、已完结等中性词。
+      补录，再点重试走缺户补冻。通道单号对应微信交易号 / 商户订单号。状态用冻结中、已提交结算、已完结等中性词。
     </p>
 
     <div class="toolbar">
@@ -64,7 +64,7 @@
             <td class="mono">{{ item.splitNo || '—' }}</td>
             <td>
               <span :class="['statusBadge', item.status || 'unknown']">
-                {{ getEnumLabel(CBK_RECONCILE_STATUS_LABEL, item.status, item.status || '—') }}
+                {{ getEnumLabel(CBK_RECONCILE_STATUS_LABEL, item.status, '—') }}
               </span>
             </td>
             <td>{{ getEnumLabel(CBK_OWNER_TYPE_LABEL, item.ownerType) }}</td>
@@ -150,7 +150,7 @@ function reload() {
 async function retry(item: CbkReconcileItem) {
   if (!item.splitNo) return
   const ok = window.confirm(
-    `确认重试该笔分账？\n状态：${getEnumLabel(CBK_RECONCILE_STATUS_LABEL, item.status, item.status || '—')}\n单号：${item.splitNo}`
+    `确认重试该笔分账？\n状态：${getEnumLabel(CBK_RECONCILE_STATUS_LABEL, item.status, '—')}\n单号：${item.splitNo}`
   )
   if (!ok) return
   retryingNo.value = item.splitNo

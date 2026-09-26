@@ -3,7 +3,7 @@
     <div class="header">
       <div>
         <h1 class="title">社区论坛</h1>
-        <p class="desc">property_admin / platform_admin 管理端：帖子治理与举报处理（不含居民发帖）</p>
+        <p class="desc">物业管理员 / 平台管理员：帖子治理与举报处理（不含居民发帖）</p>
       </div>
     </div>
 
@@ -227,7 +227,7 @@
               <textarea v-model="handleRemark" class="textarea" rows="3" maxlength="200" placeholder="备注（选填）" />
             </div>
             <p v-if="reportTarget?.targetType === COMMUNITY_REPORT_TARGET.COMMENT" class="hintInline">
-              选择「通过」后，被举报评论会自动删除，无需再手填评论 ID。
+              选择「通过」后，被举报评论会自动删除，无需再手填评论编号。
             </p>
             <p v-if="formError" class="error">{{ formError }}</p>
             <div class="modalFooter">

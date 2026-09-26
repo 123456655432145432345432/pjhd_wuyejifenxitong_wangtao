@@ -14,7 +14,7 @@
       <p v-else-if="error" class="error">{{ error }}</p>
       <div v-else-if="list.length && isMobile" class="mobileList">
         <article v-for="item in list" :key="item.id" class="mobileCard">
-          <div class="mobileCardHead"><strong>{{ item.matchedCategoryName || '未分类' }}</strong><span>{{ item.status || getEnumLabel(SERVICE_REQUEST_STATUS_LABEL, item.statusCode) }}</span></div>
+          <div class="mobileCardHead"><strong>{{ item.matchedCategoryName || '未分类' }}</strong><span>{{ getEnumLabel(SERVICE_REQUEST_STATUS_LABEL, item.statusCode || item.status) }}</span></div>
           <p class="mobileDescription">{{ item.description || '—' }}</p>
           <p class="mobileMeta">{{ item.createdAt || '—' }} · {{ item.contactPhone || '—' }}</p>
           <div class="actions">
@@ -40,7 +40,7 @@
             <td>{{ item.createdAt || '—' }}</td>
             <td class="descCell">{{ item.description || '—' }}</td>
             <td>{{ item.matchedCategoryName || '—' }}</td>
-            <td>{{ item.status || getEnumLabel(SERVICE_REQUEST_STATUS_LABEL, item.statusCode) }}</td>
+            <td>{{ getEnumLabel(SERVICE_REQUEST_STATUS_LABEL, item.statusCode || item.status) }}</td>
             <td>{{ item.contactPhone || '—' }}</td>
             <td class="actions">
               <button type="button" class="linkBtn" :disabled="actionsDisabled" @click="accept(item.id)">接单</button>

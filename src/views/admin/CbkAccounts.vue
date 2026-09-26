@@ -5,7 +5,7 @@
         <h1 class="title">收款账户（微信收付通分账接收方）</h1>
         <p class="desc">
           由运营代录各收款方的微信收付通二级商户号。住户付款进入平台微信支付商户号，履约后按公式分给商家 / 物业 / 统筹 / 负责人 / 快递员。
-          服务商商户号、AppID、APIv3 密钥与证书只放后端 / 运维配置，本页不录入密钥。
+          服务商商户号、应用编号、接口密钥与证书只放后端 / 运维配置，本页不录入密钥。
         </p>
       </div>
       <div class="headerActions">
@@ -15,7 +15,13 @@
     </div>
 
     <p class="bannerWarn">
-      通道已切至微信收付通分账。收款账户号即二级商户号。相同 (角色, 主体 ID) 再次提交会更新，不会建重复行。
+      通道已切至微信收付通分账。收款账户号即二级商户号。相同（角色、主体编号）再次提交会更新，不会建重复行。
+      退款垫付请到
+      <RouterLink class="inlineLink" :to="{ name: 'split-recovery' }">待追回台账</RouterLink>
+      ；物业自身收款账号请到
+      <RouterLink class="inlineLink" :to="{ name: 'transfer-accounts' }">我的收款方式</RouterLink>。
+      <RouterLink class="inlineLink" :to="{ name: 'settlement-config' }">结算配置</RouterLink>
+      为当前主入口；本页仅作历史兼容。
     </p>
 
     <div class="toolbar">
@@ -29,7 +35,7 @@
         <option value="true">已校验</option>
         <option value="false">未校验</option>
       </select>
-      <input v-model.trim="ownerId" class="input" placeholder="主体 ID" @keyup.enter="reload" />
+      <input v-model.trim="ownerId" class="input" placeholder="主体编号" @keyup.enter="reload" />
       <button class="btnPrimary" :disabled="loading" @click="reload">查询</button>
     </div>
 
@@ -41,7 +47,7 @@
         <thead>
           <tr>
             <th>角色</th>
-            <th>主体 ID</th>
+            <th>主体编号</th>
             <th>二级商户号</th>
             <th>商户号</th>
             <th>户名 / 备注</th>
@@ -57,7 +63,7 @@
             <td colspan="7" class="emptyCell">{{ error }}</td>
           </tr>
           <tr v-else-if="!list.length">
-            <td colspan="7" class="emptyCell">暂无账户。先录入后再到对账台处理 skipped。</td>
+            <td colspan="7" class="emptyCell">暂无账户。先录入后再到对账台处理「未录入」记录。</td>
           </tr>
           <tr v-for="item in list" v-else :key="item.id" :class="{ notReady: item.verified === false }">
             <td>{{ getEnumLabel(CBK_OWNER_TYPE_LABEL, item.ownerType) }}</td>
@@ -108,7 +114,7 @@
             <button type="button" class="modalClose" @click="closeForm">&times;</button>
           </div>
           <form class="modalBody" @submit.prevent="submitForm">
-            <p class="formHint">角色、主体 ID、二级商户号必填。平台主体的 ID 固定为 PLATFORM。</p>
+            <p class="formHint">角色、主体编号、二级商户号必填。平台主体请填写固定编号 PLATFORM。</p>
             <div class="field">
               <label class="label">角色 <em>*</em></label>
               <select v-model="form.ownerType" class="input" :disabled="!!editingId" @change="onOwnerTypeChange">
@@ -119,7 +125,7 @@
               </select>
             </div>
             <div class="field">
-              <label class="label">主体 ID <em>*</em></label>
+              <label class="label">主体编号 <em>*</em></label>
               <input
                 v-model.trim="form.ownerId"
                 class="input"
@@ -324,7 +330,7 @@ function buildPayload(): CbkAccountUpsertPayload | null {
   const type = form.ownerType
   const id = type === CBK_OWNER_TYPE.PLATFORM ? CBK_PLATFORM_OWNER_ID : form.ownerId
   if (!type || !id || !form.accountNo) {
-    formError.value = '请填写角色、主体 ID 和收款账户号'
+    formError.value = '请填写角色、主体编号和收款账户号'
     return null
   }
   return {
@@ -464,6 +470,7 @@ onMounted(() => {
 .bannerError { background: #fff1f0; color: #cf1322; }
 .bannerSuccess { background: #f6ffed; color: #389e0d; }
 .bannerWarn { background: #fff7e6; color: #ad6800; border: 1px solid #ffe7ba; }
+.inlineLink { color: inherit; font-weight: 600; }
 .tableScroll { overflow-x: auto; background: #fff; border: 1px solid #eeeef3; border-radius: 12px; }
 .table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .table th, .table td { padding: 12px 14px; text-align: left; border-bottom: 1px solid #f0f0f4; vertical-align: top; }

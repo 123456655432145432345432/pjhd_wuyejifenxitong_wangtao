@@ -1,18 +1,15 @@
-// 让 :capacitor-android 等子模块的 buildscript 也走国内镜像，避免直连 Google/Maven TLS 失败
+// 让 :capacitor-android 等子模块也走国内镜像。
+// 阿里云当前 TLS 握手失败，优先华为/腾讯。
 gradle.projectsLoaded {
     rootProject.allprojects { project ->
         project.buildscript {
             repositories {
-                maven { url 'https://maven.aliyun.com/repository/google' }
-                maven { url 'https://maven.aliyun.com/repository/public' }
-                maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
                 maven { url 'https://repo.huaweicloud.com/repository/maven/' }
                 maven { url 'https://mirrors.cloud.tencent.com/nexus/repository/maven-public/' }
+                maven { url 'https://mirrors.cloud.tencent.com/nexus/repository/gradle-plugin/' }
             }
         }
         project.repositories {
-            maven { url 'https://maven.aliyun.com/repository/google' }
-            maven { url 'https://maven.aliyun.com/repository/public' }
             maven { url 'https://repo.huaweicloud.com/repository/maven/' }
             maven { url 'https://mirrors.cloud.tencent.com/nexus/repository/maven-public/' }
         }

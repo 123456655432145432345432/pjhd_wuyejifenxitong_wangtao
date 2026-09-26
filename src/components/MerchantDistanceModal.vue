@@ -120,7 +120,7 @@ async function load() {
 async function save() {
   if (saving.value || loading.value) return
   if (!props.merchantId) {
-    saveError.value = '缺少商家 ID，无法保存'
+    saveError.value = '缺少商家编号，无法保存'
     return
   }
   saveError.value = ''
@@ -129,7 +129,7 @@ async function save() {
   const items: Array<{ communityId: string; distanceKm: number | null }> = []
   for (const row of rows.value) {
     if (!row.communityId) {
-      saveError.value = '小区数据缺少 ID，请刷新后重试'
+      saveError.value = '小区数据缺少编号，请刷新后重试'
       return
     }
     const raw = rawInput(row.input)

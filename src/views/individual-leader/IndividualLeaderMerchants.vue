@@ -205,7 +205,7 @@ function formatThreshold(value?: string | number) {
 }
 
 function sponsorLabel(value?: string) {
-  return getEnumLabel(DELIVERY_SUBSIDY_SPONSOR_LABEL, value, value || '—')
+  return getEnumLabel(DELIVERY_SUBSIDY_SPONSOR_LABEL, value, '—')
 }
 
 async function load(pageNo = 1) {

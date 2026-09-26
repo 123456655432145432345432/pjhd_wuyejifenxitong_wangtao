@@ -557,7 +557,7 @@ function normalizeAvailable(raw: unknown): AvailableRoomsResult {
 }
 
 function statusLabel(value?: string) {
-  return getEnumLabel(COMMUNITY_ROOM_STATUS_LABEL, value, value || '—')
+  return getEnumLabel(COMMUNITY_ROOM_STATUS_LABEL, value, '—')
 }
 
 function countByStatus(status: string) {

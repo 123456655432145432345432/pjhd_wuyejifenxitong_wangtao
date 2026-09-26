@@ -203,6 +203,10 @@ function filterAdminMenusForRole(role: string, propertySubRole?: string): Menu[]
     )
   }
 
+  if (role === USER_ROLE.PLATFORM_ADMIN) {
+    menus = menus.filter((m) => m.route !== 'transfer-accounts')
+  }
+
   // 价格审批：必须用 canAccessPriceApprovalModule，禁止仅按 role===property_admin
   const priceItem = adminMenus.find((m) => m.route === 'price-approvals')
   const hasPrice = menus.some((m) => m.route === 'price-approvals')

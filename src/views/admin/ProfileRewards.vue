@@ -35,7 +35,7 @@
         </thead>
         <tbody>
           <tr v-for="item in list" :key="item.id">
-            <td>{{ item.fieldName || '—' }}</td>
+            <td>{{ getEnumLabel(PROFILE_REWARD_FIELD_LABEL, item.fieldName, '—') }}</td>
             <td>{{ item.rewardPoints ?? '—' }}</td>
             <td>{{ item.oncePerUser ? '是' : '否' }}</td>
             <td>{{ item.createdAt || '—' }}</td>
@@ -47,7 +47,7 @@
         </tbody>
       </table>
     </div>
-    <p v-else class="hint">暂无配置（可让后端预置 birthday/phone/hasChildren 样例）</p>
+    <p v-else class="hint">暂无配置（可新增生日、手机号、是否有子女等字段规则）</p>
 
     <Teleport to="body">
       <div v-if="modalOpen" class="modalOverlay" @click.self="closeModal">
@@ -58,8 +58,13 @@
           </div>
           <div class="modalBody">
             <div class="field">
-              <label class="label">字段名</label>
-              <input v-model.trim="form.fieldName" class="input" placeholder="如 birthday / phone / hasChildren" />
+              <label class="label">资料字段</label>
+              <select v-model="form.fieldName" class="input">
+                <option value="">请选择字段</option>
+                <option v-for="opt in PROFILE_REWARD_FIELD_OPTIONS" :key="opt.value" :value="opt.value">
+                  {{ opt.label }}
+                </option>
+              </select>
             </div>
             <div class="field">
               <label class="label">奖励积分</label>
@@ -86,7 +91,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { profileRewardApi } from '../../api/services'
 import { ApiError } from '../../api/request'
 import type { ProfileRewardItem } from '../../api/types'
-import { PROFILE_REWARD_SCOPE, PROFILE_REWARD_SCOPE_LABEL, USER_ROLE } from '../../constants/enums'
+import { PROFILE_REWARD_FIELD_LABEL, PROFILE_REWARD_FIELD_OPTIONS, PROFILE_REWARD_SCOPE, PROFILE_REWARD_SCOPE_LABEL, USER_ROLE, getEnumLabel } from '../../constants/enums'
 import { useAuthStore } from '../../stores/auth'
 
 const auth = useAuthStore()
@@ -164,7 +169,7 @@ function closeModal() {
 
 async function submit() {
   if (!form.fieldName.trim() || !scopeId.value) {
-    formError.value = '请填写字段名，并确认已选择物业公司'
+    formError.value = '请选择资料字段，并确认已选择物业公司'
     return
   }
   saving.value = true
@@ -192,7 +197,7 @@ async function submit() {
 }
 
 async function removeItem(item: ProfileRewardItem) {
-  if (!confirm(`确认删除字段「${item.fieldName}」的奖励规则？`)) return
+  if (!confirm(`确认删除「${getEnumLabel(PROFILE_REWARD_FIELD_LABEL, item.fieldName, '该字段')}」的奖励规则？`)) return
   try {
     await profileRewardApi.remove(item.id)
     await load()

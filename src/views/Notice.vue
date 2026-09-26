@@ -426,7 +426,7 @@
                 <span class="detailLabel">收集字段</span>
                 <ul class="collectFieldList">
                   <li v-for="field in detailData.collectFields" :key="field.name">
-                    {{ field.label || field.name }}（{{ field.type }}）
+                    {{ field.label || field.name }}（{{ getEnumLabel(ANNOUNCEMENT_COLLECT_FIELD_TYPE_LABEL, field.type, '—') }}）
                   </li>
                 </ul>
               </div>
@@ -562,6 +562,7 @@ import type {
 } from '../api/types'
 import { useAuthStore } from '../stores/auth'
 import {
+  ANNOUNCEMENT_COLLECT_FIELD_TYPE_LABEL,
   ANNOUNCEMENT_COLLECT_FIELD_TYPE_OPTIONS,
   ANNOUNCEMENT_LIST_TYPE_OPTIONS,
   ANNOUNCEMENT_STATUS,
@@ -703,7 +704,7 @@ function optionLabel<T extends { id: string; name?: string }>(items: T[], id: st
 
 const targetRolesText = computed(() => {
   if (selectAllTargetRoles.value || !form.value.selectedTargetRoles.length) return '全部角色'
-  return form.value.selectedTargetRoles.map((role) => getEnumLabel(ROLE_LABEL, role, role)).join('、')
+  return form.value.selectedTargetRoles.map((role) => getEnumLabel(ROLE_LABEL, role, '—')).join('、')
 })
 
 const buildingsText = computed(() => {
@@ -725,7 +726,7 @@ const detailRows = computed(() => {
     { label: '标题', value: d.title || '—' },
     { label: '公告类型', value: getEnumLabel(ANNOUNCEMENT_TYPE_LABEL, normalizeAnnouncementType(d.announcementType)) },
     { label: '物业公司', value: d.propertyCompanyId || '—' },
-    { label: '小区 ID', value: d.communityId || '—' },
+    { label: '小区编号', value: d.communityId || '—' },
     { label: '覆盖楼栋', value: d.targetBuildings?.length ? d.targetBuildings.join('、') : '全部楼栋' },
     { label: '目标群体', value: formatAnnouncementTargetRoles(d.targetRoles) },
     { label: '投递渠道', value: getEnumLabel(DELIVERY_CHANNEL_LABEL, d.deliveryChannel, '仅公告栏') },

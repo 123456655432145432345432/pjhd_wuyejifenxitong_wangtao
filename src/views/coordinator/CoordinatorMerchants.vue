@@ -402,9 +402,9 @@ const detailRows = computed(() => {
   const d = detailData.value
   if (!d) return []
   return [
-    { label: '商家 ID', value: d.id || '—' },
-    { label: '平台商家 ID', value: d.platformMerchantId || '—' },
-    { label: '物业 ID', value: d.propertyCompanyId || '—' },
+    { label: '商家编号', value: d.id || '—' },
+    { label: '平台商家编号', value: d.platformMerchantId || '—' },
+    { label: '物业编号', value: d.propertyCompanyId || '—' },
     { label: '商家名称', value: d.name || '—' },
     { label: '申请身份', value: applyRoleLabel(d) },
     { label: '分类', value: d.category || '—' },
@@ -436,7 +436,7 @@ const detailRows = computed(() => {
 
 function applyRoleLabel(item?: MerchantItem | null) {
   const role = item?.applyRole || item?.intendedRole || USER_ROLE.MERCHANT
-  return getEnumLabel(ROLE_LABEL, role, role)
+  return getEnumLabel(ROLE_LABEL, role, '—')
 }
 
 function propertyCompanyId() {

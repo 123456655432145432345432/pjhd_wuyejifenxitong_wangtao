@@ -41,7 +41,7 @@
           <input
             v-model="searchKeyword"
             type="search"
-            placeholder="搜索提现ID、申请人、手机号"
+            placeholder="搜索提现编号、申请人、手机号"
             enterkeyhint="search"
             @input="onSearchInput"
           />

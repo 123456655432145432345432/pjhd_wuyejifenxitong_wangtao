@@ -3,7 +3,9 @@
     <div class="header">
       <div>
         <h1 class="title">订单管理</h1>
-        <p class="desc">支付成功后 30 分钟内选择商家自配或发大厅；超时自动进大厅。整单商品分类均为「团购」时无需配送，需先核实；通过或超时未核实均进入冻结期再结算。</p>
+        <p class="desc">
+          支付后进入待选择（约 30 分钟，超时自动平台配送）；团购/食堂单无需配送。自配请用「确认送达」，勿调骑手完成接口。
+        </p>
       </div>
     </div>
 
@@ -63,13 +65,13 @@
                 class="linkBtn"
                 :disabled="chooseId === order.id"
                 @click="chooseFulfillment(order.id, FULFILLMENT_MODE.MERCHANT_SELF)"
-              >商家自配</button>
+              >商家自行配送</button>
               <button
                 v-if="canMerchantChoose(order)"
                 class="linkBtn"
                 :disabled="chooseId === order.id"
                 @click="chooseFulfillment(order.id, FULFILLMENT_MODE.COURIER_HALL)"
-              >发大厅</button>
+              >发布到平台配送</button>
               <button
                 v-if="canMerchantConfirmDelivery(order)"
                 class="linkBtn"
@@ -138,13 +140,13 @@
                     class="linkBtn"
                     :disabled="chooseId === order.id"
                     @click="chooseFulfillment(order.id, FULFILLMENT_MODE.MERCHANT_SELF)"
-                  >商家自配</button>
+                  >商家自行配送</button>
                   <button
                     v-if="canMerchantChoose(order)"
                     class="linkBtn"
                     :disabled="chooseId === order.id"
                     @click="chooseFulfillment(order.id, FULFILLMENT_MODE.COURIER_HALL)"
-                  >发大厅</button>
+                  >发布到平台配送</button>
                   <button
                     v-if="canMerchantConfirmDelivery(order)"
                     class="linkBtn"
@@ -277,7 +279,7 @@
               <section class="section">
                 <h4 class="sectionTitle">分账预览（账面试算）</h4>
                 <p class="calcHint">
-                  按订单 ID 调用 GET /distribution/calculate，由后端读取下单快照；前端不重算正式金额。
+                  按订单编号由后端读取下单快照试算分账；前端不重算正式金额。
                 </p>
                 <p v-if="calcLoading" class="muted">试算中...</p>
                 <p v-else-if="calcError" class="error">{{ calcError }}</p>
@@ -372,13 +374,13 @@
               class="btnPrimary"
               :disabled="chooseId === detail.id"
               @click="chooseFulfillment(detail.id, FULFILLMENT_MODE.MERCHANT_SELF)"
-            >商家自配</button>
+            >商家自行配送</button>
             <button
               v-if="canMerchantChoose(detail)"
               class="btnPrimary"
               :disabled="chooseId === detail.id"
               @click="chooseFulfillment(detail.id, FULFILLMENT_MODE.COURIER_HALL)"
-            >发大厅</button>
+            >发布到平台配送</button>
             <button
               v-if="canMerchantConfirmDelivery(detail)"
               class="btnPrimary"
@@ -585,11 +587,11 @@ function statusClass(order: OrderItem) {
 }
 
 function paymentMethodLabel(method?: string) {
-  return getEnumLabel(PAYMENT_METHOD_LABEL, method, method || '—')
+  return getEnumLabel(PAYMENT_METHOD_LABEL, method, '—')
 }
 
 function sponsorLabel(sponsor?: string) {
-  return getEnumLabel(DELIVERY_SUBSIDY_SPONSOR_LABEL, sponsor, sponsor || '—')
+  return getEnumLabel(DELIVERY_SUBSIDY_SPONSOR_LABEL, sponsor, '—')
 }
 
 function itemsSummary(order: OrderItem) {
@@ -675,7 +677,7 @@ async function openDetail(id: string) {
 
 async function loadCalculatePreview(order: OrderItem) {
   if (!order.id) {
-    calcError.value = '缺少订单 ID，无法按订单快照试算'
+    calcError.value = '缺少订单编号，无法按订单快照试算'
     return
   }
   calcLoading.value = true
@@ -774,7 +776,15 @@ async function chooseFulfillment(id: string, mode: string) {
   success.value = ''
   try {
     const res = await merchantPortalApi.chooseFulfillment(id, mode)
-    success.value = res?.statusLabel || (mode === FULFILLMENT_MODE.MERCHANT_SELF ? '已选商家自配' : '已发大厅')
+    if (res?.alreadyExists) {
+      success.value = res.statusLabel
+        ? `${res.statusLabel}（已有配送单，已复用）`
+        : '已有配送单，已复用'
+    } else {
+      success.value =
+        res?.statusLabel ||
+        (mode === FULFILLMENT_MODE.MERCHANT_SELF ? '已选商家自配' : '已发大厅')
+    }
     await load(page.value)
     if (detail.value?.id === id) {
       detail.value = await merchantPortalApi.getOrder(id)

@@ -187,7 +187,7 @@ import { useRoute } from 'vue-router'
 import { merchantPortalApi } from '../../api/services'
 import type { ProductCreatePayload, ProductItem, ProductUpdatePayload } from '../../api/types'
 import { ApiError } from '../../api/request'
-import { ENTITY_STATUS, PRODUCT_CATEGORY_OPTIONS, getPhase2ErrorMessage } from '../../constants/enums'
+import { ENTITY_STATUS, ENTITY_STATUS_LABEL, PRODUCT_CATEGORY_OPTIONS, getEnumLabel, getPhase2ErrorMessage } from '../../constants/enums'
 import { useIsMobile } from '../../composables/useIsMobile'
 import MediaUploader from '../../components/MediaUploader.vue'
 
@@ -241,7 +241,7 @@ function formatMoney(value?: number) {
 function statusLabel(status?: string) {
   if (status === ENTITY_STATUS.ACTIVE) return '上架'
   if (status === ENTITY_STATUS.INACTIVE) return '下架'
-  return status || '—'
+  return getEnumLabel(ENTITY_STATUS_LABEL, status, '—')
 }
 
 function resetForm() {

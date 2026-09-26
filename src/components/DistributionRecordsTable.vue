@@ -279,13 +279,13 @@ function formatRate(rate?: number) {
 
 function statusLabel(value?: string) {
   if (!value) return '—'
-  return getEnumLabel(DISTRIBUTION_RECORD_STATUS_LABEL, value, value)
+  return getEnumLabel(DISTRIBUTION_RECORD_STATUS_LABEL, value, '—')
 }
 
 function fulfillmentLabel(item: DistributionRecordItem) {
   return (
     item.fulfillmentModeLabel ||
-    getEnumLabel(FULFILLMENT_MODE_LABEL, item.fulfillmentMode, item.fulfillmentMode || '—')
+    getEnumLabel(FULFILLMENT_MODE_LABEL, item.fulfillmentMode, '—')
   )
 }
 </script>

@@ -49,6 +49,7 @@
             <RouterLink class="actionBtn" :to="{ name: 'coordinator-announcements' }">发布统筹公告</RouterLink>
             <RouterLink class="actionBtn" :to="{ name: 'coordinator-offers' }">特惠推送</RouterLink>
             <RouterLink class="actionBtn" :to="{ name: 'coordinator-sector-leaders' }">板块管理</RouterLink>
+            <RouterLink class="actionBtn" :to="{ name: 'transfer-accounts' }">收款方式</RouterLink>
           </div>
           <ul class="tips">
             <li>审核商家入驻并推荐为官方认证商家</li>
@@ -67,7 +68,7 @@ import { RouterLink } from 'vue-router'
 import { useAuthStore } from '../../stores/auth'
 import { useCoordinatorPortalStore } from '../../stores/coordinatorPortal'
 import { useIsMobile } from '../../composables/useIsMobile'
-import { ENTITY_STATUS } from '../../constants/enums'
+import { ENTITY_STATUS_LABEL, getEnumLabel } from '../../constants/enums'
 
 const auth = useAuthStore()
 const portal = useCoordinatorPortalStore()
@@ -92,12 +93,7 @@ const commissionRateLabel = computed(() => {
   if (rate === undefined || rate === null) return '—'
   return rate <= 1 ? `${(rate * 100).toFixed(0)}%` : `${rate}%`
 })
-const statusLabel = computed(() => {
-  const status = detail.value?.status
-  if (status === ENTITY_STATUS.ACTIVE) return '启用'
-  if (status === ENTITY_STATUS.INACTIVE) return '停用'
-  return status || '—'
-})
+const statusLabel = computed(() => getEnumLabel(ENTITY_STATUS_LABEL, detail.value?.status, '—'))
 
 function formatMoney(value?: number) {
   if (value === undefined || value === null) return '0.00'

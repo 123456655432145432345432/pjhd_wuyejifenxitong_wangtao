@@ -38,6 +38,7 @@ import type {
   DirectedMessageSendResult,
   DirectedMessageTaskItem,
   DistributorProductCreatePayload,
+  DistributorProductUpdatePayload,
   RecentDeliveryItem,
   LeaderItem,
   LoginResult,
@@ -79,7 +80,10 @@ import type {
   PropertyCompanyDetail,
   PropertyCompanyItem,
   PropertyCompanyCommunity,
+  PropertyCompanyCreatePayload,
+  PropertyCompanyCreateResult,
   PropertyCompanyUpdatePayload,
+  CoordinatorCreatePayload,
   ArrearsReminderPayload,
   ArrearsReminderPreviewPayload,
   ArrearsReminderPreviewResult,
@@ -197,6 +201,7 @@ import type {
   AdminIndividualLeaderCreatePayload,
   IndividualLeaderApplicationItem,
   IndividualLeaderApplicationAuditPayload,
+  IndividualLeaderApplicationAuditResult,
   OrderRefundItem,
   OrderRefundAuditPayload,
   OrderRefundAuditResult,
@@ -261,7 +266,33 @@ import type {
   CanteenQuotaAdjustResult,
   CanteenQuotaPurchaseItem,
   CanteenAdminRechargeItem,
-  CanteenDirectedFlowItem
+  CanteenDirectedFlowItem,
+  RewardGrantItem,
+  RewardGrantAuditPayload,
+  SettlementConfig,
+  PlatformConfigItem,
+  NavigationItem,
+  NavigationItemPayload,
+  PropertyBankCardItem,
+  PropertyBankCardPayload,
+  RegionQuotaItem,
+  RegionQuotaPayload,
+  ActivityGroupReviewItem,
+  ActivityGroupReviewPayload,
+  ResidentDeletionRequestItem,
+  ResidentDeletionReviewPayload,
+  SectorLeaderEarnings,
+  SectorLeaderMerchantRevenueItem,
+  SectorLeaderApprovalItem,
+  SectorLeaderApprovalAuditPayload,
+  IndividualLeaderMerchantRevenueItem,
+  ApplymentDetail,
+  ApplymentSubmitPayload,
+  ApplymentMediaUploadResult,
+  TransferAccountItem,
+  BindTransferAccountPayload,
+  SplitRecoveryItem,
+  UpdateRecoveryPayload
 } from './types'
 
 
@@ -623,6 +654,8 @@ export const merchantApi = {
     merchantType?: string
     propertyCompanyId?: string
     sort?: string
+    /** v8.7 §7.1：仅返回被官方/物业推荐的商家；不传返回全部 */
+    recommended?: boolean
   } = {}) {
 
     return request<PageResult<MerchantItem>>(`/merchants${buildQuery(params)}`).then((raw) => {
@@ -944,18 +977,37 @@ export const deliveryRulesApi = {
 
 export const propertyCompanyApi = {
 
+  /**
+   * GET /property-companies 同时用于注册公开列表与管理端选择器。
+   * 有登录态时默认带 Token（测服无 Token 会返回空列表）；注册页可显式传 false。
+   */
   list(params: {
     page?: number
     pageSize?: number
     keyword?: string
     status?: string
     sort?: string
-  } = {}, auth = false) {
-    return request<PageResult<PropertyCompanyItem>>(
+  } = {}, auth?: boolean) {
+    const withAuth = auth ?? Boolean(getAccessToken())
+    return request<PageResult<PropertyCompanyItem> | unknown>(
       `/property-companies${buildQuery(params)}`,
       {},
-      auth
+      withAuth
+    ).then((raw) =>
+      normalizePageResult<PropertyCompanyItem>(raw, params.page ?? 1, params.pageSize ?? 20)
     )
+  },
+
+  /**
+   * POST /property-companies — 创建物业公司（§14.3 / v8.1）
+   * 与 POST /admin/property-companies 共用后端逻辑；推荐本路径。
+   * 成功时 data.adminAccount.initialPassword 仅返回一次（默认 admin123456）。
+   */
+  create(payload: PropertyCompanyCreatePayload) {
+    return request<PropertyCompanyCreateResult>('/property-companies', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
   },
 
   /** 商家端当前物业（含自动提现开关/周期） */
@@ -983,8 +1035,22 @@ export const propertyCompanyApi = {
       method: 'PUT',
       body: JSON.stringify(payload)
     })
-  }
+  },
 
+  /** DELETE /admin/property-companies/{id} — §94.14 真实删除（有关联数据时拒绝） */
+  remove(id: string) {
+    return request<{ id: string }>(`/admin/property-companies/${id}`, {
+      method: 'DELETE'
+    })
+  },
+
+  /** PATCH /admin/property-companies/{id}/status — §51.5 启用/停用（日常运维推荐） */
+  updateStatus(id: string, status: string) {
+    return request<PropertyCompanyItem>(`/admin/property-companies/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status })
+    })
+  }
 }
 
 
@@ -1003,44 +1069,31 @@ export const adminOrderConfigApi = {
 }
 
 export const configApi = {
-
   propertyCompany(id: string) {
-
     return request<PropertyCompanyDetail>(`/admin/property-companies/${id}`)
-
   },
 
-  /** GET /admin/property-companies/{id}/config — 配置回显（含 deliveryPerKgFee / pointExchangeRate） */
+  /**
+   * 配置回显：文档仅有 PATCH `/admin/property-companies/{id}/config`，无 GET。
+   * 回显统一走详情 `GET /admin/property-companies/{id}`（含 config 与根级分成字段）。
+   */
   getConfig(id: string) {
-    return request<PropertyCompanyConfig | PropertyCompanyDetail>(
-      `/admin/property-companies/${id}/config`
-    )
+    return request<PropertyCompanyDetail>(`/admin/property-companies/${id}`)
   },
 
   updateConfig(id: string, config: PropertyCompanyConfig) {
-
     return request<PropertyCompanyDetail | PropertyCompanyConfig>(`/admin/property-companies/${id}/config`, {
-
       method: 'PATCH',
-
       body: JSON.stringify(config)
-
     })
-
   },
 
   updateDeliveryRule(id: string, payload: Partial<DeliveryRule>) {
-
     return request<DeliveryRule>(`/admin/delivery-rules/${id}`, {
-
       method: 'PUT',
-
       body: JSON.stringify(payload)
-
     })
-
   }
-
 }
 
 
@@ -1173,10 +1226,13 @@ export const merchantPortalApi = {
   },
 
   verifyOrder(id: string, payload: OrderVerifyPayload) {
-    return ordersApi.verify(id, payload)
+    return request<OrderVerifyResult>(`/merchants/my/orders/${id}/verify`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
   },
 
-  /** 商家选择履约方式（§68.2）：merchant_self | courier_hall */
+  /** 商家选择履约方式（v8.4：响应 SendDeliveryResponse；亦可 POST /orders/{id}/choose-fulfillment） */
   chooseFulfillment(id: string, mode: string) {
     return request<{
       orderId?: string
@@ -1184,14 +1240,15 @@ export const merchantPortalApi = {
       status?: string
       statusCode?: string
       statusLabel?: string
+      alreadyExists?: boolean
       sentAt?: string
-    }>(`/orders/${id}/choose-fulfillment`, {
+    }>(`/merchants/my/orders/${id}/fulfillment`, {
       method: 'POST',
       body: JSON.stringify({ mode })
     })
   },
 
-  /** 商家确认自配送达（§68.3） */
+  /** 商家确认自配送达（§68.3 / v8.4）；勿对商家自配单调骑手 /complete（80020） */
   confirmMerchantDelivery(deliveryId: string, payload: DeliveryCompletePayload = {}) {
     return request<CourierDeliveryItem>(`/deliveries/${deliveryId}/merchant-confirm`, {
       method: 'POST',
@@ -1208,14 +1265,19 @@ export const merchantPortalApi = {
     return ordersApi.updateStatus(id, ORDER_STATUS.COMPLETED)
   },
 
-  /** 商家手动发送配送任务（POST /orders/{id}/send-delivery）。
-   *  适用场景：历史已支付但当时未自动生成配送单的订单。
-   *  若订单已存在配送单，后端会返回「该订单已有配送单」错误。 */
+  /**
+   * 发布到抢单大厅（v8.4 新增实现，幂等）。
+   * 等价于 chooseFulfillment(..., courier_hall)；已有配送单时 alreadyExists=true。
+   * 主路径只需 chooseFulfillment，不必依赖本接口必须成功。
+   */
   sendDelivery(id: string) {
     return request<{
       orderId?: string
       deliveryId?: string
       status?: string
+      statusCode?: string
+      statusLabel?: string
+      alreadyExists?: boolean
       sentAt?: string
     }>(`/orders/${id}/send-delivery`, { method: 'POST' })
   },
@@ -1593,6 +1655,8 @@ export const sectorLeaderAdminApi = {
     page?: number
     pageSize?: number
     keyword?: string
+    /** v8.3：按板块筛选 cleaning/repair/security/greening/other */
+    sector?: string
     status?: string
     sort?: string
   } = {}) {
@@ -1619,6 +1683,43 @@ export const sectorLeaderAdminApi = {
 
   remove(id: string) {
     return request<SectorLeaderRemoveResult>(`/admin/sector-leaders/${id}`, {
+      method: 'DELETE'
+    })
+  }
+}
+
+export const coordinatorAdminApi = {
+  list(params: {
+    page?: number
+    pageSize?: number
+    keyword?: string
+    status?: string
+    propertyCompanyId?: string
+    sort?: string
+  } = {}) {
+    return request<PageResult<CoordinatorDetail>>(`/admin/coordinators${buildQuery(params)}`)
+  },
+
+  get(id: string) {
+    return request<CoordinatorDetail>(`/admin/coordinators/${id}`)
+  },
+
+  create(payload: CoordinatorCreatePayload) {
+    return request<CoordinatorDetail>('/admin/coordinators', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+
+  update(id: string, payload: { description?: string; status?: string }) {
+    return request<CoordinatorDetail>(`/admin/coordinators/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
+  },
+
+  remove(id: string) {
+    return request<{ id: string; status?: string; deletedAt?: string }>(`/admin/coordinators/${id}`, {
       method: 'DELETE'
     })
   }
@@ -1775,6 +1876,8 @@ export const adminMerchantWithdrawalApi = {
     endDate?: string
     propertyCompanyId?: string
     sort?: string
+    /** v8.5：提现申请角色类型 - merchant 商品商家 / technician 技工 / activity_leader 组长 */
+    applyRole?: string
     /** 仅审历史内部钱包；新单分账完结单不应出现 */
     settlementChannel?: string
   } = {}) {
@@ -1838,6 +1941,11 @@ export const specialOfferApi = {
     return request<PageResult<SpecialOfferItem>>(`/special-offers${buildQuery(params)}`)
   },
 
+  /** 住户端专属入口（管理端一般不用；联调验收可用） */
+  listMine(params: { page?: number; pageSize?: number } = {}) {
+    return request<PageResult<SpecialOfferItem>>(`/special-offers/my${buildQuery(params)}`)
+  },
+
   get(id: string) {
     return request<SpecialOfferItem>(`/special-offers/${id}`)
   },
@@ -1854,6 +1962,16 @@ export const specialOfferApi = {
       method: 'PUT',
       body: JSON.stringify(payload)
     })
+  },
+
+  /** v8.3：草稿/已结束 → published，住户端立即可见 */
+  publish(id: string) {
+    return request<SpecialOfferItem>(`/special-offers/${id}/publish`, { method: 'POST' })
+  },
+
+  /** v8.3：下架为 draft，住户端不再可见 */
+  unpublish(id: string) {
+    return request<SpecialOfferItem>(`/special-offers/${id}/unpublish`, { method: 'POST' })
   },
 
   remove(id: string) {
@@ -2360,7 +2478,10 @@ function isMissingEndpointError(e: unknown) {
   if (!(e instanceof ApiError)) return false
   if (e.code === 404) return true
   const msg = e.message || ''
-  return /NoResourceFoundException|NoHandlerFoundException|not found|找不到|ID格式不正确/i.test(msg)
+  // Spring 常把 /applications 当成 /{id}，返回 400「ID格式不正确」
+  return /NoResourceFoundException|NoHandlerFoundException|not found|找不到|ID格式不正确|格式不正确/i.test(
+    msg
+  )
 }
 
 function pickApplicationField(source: Record<string, unknown>, keys: string[]) {
@@ -2427,12 +2548,20 @@ export const adminIndividualLeaderApi = {
     })
   },
 
-  /** 撤销：软删除为 inactive；reason 可选，不传不再报 99001 */
-  remove(id: string, reason?: string) {
-    return request<IndividualLeaderItem>(
-      `/admin/individual-leaders/${id}${buildQuery({ reason })}`,
-      { method: 'DELETE' }
-    )
+  /** 撤销：软删除为 inactive；reason 可选。DELETE 500 时回退 PUT status=inactive */
+  async remove(id: string, reason?: string) {
+    const query = reason?.trim() ? buildQuery({ reason: reason.trim() }) : ''
+    try {
+      return await request<IndividualLeaderItem>(`/admin/individual-leaders/${id}${query}`, {
+        method: 'DELETE'
+      })
+    } catch (e) {
+      if (!(e instanceof ApiError) || (e.code !== 500 && e.code !== 99001)) throw e
+      return request<IndividualLeaderItem>(`/admin/individual-leaders/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ status: 'inactive', description: reason?.trim() || undefined })
+      })
+    }
   },
 
   async listApplications(params: {
@@ -2496,7 +2625,7 @@ export const adminIndividualLeaderApi = {
     let lastError: unknown
     for (const path of paths) {
       try {
-        return await request<IndividualLeaderApplicationItem>(path, {
+        return await request<IndividualLeaderApplicationAuditResult>(path, {
           method: 'POST',
           body
         })
@@ -2616,10 +2745,43 @@ export const sectorLeaderPortalApiExt = {
   },
 
   auditMerchant(sectorLeaderId: string, payload: SectorLeaderMerchantAuditPayload) {
-    return request<MerchantAuditResult>(`/sector-leaders/${sectorLeaderId}/merchant-audit`, {
-      method: 'PUT',
+    return request<MerchantAuditResult>(`/sector-leaders/${sectorLeaderId}/merchant-audits`, {
+      method: 'POST',
       body: JSON.stringify(payload)
     })
+  },
+
+  listMerchants(sectorLeaderId: string, params: { page?: number; pageSize?: number } = {}) {
+    return request<PageResult<MerchantItem>>(
+      `/sector-leaders/${sectorLeaderId}/merchants${buildQuery(params)}`
+    )
+  },
+
+  getEarnings(sectorLeaderId: string) {
+    return request<SectorLeaderEarnings>(`/sector-leaders/${sectorLeaderId}/earnings`)
+  },
+
+  listMerchantRevenues(sectorLeaderId: string) {
+    return request<{ list?: SectorLeaderMerchantRevenueItem[] }>(
+      `/sector-leaders/${sectorLeaderId}/merchant-revenues`
+    )
+  },
+
+  listApprovals(sectorLeaderId: string) {
+    return request<{ list?: SectorLeaderApprovalItem[] }>(
+      `/sector-leaders/${sectorLeaderId}/approvals`
+    )
+  },
+
+  auditApproval(
+    sectorLeaderId: string,
+    approvalId: string,
+    payload: SectorLeaderApprovalAuditPayload
+  ) {
+    return request<unknown>(
+      `/sector-leaders/${sectorLeaderId}/approvals/${approvalId}/audit`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    )
   },
 
   updateIndividualDistribution(
@@ -2668,6 +2830,16 @@ export const individualLeaderPortalApi = {
     return request<PageResult<RoleWithdrawalItem>>(
       `/individual-leaders/me/withdrawals${buildQuery(params)}`
     )
+  },
+
+  listMerchantRevenues(id: string) {
+    return request<{ list?: IndividualLeaderMerchantRevenueItem[] }>(
+      `/individual-leaders/${id}/merchant-revenues`
+    )
+  },
+
+  listApprovals(id: string) {
+    return request<{ list?: unknown[] }>(`/individual-leaders/${id}/approvals`)
   }
 }
 
@@ -2763,6 +2935,21 @@ export const distributorProductApi = {
     })
   },
 
+  /** PUT /admin/distributor-products/{id} — 改内容（2026-09-07） */
+  update(id: string, payload: DistributorProductUpdatePayload) {
+    return request<DistributorProductItem>(`/admin/distributor-products/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
+  },
+
+  /** DELETE — 软删 status=inactive */
+  remove(id: string) {
+    return request<DistributorProductItem>(`/admin/distributor-products/${id}`, {
+      method: 'DELETE'
+    })
+  },
+
   updateBillingCycle(id: string, payload: DistributorProductBillingCyclePayload) {
     return request<{ id: string; billingCycle?: string }>(
       `/admin/distributor-products/${id}/billing-cycle`,
@@ -2826,7 +3013,15 @@ export const merchantRecommendApi = {
     pageSize?: number
     propertyCompanyId?: string
   } = {}) {
-    return request<PageResult<MerchantItem>>(`/merchants/official-recommended${buildQuery(params)}`)
+    return request<PageResult<MerchantItem>>(`/merchants/official-recommended${buildQuery(params)}`).then(
+      (raw) => {
+        const page = normalizePageResult<MerchantItem>(raw, params.page, params.pageSize)
+        return {
+          ...page,
+          list: page.list.map((item) => normalizeMerchantItem(item))
+        }
+      }
+    )
   },
   set(id: string, payload: MerchantRecommendPayload) {
     return request<{ id?: string }>(`/admin/merchants/${id}/recommend`, {
@@ -2837,6 +3032,14 @@ export const merchantRecommendApi = {
 }
 
 export const coinUseConditionApi = {
+  /**
+   * §79.1 GET `/property-coins/use-condition` 仅 resident。
+   * 管理端回显请用物业详情的 coinUseCondition / coinPointThreshold，勿调本方法。
+   */
+  getResident() {
+    return request<CoinUseCondition>('/property-coins/use-condition')
+  },
+  /** @deprecated 管理端会 403；请改用详情字段或 set */
   get() {
     return request<CoinUseCondition>('/property-coins/use-condition')
   },
@@ -3374,7 +3577,262 @@ export const adminCanteenApi = {
   }
 }
 
-/** 管理端微信收付通分账：收款账户 CRUD + 对账台（路径仍为 /admin/cbk） */
+/** §96 结算配置（替代废弃的 /admin/cbk） */
+export const settlementConfigApi = {
+  get() {
+    return request<SettlementConfig>('/admin/settlement-config')
+  },
+  update(payload: SettlementConfig) {
+    return request<SettlementConfig>('/admin/settlement-config', {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
+  }
+}
+
+/** §94.1 奖励金/积分发放审批 */
+export const rewardGrantApi = {
+  list(params: {
+    page?: number
+    pageSize?: number
+    status?: string
+    targetResidentId?: string
+    grantType?: string
+  } = {}) {
+    return request<PageResult<RewardGrantItem>>(`/reward-grants${buildQuery(params)}`)
+  },
+  audit(id: string, payload: RewardGrantAuditPayload) {
+    return request<RewardGrantItem>(`/reward-grants/${id}/audit`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  }
+}
+
+/** §94.9 平台配置 */
+export const platformConfigApi = {
+  get() {
+    return request<PlatformConfigItem>('/admin/platform-config')
+  },
+  update(payload: PlatformConfigItem) {
+    return request<PlatformConfigItem>('/admin/platform-config', {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
+  }
+}
+
+/** §94.6 导航栏 */
+export const navigationItemApi = {
+  list(params: { module?: string } = {}) {
+    return request<{ list?: NavigationItem[] } | NavigationItem[]>(
+      `/admin/navigation-items${buildQuery(params)}`
+    )
+  },
+  create(payload: NavigationItemPayload) {
+    return request<NavigationItem>('/admin/navigation-items', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+  update(id: string, payload: Partial<NavigationItemPayload>) {
+    return request<NavigationItem>(`/admin/navigation-items/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
+  },
+  remove(id: string) {
+    return request<{ id: string }>(`/admin/navigation-items/${id}`, { method: 'DELETE' })
+  }
+}
+
+/** §94.7 物业银行卡 */
+export const propertyBankCardApi = {
+  list() {
+    return request<{ list?: PropertyBankCardItem[] } | PropertyBankCardItem[]>(
+      '/admin/property-bank-cards'
+    )
+  },
+  create(payload: PropertyBankCardPayload) {
+    return request<PropertyBankCardItem>('/admin/property-bank-cards', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+  update(id: string, payload: Partial<PropertyBankCardPayload>) {
+    return request<PropertyBankCardItem>(`/admin/property-bank-cards/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
+  },
+  remove(id: string) {
+    return request<{ id: string }>(`/admin/property-bank-cards/${id}`, { method: 'DELETE' })
+  }
+}
+
+/** §94.8 区域配额 */
+export const regionQuotaApi = {
+  list(params: { sector?: string } = {}) {
+    return request<{ list?: RegionQuotaItem[] } | RegionQuotaItem[]>(
+      `/admin/region-quotas${buildQuery(params)}`
+    )
+  },
+  create(payload: RegionQuotaPayload) {
+    return request<RegionQuotaItem>('/admin/region-quotas', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+  update(id: string, payload: Partial<RegionQuotaPayload>) {
+    return request<RegionQuotaItem>(`/admin/region-quotas/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
+  },
+  remove(id: string) {
+    return request<{ id: string }>(`/admin/region-quotas/${id}`, { method: 'DELETE' })
+  }
+}
+
+/** §94.12 活动组注册审核 */
+export const activityGroupReviewApi = {
+  list(params: { page?: number; pageSize?: number; status?: string } = {}) {
+    return request<PageResult<ActivityGroupReviewItem>>(
+      `/admin/activity-groups/reviews${buildQuery(params)}`
+    )
+  },
+  review(id: string, payload: ActivityGroupReviewPayload) {
+    return request<ActivityGroupReviewItem>(`/admin/activity-groups/${id}/review`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  }
+}
+
+/** §94.13 注销账号平台终审 */
+export const residentDeletionApi = {
+  list(params: { page?: number; pageSize?: number } = {}) {
+    return request<PageResult<ResidentDeletionRequestItem>>(
+      `/admin/residents/deletion-requests${buildQuery(params)}`
+    )
+  },
+  review(residentId: string, payload: ResidentDeletionReviewPayload) {
+    return request<ResidentDeletionRequestItem>(
+      `/admin/residents/${residentId}/deletion/review`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    )
+  }
+}
+
+/** §94.10 商品推荐 */
+export const productRecommendApi = {
+  update(id: string, payload: { recommended: boolean; recommendedSort?: number }) {
+    return request<ProductItem>(`/products/${id}/recommend`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
+  }
+}
+
+/** 商家端微信进件（§97.2，merchant / activity_leader / technician 本人店铺） */
+export const merchantApplymentApi = {
+  getMine() {
+    return request<ApplymentDetail>('/merchants/my/applyment')
+  },
+
+  save(payload: ApplymentSubmitPayload) {
+    return request<ApplymentDetail>('/merchants/my/applyment', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+
+  submit() {
+    return request<ApplymentDetail>('/merchants/my/applyment/submit', { method: 'POST' })
+  },
+
+  uploadMedia(file: File) {
+    const body = new FormData()
+    body.append('file', file)
+    return request<ApplymentMediaUploadResult>('/merchants/my/applyment/media', {
+      method: 'POST',
+      body
+    })
+  }
+}
+
+/** 管理端微信进件（§97.3） */
+export const adminMerchantApplymentApi = {
+  get(merchantId: string) {
+    return request<ApplymentDetail>(`/admin/merchants/${merchantId}/applyment`)
+  },
+
+  submit(merchantId: string) {
+    return request<ApplymentDetail>(`/admin/merchants/${merchantId}/applyment/submit`, {
+      method: 'POST'
+    })
+  },
+
+  refresh(merchantId: string) {
+    return request<ApplymentDetail>(`/admin/merchants/${merchantId}/applyment/refresh`, {
+      method: 'POST'
+    })
+  }
+}
+
+/** 四层树角色收款账号（§97.4） */
+export const transferAccountApi = {
+  bind(payload: BindTransferAccountPayload) {
+    return request<TransferAccountItem>('/transfer-accounts', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+
+  listMine() {
+    return request<TransferAccountItem[] | PageResult<TransferAccountItem>>('/transfer-accounts/my').then(
+      (raw) => {
+        if (Array.isArray(raw)) return raw
+        return normalizePageResult<TransferAccountItem>(raw).list
+      }
+    )
+  },
+
+  unbind(channel: string) {
+    return request<null>(`/transfer-accounts/my${buildQuery({ channel })}`, { method: 'DELETE' })
+  }
+}
+
+/** 管理端分账回退待追回台账（§97.5） */
+export const splitRecoveryApi = {
+  list(params: {
+    page?: number
+    pageSize?: number
+    sort?: string
+    status?: string
+    ownerType?: string
+  } = {}) {
+    return request<unknown>(`/admin/split-recovery${buildQuery(params)}`).then((raw) =>
+      normalizePageResult<SplitRecoveryItem>(raw, params.page, params.pageSize)
+    )
+  },
+
+  markRecovered(id: string, payload: UpdateRecoveryPayload = {}) {
+    return request<SplitRecoveryItem>(`/admin/split-recovery/${id}/recovered`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+
+  writeOff(id: string, payload: UpdateRecoveryPayload = {}) {
+    return request<SplitRecoveryItem>(`/admin/split-recovery/${id}/write-off`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  }
+}
+
+/** 管理端微信收付通分账：收款账户 CRUD + 对账台（路径仍为 /admin/cbk，§96 已废弃，保留只读兼容） */
 export const adminCbkApi = {
   listAccounts(params: {
     ownerType?: string

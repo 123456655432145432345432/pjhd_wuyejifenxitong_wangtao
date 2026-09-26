@@ -55,6 +55,20 @@ import CommunityEntity from '../views/CommunityEntity.vue'
 import PropertyOperators from '../views/PropertyOperators.vue'
 import Delivery from '../views/Delivery.vue'
 import SectorLeaders from '../views/SectorLeaders.vue'
+import Coordinators from '../views/admin/Coordinators.vue'
+import PropertyCompanies from '../views/admin/PropertyCompanies.vue'
+import SettlementConfig from '../views/admin/SettlementConfig.vue'
+import RewardGrantApprovals from '../views/admin/RewardGrantApprovals.vue'
+import PropertyBankCards from '../views/admin/PropertyBankCards.vue'
+import PlatformConfig from '../views/admin/PlatformConfig.vue'
+import NavigationItems from '../views/admin/NavigationItems.vue'
+import RegionQuotas from '../views/admin/RegionQuotas.vue'
+import ActivityGroupReviews from '../views/admin/ActivityGroupReviews.vue'
+import ResidentDeletionReviews from '../views/admin/ResidentDeletionReviews.vue'
+import SplitRecovery from '../views/admin/SplitRecovery.vue'
+import MerchantApplyment from '../views/admin/MerchantApplyment.vue'
+import MerchantRecommended from '../views/admin/MerchantRecommended.vue'
+import TransferAccounts from '../views/TransferAccounts.vue'
 import Login from '../views/Login.vue'
 import ResidentShop from '../views/resident/ResidentShop.vue'
 import PublicResidentShops from '../views/public/PublicResidentShops.vue'
@@ -64,6 +78,7 @@ import MerchantOrders from '../views/merchant/MerchantOrders.vue'
 import MerchantProducts from '../views/merchant/MerchantProducts.vue'
 import MerchantPoints from '../views/merchant/MerchantPoints.vue'
 import MerchantWithdrawals from '../views/merchant/MerchantWithdrawals.vue'
+import MerchantWechatApplyment from '../views/merchant/MerchantWechatApplyment.vue'
 import MerchantServiceScope from '../views/merchant/MerchantServiceScope.vue'
 import MerchantServiceRequests from '../views/merchant/MerchantServiceRequests.vue'
 import MerchantAds from '../views/merchant/MerchantAds.vue'
@@ -105,6 +120,17 @@ const ADMIN_LEADER_ROLES = [...ADMIN_ROLES]
 const DIRECTED_MESSAGE_ROLES = [
   ...ADMIN_ROLE_LIST,
   USER_ROLE.COORDINATOR
+]
+const TRANSFER_ACCOUNT_ROLES = [
+  USER_ROLE.PROPERTY_ADMIN,
+  USER_ROLE.COORDINATOR,
+  USER_ROLE.SECTOR_LEADER,
+  USER_ROLE.INDIVIDUAL_LEADER
+]
+const WECHAT_APPLYMENT_ROLES = [
+  USER_ROLE.MERCHANT,
+  USER_ROLE.ACTIVITY_LEADER,
+  USER_ROLE.TECHNICIAN
 ]
 
 const routes = [
@@ -185,6 +211,23 @@ const routes = [
         meta: { title: '商家管理', roles: ADMIN_ROLE_LIST }
       },
       {
+        path: 'merchant/:id/applyment',
+        name: 'merchant-applyment',
+        component: MerchantApplyment,
+        meta: { title: '商家微信进件', roles: ADMIN_ROLE_LIST }
+      },
+      {
+        path: 'merchant/recommended',
+        name: 'merchant-recommended',
+        component: MerchantRecommended,
+        meta: {
+          title: '物业推荐维护',
+          roles: [
+            ...ADMIN_ROLE_LIST
+          ]
+        }
+      },
+      {
         path: 'merchant/point-approval',
         name: 'merchant-point-approval',
         component: MerchantPointApproval,
@@ -221,6 +264,18 @@ const routes = [
         meta: { title: '权限配置', roles: ADMIN_LEADER_ROLES, propertyLeaderOnly: true }
       },
       {
+        path: 'property-companies',
+        name: 'property-companies',
+        component: PropertyCompanies,
+        meta: { title: '物业公司', roles: PLATFORM_ADMIN_ONLY }
+      },
+      {
+        path: 'coordinators',
+        name: 'coordinators',
+        component: Coordinators,
+        meta: { title: '统筹人员', roles: ADMIN_LEADER_ROLES, propertyLeaderOnly: true }
+      },
+      {
         path: 'sector-leaders',
         name: 'sector-leaders',
         component: SectorLeaders,
@@ -255,6 +310,42 @@ const routes = [
         name: 'points',
         component: Points,
         meta: { title: '积分管理', roles: ADMIN_ROLE_LIST }
+      },
+      {
+        path: 'reward-grant-approvals',
+        name: 'reward-grant-approvals',
+        component: RewardGrantApprovals,
+        meta: { title: '发放审批', roles: ADMIN_LEADER_ROLES, propertyLeaderOnly: true }
+      },
+      {
+        path: 'property-bank-cards',
+        name: 'property-bank-cards',
+        component: PropertyBankCards,
+        meta: { title: '物业银行卡', roles: ADMIN_LEADER_ROLES, propertyLeaderOnly: true }
+      },
+      {
+        path: 'region-quotas',
+        name: 'region-quotas',
+        component: RegionQuotas,
+        meta: { title: '区域配额', roles: ADMIN_LEADER_ROLES, propertyLeaderOnly: true }
+      },
+      {
+        path: 'navigation-items',
+        name: 'navigation-items',
+        component: NavigationItems,
+        meta: { title: '导航配置', roles: ADMIN_LEADER_ROLES, propertyLeaderOnly: true }
+      },
+      {
+        path: 'activity-group-reviews',
+        name: 'activity-group-reviews',
+        component: ActivityGroupReviews,
+        meta: { title: '活动组审核', roles: ADMIN_LEADER_ROLES }
+      },
+      {
+        path: 'resident-deletion-reviews',
+        name: 'resident-deletion-reviews',
+        component: ResidentDeletionReviews,
+        meta: { title: '住户注销终审', roles: PLATFORM_ADMIN_ONLY }
       },
       {
         path: 'notice',
@@ -303,6 +394,12 @@ const routes = [
         name: 'platform-share-config',
         component: PlatformShareConfig,
         meta: { title: '平台分成配置', roles: PLATFORM_ADMIN_ONLY }
+      },
+      {
+        path: 'platform-config',
+        name: 'platform-config',
+        component: PlatformConfig,
+        meta: { title: '平台配置', roles: PLATFORM_ADMIN_ONLY }
       },
       {
         path: 'platform-earnings',
@@ -416,10 +513,28 @@ const routes = [
         }
       },
       {
+        path: 'settlement-config',
+        name: 'settlement-config',
+        component: SettlementConfig,
+        meta: { title: '结算配置', roles: ADMIN_LEADER_ROLES, propertyLeaderOnly: true }
+      },
+      {
+        path: 'split-recovery',
+        name: 'split-recovery',
+        component: SplitRecovery,
+        meta: { title: '待追回台账', roles: ADMIN_ROLE_LIST }
+      },
+      {
+        path: 'transfer-accounts',
+        name: 'transfer-accounts',
+        component: TransferAccounts,
+        meta: { title: '收款方式', roles: TRANSFER_ACCOUNT_ROLES }
+      },
+      {
         path: 'cbk/accounts',
         name: 'cbk-accounts',
         component: CbkAccounts,
-        meta: { title: '收款账户（微信收付通）', roles: ADMIN_ROLE_LIST }
+        meta: { title: '收款账户（历史）', roles: ADMIN_ROLE_LIST }
       },
       {
         path: 'cbk/reconcile',
@@ -496,6 +611,12 @@ const routes = [
         name: 'merchant-withdrawals',
         component: MerchantWithdrawals,
         meta: { title: '提现管理', roles: [USER_ROLE.MERCHANT] }
+      },
+      {
+        path: 'wechat-applyment',
+        name: 'wechat-applyment',
+        component: MerchantWechatApplyment,
+        meta: { title: '微信收款', roles: WECHAT_APPLYMENT_ROLES }
       },
       {
         path: 'courier/overview',

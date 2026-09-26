@@ -89,6 +89,7 @@
               :free-enabled="freeEnabled"
               :point-balance="pointBalance"
               :coin-balance="coinBalance"
+              :wechat-disabled="!wechatPayAvailable"
             />
             <div class="field">
               <label class="label">目标楼栋（每行一个）</label>
@@ -107,8 +108,8 @@
               <textarea v-model="targetedForm.targetAgeBracketsText" class="textarea" rows="2" />
             </div>
             <div class="field">
-              <label class="label">关联商品 ID（可选）</label>
-              <input v-model="targetedForm.productId" class="input" placeholder="prd_xxx" />
+              <label class="label">关联商品编号（可选）</label>
+              <input v-model="targetedForm.productId" class="input" placeholder="商品编号，如 prd_xxx" />
             </div>
             <p v-if="targetedFormError" class="error">{{ targetedFormError }}</p>
             <p v-if="targetedSuccessHint" class="success">{{ targetedSuccessHint }}</p>
@@ -146,14 +147,15 @@
               :free-enabled="freeEnabled"
               :point-balance="pointBalance"
               :coin-balance="coinBalance"
+              :wechat-disabled="!wechatPayAvailable"
             />
             <div class="field">
               <label class="label">图片（可选）</label>
               <MediaUploader v-model="form.imageUrls" category="merchant" accept="image" :max="9" />
             </div>
             <div class="field">
-              <label class="label">关联商品 ID（可选）</label>
-              <input v-model="form.productId" class="input" placeholder="prd_xxx" />
+              <label class="label">关联商品编号（可选）</label>
+              <input v-model="form.productId" class="input" placeholder="商品编号，如 prd_xxx" />
             </div>
             <p v-if="formError" class="error">{{ formError }}</p>
             <p v-if="successHint" class="success">{{ successHint }}</p>
@@ -172,8 +174,8 @@
 
 <script setup lang="ts">
 import { computed, defineComponent, h, onMounted, ref, watch } from 'vue'
-import { merchantPortalApi, merchantTargetedAdApi } from '../../api/services'
-import { ApiError } from '../../api/request'
+import { merchantApplymentApi, merchantPortalApi, merchantTargetedAdApi } from '../../api/services'
+import { ApiError, formatApiError } from '../../api/request'
 import type {
   MerchantAdItem,
   MerchantAdQuota,
@@ -186,8 +188,10 @@ import {
   getPhase2ErrorMessage,
   MERCHANT_AD_PAYMENT_METHOD,
   MERCHANT_AD_PAYMENT_METHOD_LABEL,
-  MERCHANT_AUDIT_STATUS
+  MERCHANT_AUDIT_STATUS,
+  isApplymentFinished
 } from '../../constants/enums'
+import { isApplymentNotFound, isOrderPayUnavailable } from '../../utils/ecommerce'
 import { useIsMobile } from '../../composables/useIsMobile'
 import { useAuthStore } from '../../stores/auth'
 import MediaUploader from '../../components/MediaUploader.vue'
@@ -211,6 +215,7 @@ const targetedFormError = ref('')
 const successHint = ref('')
 const targetedSuccessHint = ref('')
 const merchantId = ref('')
+const wechatPayAvailable = ref(true)
 const quote = ref<MerchantAdQuote | null>(null)
 const targetedQuote = ref<MerchantAdQuote | null>(null)
 const quoteLoading = ref(false)
@@ -253,11 +258,19 @@ function formatMoney(value?: number) {
 }
 
 function paymentLabel(method?: string) {
-  return getEnumLabel(MERCHANT_AD_PAYMENT_METHOD_LABEL, method, method || '—')
+  return getEnumLabel(MERCHANT_AD_PAYMENT_METHOD_LABEL, method, '—')
 }
 
 function resolveError(e: unknown) {
-  if (e instanceof ApiError) return getPhase2ErrorMessage(e.code, e.message)
+  if (isOrderPayUnavailable(e)) {
+    if (form.value.paymentMethod === MERCHANT_AD_PAYMENT_METHOD.WECHAT) {
+      form.value.paymentMethod = MERCHANT_AD_PAYMENT_METHOD.COIN
+    }
+    if (targetedForm.value.paymentMethod === MERCHANT_AD_PAYMENT_METHOD.WECHAT) {
+      targetedForm.value.paymentMethod = MERCHANT_AD_PAYMENT_METHOD.COIN
+    }
+  }
+  if (e instanceof ApiError) return formatApiError(e, getPhase2ErrorMessage(e.code, e.message))
   if (e instanceof Error) return e.message
   return '操作失败'
 }
@@ -278,7 +291,8 @@ const AdPricingFields = defineComponent({
     freeRemaining: { type: Number, default: 0 },
     freeEnabled: { type: Boolean, default: true },
     pointBalance: { type: Number, default: 0 },
-    coinBalance: { type: Number, default: 0 }
+    coinBalance: { type: Number, default: 0 },
+    wechatDisabled: { type: Boolean, default: false }
   },
   emits: ['update:durationDays', 'update:paymentMethod'],
   setup(props, { emit }) {
@@ -330,7 +344,7 @@ const AdPricingFields = defineComponent({
                 value: MERCHANT_AD_PAYMENT_METHOD.POINT,
                 label: `商家积分（余额 ${props.pointBalance}）`
               },
-              { value: MERCHANT_AD_PAYMENT_METHOD.WECHAT, label: '微信支付' },
+              { value: MERCHANT_AD_PAYMENT_METHOD.WECHAT, label: '微信支付', disabled: props.wechatDisabled },
               { value: MERCHANT_AD_PAYMENT_METHOD.MOCK, label: '模拟支付' }
             ].map((opt) =>
               h('label', { class: ['payOption', opt.disabled ? 'disabled' : ''] }, [
@@ -350,7 +364,9 @@ const AdPricingFields = defineComponent({
           ),
           freeDisabled.value
             ? h('p', { class: 'hint warn' }, '免费额度已用尽或已关闭，请选择付费投放')
-            : null
+            : props.wechatDisabled
+              ? h('p', { class: 'hint warn' }, '商家尚未完成微信进件，微信支付不可用，请改用积分或物业币')
+              : null
         ])
       ])
   }
@@ -401,6 +417,23 @@ watch(freeRemaining, (n) => {
     }
   }
 })
+
+async function loadApplymentGate() {
+  try {
+    const data = await merchantApplymentApi.getMine()
+    wechatPayAvailable.value = isApplymentFinished(data?.applymentState)
+  } catch (e) {
+    wechatPayAvailable.value = !isApplymentNotFound(e)
+  }
+  if (!wechatPayAvailable.value) {
+    if (form.value.paymentMethod === MERCHANT_AD_PAYMENT_METHOD.WECHAT) {
+      form.value.paymentMethod = MERCHANT_AD_PAYMENT_METHOD.COIN
+    }
+    if (targetedForm.value.paymentMethod === MERCHANT_AD_PAYMENT_METHOD.WECHAT) {
+      targetedForm.value.paymentMethod = MERCHANT_AD_PAYMENT_METHOD.COIN
+    }
+  }
+}
 
 async function loadQuota() {
   try {
@@ -588,7 +621,14 @@ async function submit() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadMerchantId(), loadQuota(), loadList(), loadPointBalance(), fetchQuote(7, 'normal')])
+  await Promise.all([
+    loadMerchantId(),
+    loadQuota(),
+    loadList(),
+    loadPointBalance(),
+    fetchQuote(7, 'normal'),
+    loadApplymentGate()
+  ])
 })
 </script>
 

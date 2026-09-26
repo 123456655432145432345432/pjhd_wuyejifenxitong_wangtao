@@ -3,7 +3,7 @@
     <div class="header">
       <div>
         <h1 class="title">板块特惠</h1>
-        <p class="desc">为本板块创建和管理特惠推送</p>
+        <p class="desc">为本板块创建和管理特惠推送（板块负责人按角色放行；仅本物业）</p>
       </div>
       <button class="btnPrimary" @click="openCreate">新建特惠</button>
     </div>
@@ -53,7 +53,7 @@
               <td>{{ formatQuota(item) }}</td>
               <td class="timeCell">{{ item.startTime || '—' }} ~ {{ item.endTime || '—' }}</td>
               <td>
-                <span class="statusTag" :class="normalizeSpecialOfferStatusClass(item.status)">{{ getEnumLabel(SPECIAL_OFFER_STATUS_LABEL, item.status) }}</span>
+                <span class="statusTag" :class="normalizeSpecialOfferStatusClass(item.status)">{{ offerStatusText(item) }}</span>
               </td>
               <td class="actionsCell">
                 <button class="btnLink" @click="openDetail(item.id)">详情</button>
@@ -63,6 +63,22 @@
                   @click="openEdit(item.id)"
                 >
                   编辑
+                </button>
+                <button
+                  v-if="canPublish(item.status)"
+                  class="btnLink"
+                  :disabled="actionId === item.id"
+                  @click="publishOffer(item.id)"
+                >
+                  立即发布
+                </button>
+                <button
+                  v-if="canUnpublish(item.status)"
+                  class="btnLink"
+                  :disabled="actionId === item.id"
+                  @click="unpublishOffer(item.id)"
+                >
+                  下架
                 </button>
                 <button
                   class="btnDanger"
@@ -82,7 +98,7 @@
                 <img v-if="item.coverUrl" :src="item.coverUrl" alt="" class="coverThumb" @error="onCoverError" />
                 <strong>{{ item.title }}</strong>
               </div>
-              <span class="statusTag" :class="normalizeSpecialOfferStatusClass(item.status)">{{ getEnumLabel(SPECIAL_OFFER_STATUS_LABEL, item.status) }}</span>
+              <span class="statusTag" :class="normalizeSpecialOfferStatusClass(item.status)">{{ offerStatusText(item) }}</span>
             </div>
             <div class="cardMeta">
               <span>{{ getEnumLabel(SPECIAL_OFFER_TARGET_TYPE_LABEL, item.targetType, '—') }} · {{ item.merchantName || '未关联商家' }}</span>
@@ -92,6 +108,22 @@
             <div class="cardActions">
               <button class="btnLink" @click="openDetail(item.id)">详情</button>
               <button class="btnLink" :disabled="!isOfferEditable(item.status)" @click="openEdit(item.id)">编辑</button>
+              <button
+                v-if="canPublish(item.status)"
+                class="btnLink"
+                :disabled="actionId === item.id"
+                @click="publishOffer(item.id)"
+              >
+                立即发布
+              </button>
+              <button
+                v-if="canUnpublish(item.status)"
+                class="btnLink"
+                :disabled="actionId === item.id"
+                @click="unpublishOffer(item.id)"
+              >
+                下架
+              </button>
               <button class="btnDanger" :disabled="!isOfferRemovable(item.status) || removingId === item.id" @click="removeOffer(item.id)">删除</button>
             </div>
           </article>
@@ -134,13 +166,29 @@
                 <li><span>已使用</span><strong>{{ detailData.usedQuota ?? 0 }}</strong></li>
                 <li><span>每人限领</span><strong>{{ detailData.perUserQuota ?? '不限' }}</strong></li>
                 <li><span>有效期</span><strong>{{ detailData.startTime }} ~ {{ detailData.endTime }}</strong></li>
-                <li><span>状态</span><strong>{{ getEnumLabel(SPECIAL_OFFER_STATUS_LABEL, detailData.status) }}</strong></li>
+                <li><span>状态</span><strong>{{ detailData.statusLabel || getEnumLabel(SPECIAL_OFFER_STATUS_LABEL, detailData.status) }}</strong></li>
                 <li><span>创建时间</span><strong>{{ detailData.createdAt || '—' }}</strong></li>
               </ul>
             </template>
           </div>
           <div class="modalFooter">
             <button class="btnGhost" @click="closeDetail">关闭</button>
+            <button
+              v-if="detailData && canPublish(detailData.status)"
+              class="btnPrimary"
+              :disabled="actionId === detailData.id"
+              @click="publishOffer(detailData.id)"
+            >
+              立即发布
+            </button>
+            <button
+              v-if="detailData && canUnpublish(detailData.status)"
+              class="btnGhost"
+              :disabled="actionId === detailData.id"
+              @click="unpublishOffer(detailData.id)"
+            >
+              下架
+            </button>
             <button
               v-if="detailData && isOfferEditable(detailData.status)"
               class="btnPrimary"
@@ -178,7 +226,7 @@
               </select>
             </div>
             <div v-if="form.targetType === SPECIAL_OFFER_TARGET_TYPE.BUILDING" class="field">
-              <label class="label">小区 ID</label>
+              <label class="label">小区编号</label>
               <input v-model="form.communityId" class="input" placeholder="指定小区时填写" />
             </div>
             <div v-if="form.targetType === SPECIAL_OFFER_TARGET_TYPE.ROLE" class="field">
@@ -224,6 +272,7 @@
               <select v-model="form.status" class="input">
                 <option v-for="opt in statusFormOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
               </select>
+              <p class="hint">住户端仅见「已发布」且在有效期内；草稿可保存后点「立即发布」。</p>
             </div>
             <div class="fieldRow">
               <div class="field">
@@ -264,11 +313,13 @@ import {
   SPECIAL_OFFER_STATUS,
   SPECIAL_OFFER_STATUS_LABEL,
   SPECIAL_OFFER_STATUS_OPTIONS,
+  SPECIAL_OFFER_STATUS_FORM_OPTIONS,
   SPECIAL_OFFER_TARGET_TYPE,
   SPECIAL_OFFER_TARGET_TYPE_LABEL,
   SPECIAL_OFFER_TARGET_TYPE_OPTIONS
 } from '../../constants/enums'
 import { useIsMobile } from '../../composables/useIsMobile'
+import { toApiDateTime } from '../../utils/datetime'
 
 const DEFAULT_COMMUNITY_ID = import.meta.env.VITE_COMMUNITY_ID || 'com_demo001'
 const { isMobile } = useIsMobile()
@@ -282,6 +333,7 @@ const totalPages = ref(1)
 const targetTypeFilter = ref('')
 const statusFilter = ref('')
 const removingId = ref('')
+const actionId = ref('')
 
 const formOpen = ref(false)
 const editingId = ref('')
@@ -295,7 +347,7 @@ const detailData = ref<SpecialOfferItem | null>(null)
 
 const targetTypeOptions = SPECIAL_OFFER_TARGET_TYPE_OPTIONS
 const statusOptions = SPECIAL_OFFER_STATUS_OPTIONS
-const statusFormOptions = SPECIAL_OFFER_STATUS_OPTIONS
+const statusFormOptions = SPECIAL_OFFER_STATUS_FORM_OPTIONS
 
 const form = reactive({
   title: '',
@@ -309,7 +361,7 @@ const form = reactive({
   minConsumption: undefined as number | undefined,
   startTime: '',
   endTime: '',
-  status: SPECIAL_OFFER_STATUS.DRAFT,
+  status: SPECIAL_OFFER_STATUS.PUBLISHED,
   totalQuota: undefined as number | undefined,
   perUserQuota: undefined as number | undefined
 })
@@ -317,8 +369,21 @@ const form = reactive({
 const extraTargetTypeOption = computed(() => {
   const value = form.targetType
   if (!value || SPECIAL_OFFER_TARGET_TYPE_OPTIONS.some((opt) => opt.value === value)) return null
-  return { value, label: getEnumLabel(SPECIAL_OFFER_TARGET_TYPE_LABEL, value, value) }
+  return { value, label: getEnumLabel(SPECIAL_OFFER_TARGET_TYPE_LABEL, value, '—') }
 })
+
+function offerStatusText(item: SpecialOfferItem) {
+  return item.statusLabel || getEnumLabel(SPECIAL_OFFER_STATUS_LABEL, item.status)
+}
+
+function canPublish(status?: string) {
+  const s = normalizeSpecialOfferStatus(status)
+  return s === SPECIAL_OFFER_STATUS.DRAFT || s === SPECIAL_OFFER_STATUS.ENDED
+}
+
+function canUnpublish(status?: string) {
+  return normalizeSpecialOfferStatus(status) === SPECIAL_OFFER_STATUS.PUBLISHED
+}
 
 function formatMinConsumption(value?: number) {
   if (value == null || value <= 0) return '无门槛'
@@ -341,11 +406,6 @@ function isOfferRemovable(status?: string) {
 function formatQuota(item: SpecialOfferItem) {
   if (item.totalQuota == null) return '不限'
   return `${item.usedQuota ?? 0} / ${item.totalQuota}`
-}
-
-function toApiDateTime(value: string) {
-  if (!value) return ''
-  return `${value.replace('T', ' ')}:00`
 }
 
 function fromApiDateTime(value?: string) {
@@ -376,7 +436,7 @@ function resetForm() {
   form.coverUrl = ''
   form.discountInfo = ''
   form.minConsumption = undefined
-  form.status = SPECIAL_OFFER_STATUS.DRAFT
+  form.status = SPECIAL_OFFER_STATUS.PUBLISHED
   form.totalQuota = undefined
   form.perUserQuota = undefined
   defaultRange()
@@ -413,7 +473,7 @@ function buildPayload(): SpecialOfferCreatePayload {
     targetType: form.targetType,
     startTime: toApiDateTime(form.startTime),
     endTime: toApiDateTime(form.endTime),
-    status: form.status || SPECIAL_OFFER_STATUS.DRAFT
+    status: form.status || SPECIAL_OFFER_STATUS.PUBLISHED
   }
   const targetTags = normalizeTargetTags(form.targetTags).trim()
   if (targetTags) payload.targetTags = targetTags
@@ -557,9 +617,42 @@ async function submitForm() {
     closeForm()
     await load(isEdit ? currentPage : 1)
   } catch (e) {
-    formError.value = e instanceof ApiError ? e.message : '提交失败，请确认是否有特惠推送权限'
+    formError.value = e instanceof ApiError ? e.message : '提交失败'
   } finally {
     submitting.value = false
+  }
+}
+
+async function publishOffer(id: string) {
+  actionId.value = id
+  error.value = ''
+  try {
+    await specialOfferApi.publish(id)
+    if (detailOpen.value && detailData.value?.id === id) {
+      detailData.value = await specialOfferApi.get(id)
+    }
+    await load(page.value)
+  } catch (e) {
+    error.value = e instanceof ApiError ? e.message : '发布失败'
+  } finally {
+    actionId.value = ''
+  }
+}
+
+async function unpublishOffer(id: string) {
+  if (!confirm('确认下架？住户端将立即看不到该特惠。')) return
+  actionId.value = id
+  error.value = ''
+  try {
+    await specialOfferApi.unpublish(id)
+    if (detailOpen.value && detailData.value?.id === id) {
+      detailData.value = await specialOfferApi.get(id)
+    }
+    await load(page.value)
+  } catch (e) {
+    error.value = e instanceof ApiError ? e.message : '下架失败'
+  } finally {
+    actionId.value = ''
   }
 }
 
@@ -633,6 +726,7 @@ onMounted(async () => {
 .fieldRow { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .label { display: block; font-size: 13px; color: #8c8c9a; margin-bottom: 6px; }
 .label em { color: #e05c5c; font-style: normal; }
+.hint { margin: 6px 0 0; font-size: 12px; color: #8c8c9a; line-height: 1.4; }
 .textarea { width: 100%; padding: 8px 12px; border: 1px solid #e8e8ec; border-radius: 8px; resize: vertical; box-sizing: border-box; }
 .detailCover { margin-bottom: 16px; }
 .detailCover img { width: 100%; max-height: 200px; object-fit: cover; border-radius: 8px; }

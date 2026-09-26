@@ -3,7 +3,10 @@
     <div class="header">
       <div>
         <h1 class="title">板块商家</h1>
-        <p class="desc">管理本板块商家与个体负责人；入驻审核由统筹负责人处理</p>
+        <p class="desc">
+          管理<strong>本板块已挂接</strong>的商家与个体负责人；可审核本板块入驻申请。
+          「接入商家」= 把已有平台商家挂进本板块，不是新建平台店。
+        </p>
       </div>
       <div v-if="tab === 'individuals' && canManageIndividualLeaders" class="headerActions">
         <button class="btnPrimary" @click="openIndividualCreate">新增个体负责人</button>
@@ -110,26 +113,24 @@
       </template>
 
       <template v-else>
-        <table v-if="pendingMerchants.length" class="table">
+        <table v-if="pendingApprovals.length" class="table">
           <thead>
             <tr>
               <th>商家名称</th>
-              <th>申请身份</th>
-              <th>分类</th>
-              <th>联系电话</th>
+              <th>类型</th>
+              <th>状态</th>
               <th>申请时间</th>
               <th>操作</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="item in pendingMerchants" :key="item.id">
-              <td>{{ item.name }}</td>
-              <td>{{ applyRoleLabel(item) }}</td>
-              <td>{{ item.category || '—' }}</td>
-              <td>{{ item.contactPhone || '—' }}</td>
+            <tr v-for="item in pendingApprovals" :key="item.id">
+              <td>{{ item.merchantName || item.merchantId || '—' }}</td>
+              <td>{{ getEnumLabel(SECTOR_APPROVAL_TYPE_LABEL, item.type) }}</td>
+              <td>{{ getEnumLabel(MERCHANT_AUDIT_STATUS_LABEL, item.status, '待审核') }}</td>
               <td>{{ item.createdAt || '—' }}</td>
               <td class="actions">
-                <span class="hintInline">待统筹审核</span>
+                <button class="btnLink" @click="openAudit(item)">审核</button>
               </td>
             </tr>
           </tbody>
@@ -228,6 +229,35 @@
         </div>
       </div>
 
+      <div v-if="auditTarget" class="modalOverlay" @click.self="closeAudit">
+        <div class="modal" :class="{ mobileSheet: isMobile }">
+          <div class="modalHeader">
+            <h3 class="modalTitle">审核商家「{{ auditTarget.merchantName || auditTarget.merchantId }}」</h3>
+            <button class="modalClose" @click="closeAudit">&times;</button>
+          </div>
+          <div class="modalBody">
+            <div class="field">
+              <label class="label">审核结果</label>
+              <select v-model="auditForm.approved" class="input">
+                <option :value="true">通过</option>
+                <option :value="false">驳回</option>
+              </select>
+            </div>
+            <div v-if="!auditForm.approved" class="field">
+              <label class="label">驳回说明</label>
+              <textarea v-model="auditForm.remark" class="textarea" rows="3" placeholder="请填写驳回原因" />
+            </div>
+            <p v-if="auditError" class="error">{{ auditError }}</p>
+          </div>
+          <div class="modalFooter">
+            <button class="btnGhost" @click="closeAudit">取消</button>
+            <button class="btnPrimary" :disabled="auditing" @click="submitAudit">
+              {{ auditing ? '提交中...' : '提交审核' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div v-if="merchantModalOpen" class="modalOverlay" @click.self="closeMerchantModal">
         <div class="modal" :class="{ mobileSheet: isMobile }">
           <div class="modalHeader">
@@ -235,9 +265,17 @@
             <button class="modalClose" @click="closeMerchantModal">&times;</button>
           </div>
           <div class="modalBody">
+            <p class="formHint">
+              <strong>平台商家</strong>：全平台统一店档（「商家管理」里已通过的店）。
+              <strong>板块商家</strong>：把该店挂到本板块，用于本板块抽佣、排名、特惠——不是再开一家新店。
+            </p>
             <div class="field">
-              <label class="label">平台商家 ID</label>
-              <input v-model="merchantForm.platformMerchantId" class="input" placeholder="pm_xxx" />
+              <label class="label">平台商家编号</label>
+              <input
+                v-model="merchantForm.platformMerchantId"
+                class="input"
+                placeholder="在商家管理复制商家编号"
+              />
             </div>
             <div class="field">
               <label class="label">商家名称</label>
@@ -281,18 +319,18 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import ResidentSearchSelect from '../../components/ResidentSearchSelect.vue'
 import MerchantDistanceModal from '../../components/MerchantDistanceModal.vue'
 import { merchantApi, sectorLeaderPortalApiExt } from '../../api/services'
-import type { IndividualLeaderItem, MerchantItem } from '../../api/types'
+import type { IndividualLeaderItem, MerchantItem, SectorLeaderApprovalItem } from '../../api/types'
 import { ApiError, formatApiError } from '../../api/request'
 import {
   ENTITY_STATUS_LABEL,
   getEnumLabel,
   MERCHANT_AUDIT_STATUS,
+  MERCHANT_AUDIT_STATUS_LABEL,
   MERCHANT_LEVEL_LABEL,
   MERCHANT_STATUS,
   MERCHANT_STATUS_LABEL,
   RESIDENT_STATUS,
-  ROLE_LABEL,
-  USER_ROLE,
+  SECTOR_APPROVAL_TYPE_LABEL,
   SECTOR_TYPE,
   SECTOR_TYPE_LABEL
 } from '../../constants/enums'
@@ -305,7 +343,7 @@ const portal = useSectorLeaderPortalStore()
 const { isMobile } = useIsMobile()
 const tab = ref<TabKey>('merchants')
 const merchants = ref<MerchantItem[]>([])
-const pendingMerchants = ref<MerchantItem[]>([])
+const pendingApprovals = ref<SectorLeaderApprovalItem[]>([])
 const individualLeaders = ref<IndividualLeaderItem[]>([])
 const loading = ref(false)
 const error = ref('')
@@ -349,6 +387,14 @@ const merchantForm = reactive({
   address: ''
 })
 
+const auditTarget = ref<SectorLeaderApprovalItem | null>(null)
+const auditing = ref(false)
+const auditError = ref('')
+const auditForm = reactive({
+  approved: true,
+  remark: ''
+})
+
 const sectorLeaderId = computed(() => portal.detail?.id || '')
 const canManageIndividualLeaders = computed(
   () => portal.detail?.canManageIndividualLeaders === true
@@ -357,11 +403,6 @@ const canManageIndividualLeaders = computed(
 function formatRate(value?: number) {
   if (value == null) return '—'
   return `${(Number(value) * 100).toFixed(0)}%`
-}
-
-function applyRoleLabel(item?: MerchantItem | null) {
-  const role = item?.applyRole || item?.intendedRole || USER_ROLE.MERCHANT
-  return getEnumLabel(ROLE_LABEL, role, role)
 }
 
 async function ensurePortal() {
@@ -380,17 +421,17 @@ async function loadMerchants(pageNo = 1) {
   totalPages.value = res.pagination?.totalPages || 1
 }
 
-async function loadPending(pageNo = 1) {
-  const res = await merchantApi.list({
-    page: pageNo,
-    pageSize: 20,
-    keyword: keyword.value.trim() || undefined,
-    auditStatus: MERCHANT_AUDIT_STATUS.PENDING,
-    sort: '-createdAt'
-  })
-  pendingMerchants.value = res.list || []
-  page.value = res.pagination?.page || pageNo
-  totalPages.value = res.pagination?.totalPages || 1
+async function loadPending() {
+  if (!sectorLeaderId.value) {
+    pendingApprovals.value = []
+    return
+  }
+  const res = await sectorLeaderPortalApiExt.listApprovals(sectorLeaderId.value)
+  pendingApprovals.value = (res.list || []).filter(
+    (item) => !item.status || item.status === MERCHANT_AUDIT_STATUS.PENDING || item.status === 'pending'
+  )
+  page.value = 1
+  totalPages.value = 1
 }
 
 async function loadIndividuals() {
@@ -411,7 +452,7 @@ async function load(pageNo = 1) {
   try {
     await ensurePortal()
     if (tab.value === 'merchants') await loadMerchants(pageNo)
-    else if (tab.value === 'pending') await loadPending(pageNo)
+    else if (tab.value === 'pending') await loadPending()
     else await loadIndividuals()
   } catch (e) {
     error.value = e instanceof ApiError ? e.message : '加载失败'
@@ -594,6 +635,40 @@ function closeMerchantModal() {
   merchantSaving.value = false
 }
 
+function openAudit(item: SectorLeaderApprovalItem) {
+  auditTarget.value = item
+  auditForm.approved = true
+  auditForm.remark = ''
+  auditError.value = ''
+}
+
+function closeAudit() {
+  auditTarget.value = null
+  auditing.value = false
+}
+
+async function submitAudit() {
+  if (!auditTarget.value || !sectorLeaderId.value) return
+  if (!auditForm.approved && !auditForm.remark.trim()) {
+    auditError.value = '驳回时请填写说明'
+    return
+  }
+  auditing.value = true
+  auditError.value = ''
+  try {
+    await sectorLeaderPortalApiExt.auditApproval(sectorLeaderId.value, auditTarget.value.id, {
+      approved: auditForm.approved,
+      remark: auditForm.remark.trim() || undefined
+    })
+    closeAudit()
+    await loadPending()
+  } catch (e) {
+    auditError.value = formatApiError(e, '审核失败')
+  } finally {
+    auditing.value = false
+  }
+}
+
 async function submitMerchant() {
   if (!merchantForm.platformMerchantId.trim() || !merchantForm.name.trim() || !merchantForm.category.trim() || !merchantForm.contactPhone.trim()) {
     merchantFormError.value = '请填写完整商家信息'
@@ -615,7 +690,7 @@ async function submitMerchant() {
     })
     closeMerchantModal()
     tab.value = 'pending'
-    await loadPending(1)
+    await loadPending()
   } catch (e) {
     merchantFormError.value = e instanceof ApiError ? e.message : '提交失败'
   } finally {
@@ -632,6 +707,8 @@ onMounted(() => load(1))
 .headerActions { display: flex; gap: 8px; }
 .title { font-size: 24px; font-weight: 600; color: #1f1f2e; margin-bottom: 8px; }
 .desc { font-size: 14px; color: #8c8c9a; }
+.formHint { font-size: 13px; color: #5c5c66; line-height: 1.5; margin: 0 0 12px; padding: 10px 12px; background: #f6f7fb; border-radius: 8px; }
+.formHint code { font-size: 12px; background: #eee; padding: 1px 4px; border-radius: 4px; }
 .tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
 .tab { padding: 8px 16px; border-radius: 8px; border: 1px solid #e8e8ec; background: #fff; color: #5c5c66; cursor: pointer; font-size: 14px; }
 .tab.active { background: #5c5c9e; color: #fff; border-color: #5c5c9e; }

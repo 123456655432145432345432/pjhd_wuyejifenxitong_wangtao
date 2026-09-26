@@ -4,7 +4,7 @@
       <div>
         <h1 class="title">分成账户</h1>
         <p class="desc">
-          物业公司账面分成余额（settlementBalance）。与「公司账户」（领导归集、无个人提现）不是同一账户。
+          物业公司账面分成余额。与「公司账户」（领导归集、无个人提现）不是同一账户。
           本页只消化上线前旧余额；新单走微信支付分账完结后不再申请提现。
         </p>
       </div>
@@ -17,7 +17,7 @@
       <input
         v-model.trim="platformCompanyId"
         class="input"
-        placeholder="物业公司 ID"
+        placeholder="物业公司编号"
       />
       <button class="btnSecondary" :disabled="loading" @click="loadAll">加载</button>
     </div>
@@ -207,8 +207,8 @@ function explainSettlementError(e: unknown, fallback: string) {
   if (/NoResourceFoundException|404|Not Found|no static resource/i.test(msg)) {
     return (
       `${msg}\n` +
-      `前端请求：GET /admin/property-companies/{id}/settlement-balance。` +
-      `若仍 404，请后端确认 AdminPropertyCompanyController 是否已部署到当前环境。`
+      `前端请求结算余额接口。` +
+      `若仍找不到接口，请后端确认物业结算余额接口是否已部署到当前环境。`
     )
   }
   return msg
@@ -280,7 +280,7 @@ function openApply() {
 
 async function submit() {
   if (!companyId.value) {
-    formError.value = '缺少物业公司 ID'
+    formError.value = '缺少物业公司编号'
     return
   }
   if (!amount.value || amount.value <= 0) {

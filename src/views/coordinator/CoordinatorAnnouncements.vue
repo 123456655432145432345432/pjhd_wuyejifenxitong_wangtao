@@ -294,7 +294,7 @@
                 <span class="detailLabel">收集字段</span>
                 <ul class="collectFieldList">
                   <li v-for="field in detailData.collectFields" :key="field.name">
-                    {{ field.label || field.name }}（{{ field.type }}）
+                    {{ field.label || field.name }}（{{ getEnumLabel(ANNOUNCEMENT_COLLECT_FIELD_TYPE_LABEL, field.type, '—') }}）
                   </li>
                 </ul>
               </div>
@@ -417,6 +417,7 @@ import type {
 import { useAuthStore } from '../../stores/auth'
 import { useIsMobile } from '../../composables/useIsMobile'
 import {
+  ANNOUNCEMENT_COLLECT_FIELD_TYPE_LABEL,
   ANNOUNCEMENT_COLLECT_FIELD_TYPE_OPTIONS,
   ANNOUNCEMENT_STATUS,
   ANNOUNCEMENT_TARGET_ROLE_OPTIONS,
@@ -511,7 +512,7 @@ async function openReadStats(id: string) {
 
 const targetRolesText = computed(() => {
   if (selectAllTargetRoles.value || !form.value.selectedTargetRoles.length) return '全部角色'
-  return form.value.selectedTargetRoles.map((role) => getEnumLabel(ROLE_LABEL, role, role)).join('、')
+  return form.value.selectedTargetRoles.map((role) => getEnumLabel(ROLE_LABEL, role, '—')).join('、')
 })
 
 const buildingsText = computed(() => {

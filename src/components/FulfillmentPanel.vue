@@ -1,7 +1,9 @@
 <template>
   <section class="fulfillment">
     <h4 class="sectionTitle">履约</h4>
-    <p v-if="order.requiresDelivery === false" class="hint">本单无需配送（团购单无履约选择）。</p>
+    <p v-if="order.requiresDelivery === false || fulfillmentModeOf(order) === FULFILLMENT_MODE.NONE" class="hint">
+      无需配送（团购 / 社区食堂等），不出现履约选择。
+    </p>
     <ul v-else class="infoGrid">
       <li>
         <span>履约方式</span>
@@ -11,7 +13,7 @@
         <span>选择截止</span>
         <strong :class="{ overdue: isChoiceOverdue(order) }">
           {{ order.fulfillmentDeadline || '—' }}
-          <em v-if="isChoiceOverdue(order)">超时未选</em>
+          <em v-if="isChoiceOverdue(order)">已超时，将自动改派平台配送</em>
         </strong>
       </li>
       <li>
@@ -31,6 +33,13 @@
         <strong>{{ carrierTypeLabelOf(order) }}</strong>
       </li>
     </ul>
+
+    <p
+      v-if="variant === 'merchant' && fulfillmentModeOf(order) === FULFILLMENT_MODE.COURIER_HALL"
+      class="hint"
+    >
+      已选平台配送，订单在待抢大厅；无需再次发布。
+    </p>
 
     <div v-if="variant === 'admin' && canAdminOverride(order)" class="actions">
       <button
@@ -56,7 +65,7 @@
         :disabled="busy"
         @click="$emit('choose', FULFILLMENT_MODE.MERCHANT_SELF)"
       >
-        商家自配
+        商家自行配送
       </button>
       <button
         v-if="canMerchantChoose(order)"
@@ -64,7 +73,7 @@
         :disabled="busy"
         @click="$emit('choose', FULFILLMENT_MODE.COURIER_HALL)"
       >
-        发大厅（平台配送）
+        发布到平台配送
       </button>
       <button
         v-if="canMerchantConfirmDelivery(order)"
@@ -87,7 +96,7 @@
         </li>
       </ul>
     </div>
-    <p v-else-if="variant === 'admin'" class="hint">改派请填写备注；审计写入 fulfillment_choice_logs。</p>
+    <p v-else-if="variant === 'admin'" class="hint">改派请填写备注；操作将写入履约改派审计日志。</p>
   </section>
 </template>
 

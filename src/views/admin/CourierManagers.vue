@@ -74,7 +74,7 @@
             <div v-if="!editingId" class="field">
               <label class="label">选择业主 <em>*</em></label>
               <ResidentSearchSelect v-model="form.residentId" :status="RESIDENT_STATUS.ACTIVE" auto-open />
-              <p class="fieldHint">输入姓名或手机号搜索后选择，勿手填 res_ ID</p>
+              <p class="fieldHint">输入姓名或手机号搜索后选择，勿手填编号</p>
             </div>
             <div class="field">
               <label class="label">姓名 <em>*</em></label>
@@ -92,18 +92,22 @@
                   {{ c.name || c.id }}
                 </option>
               </select>
-              <p v-if="!communities.length" class="fieldHint">暂无小区列表时可手动填写小区 ID</p>
+              <p v-if="!communities.length" class="fieldHint">暂无小区列表时可手动填写小区编号</p>
               <input
                 v-if="!communities.length"
                 v-model="form.communityId"
                 class="input"
                 style="margin-top: 8px"
-                placeholder="com_xxx"
+                placeholder="小区编号，如 com_xxx"
               />
             </div>
             <div class="field">
               <label class="label">负责区域</label>
               <input v-model="form.responsibleArea" class="input" placeholder="1栋-5栋" />
+            </div>
+            <div v-if="editingId" class="field">
+              <label class="label">分成比例（0~1）</label>
+              <input v-model.number="form.shareRate" type="number" min="0" max="1" step="0.01" class="input" />
             </div>
             <p v-if="formError" class="error">{{ formError }}</p>
             <div class="modalFooter">
@@ -318,7 +322,7 @@ function changePage(p: number) { load(p) }
 
 function openCreate() {
   editingId.value = ''
-  form.value = { residentId: '', name: '', phone: '', communityId: '', responsibleArea: '' }
+  form.value = { residentId: '', name: '', phone: '', communityId: '', responsibleArea: '', shareRate: undefined as number | undefined }
   formError.value = ''
   modalOpen.value = true
 }
@@ -330,7 +334,8 @@ function openEdit(item: CourierManagerItem) {
     name: item.name || '',
     phone: item.phone || '',
     communityId: item.communityId || '',
-    responsibleArea: item.responsibleArea || ''
+    responsibleArea: item.responsibleArea || '',
+    shareRate: item.shareRate
   }
   formError.value = ''
   modalOpen.value = true
@@ -351,7 +356,11 @@ async function submitForm() {
         name: form.value.name.trim(),
         phone: form.value.phone.trim(),
         communityId: form.value.communityId.trim() || undefined,
-        responsibleArea: form.value.responsibleArea.trim() || undefined
+        responsibleArea: form.value.responsibleArea.trim() || undefined,
+        shareRate:
+          form.value.shareRate === undefined || form.value.shareRate === null
+            ? undefined
+            : Number(form.value.shareRate)
       })
     } else {
       if (!form.value.residentId.trim() || !form.value.communityId.trim()) {

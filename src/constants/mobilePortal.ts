@@ -41,8 +41,13 @@ const ADMIN_WORKBENCH_BASE: MobileWorkbenchSection[] = [
       { name: '价格审批', icon: 'wallet', route: 'price-approvals', firstBatchOptimize: true },
       { name: '楼栋变更审批', icon: 'home', route: 'building-change-approvals' },
       { name: '退货审批', icon: 'wallet', route: 'order-refund-approvals', firstBatchOptimize: true },
+      { name: '发放审批', icon: 'points', route: 'reward-grant-approvals' },
+      { name: '活动组审核', icon: 'people', route: 'activity-group-reviews' },
+      { name: '住户注销终审', icon: 'resident', route: 'resident-deletion-reviews' },
       { name: '通告发布', icon: 'notice', route: 'notice', firstBatchOptimize: true },
-      { name: '定向推送', icon: 'target', route: 'directed-message' }
+      { name: '定向推送', icon: 'target', route: 'directed-message' },
+      { name: '住户消息', icon: 'notice', route: 'property-chat' },
+      { name: '欠费报表', icon: 'chart', route: 'arrears-report' }
     ]
   },
   {
@@ -52,32 +57,47 @@ const ADMIN_WORKBENCH_BASE: MobileWorkbenchSection[] = [
       { name: '住户管理', icon: 'resident', route: 'resident', firstBatchOptimize: true },
       { name: '商家管理', icon: 'merchant', route: 'merchant', firstBatchOptimize: true },
       { name: '社区食堂', icon: 'merchant', route: 'canteen-manage' },
-      { name: '积分管理', icon: 'points', route: 'points' },
-      { name: '送货管理', icon: 'delivery', route: 'delivery' },
-      { name: '社区论坛', icon: 'notice', route: 'community-forum' },
-      { name: '板块负责人', icon: 'people', route: 'sector-leaders' },
-      { name: '一级代理', icon: 'people', route: 'individual-leaders' },
       { name: '业主商户（分销）', icon: 'merchant', route: 'resident-merchants' },
+      { name: '积分管理', icon: 'points', route: 'points' },
+      { name: '建设积分', icon: 'points', route: 'community-points' },
+      { name: '资料奖励', icon: 'param', route: 'profile-rewards' },
+      { name: '送货管理', icon: 'delivery', route: 'delivery' },
+      { name: '配送价格区间', icon: 'wallet', route: 'delivery-price-ranges' },
+      { name: '楼宇结构', icon: 'home', route: 'room-structure' },
+      { name: '社区论坛', icon: 'notice', route: 'community-forum' },
       { name: '商家广告设置', icon: 'retail', route: 'merchant-ad-settings' },
-      { name: '物业联系方式', icon: 'notice', route: 'property-contact' }
+      { name: '物业联系方式', icon: 'notice', route: 'property-contact' },
+      { name: '转给物业对账', icon: 'history', route: 'transfer-to-property' },
+      { name: '物业公司', icon: 'home', route: 'property-companies' }
     ]
   },
   {
     title: '组织与配置',
     items: [
       { name: '社区绑定', icon: 'home', route: 'community-entity' },
+      { name: '统筹人员', icon: 'people', route: 'coordinators' },
+      { name: '板块负责人', icon: 'people', route: 'sector-leaders' },
+      { name: '一级代理', icon: 'people', route: 'individual-leaders' },
+      { name: '区域/项目负责人', icon: 'people', route: 'regional-leaders' },
+      { name: '快递负责人', icon: 'people', route: 'courier-managers' },
       { name: '物业操作员', icon: 'people', route: 'property-operators' },
+      { name: '业务角色账号', icon: 'people', route: 'role-accounts' },
       { name: '权限配置', icon: 'permission', route: 'permission' },
       { name: '参数配置', icon: 'param', route: 'param' },
-      { name: '快递负责人', icon: 'people', route: 'courier-managers' },
-      { name: '业务角色账号', icon: 'people', route: 'role-accounts' },
+      { name: '平台配置', icon: 'param', route: 'platform-config' },
+      { name: '平台分成配置', icon: 'money', route: 'platform-share-config' },
+      { name: '导航配置', icon: 'param', route: 'navigation-items' },
+      { name: '区域配额', icon: 'chart', route: 'region-quotas' },
+      { name: '物业银行卡', icon: 'bank', route: 'property-bank-cards' },
       { name: '公司账户', icon: 'money', route: 'company-account' },
       { name: '分成账户', icon: 'wallet', route: 'settlement-account' },
       { name: '分成明细', icon: 'history', route: 'distribution-records' },
       { name: '分成统计', icon: 'chart', route: 'distribution-stats' },
+      { name: '待追回台账', icon: 'history', route: 'split-recovery' },
+      { name: '我的收款方式', icon: 'wallet', route: 'transfer-accounts' },
+      { name: '结算配置', icon: 'bank', route: 'settlement-config' },
       { name: '收款账户', icon: 'bank', route: 'cbk-accounts' },
       { name: '分账对账台', icon: 'history', route: 'cbk-reconcile' },
-      { name: '平台分成配置', icon: 'money', route: 'platform-share-config' },
       { name: '平台收益', icon: 'chart', route: 'platform-earnings' }
     ]
   }
@@ -108,7 +128,7 @@ const ROLE_HOME_META: Record<string, RoleHomeMeta> = {
     homeTitle: '商家工作首页',
     homeSubtitle: '处理订单、商品与积分提现',
     homeFocusCards: [],
-    quickRouteNames: ['merchant-orders', 'merchant-products', 'merchant-posts', 'merchant-keywords']
+    quickRouteNames: ['merchant-orders', 'wechat-applyment', 'merchant-products', 'merchant-posts']
   },
   [USER_ROLE.COURIER]: {
     homeTitle: '配送工作首页',

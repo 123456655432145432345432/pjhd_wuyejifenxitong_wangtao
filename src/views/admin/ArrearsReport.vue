@@ -242,9 +242,13 @@ function isPreviewStale(preview: ArrearsReminderPreviewResult | null, bufferMs =
 }
 
 function isPreviewExpiredError(e: unknown) {
+  if (!(e instanceof ApiError)) return false
+  // 2026-09-07 实测码 96033；97004 为历史规划值，兼容保留
   return (
-    e instanceof ApiError &&
-    (e.errorCode === API_ERROR_CODE.PREVIEW_EXPIRED || e.code === 97004)
+    e.errorCode === API_ERROR_CODE.PREVIEW_EXPIRED ||
+    e.code === 96033 ||
+    e.code === 97004 ||
+    /预览.*过期|过期.*预览|preview.*expir/i.test(e.message || '')
   )
 }
 
@@ -253,9 +257,12 @@ function newReminderRequestId() {
 }
 
 function isDuplicateReminderError(e: unknown) {
+  if (!(e instanceof ApiError)) return false
+  // 2026-09-07：重复提交走 10002 + message 含「已发送过」；97005 为历史规划值
   return (
-    e instanceof ApiError &&
-    (e.errorCode === API_ERROR_CODE.ARREARS_REMINDER_DUPLICATE || e.code === 97005)
+    e.errorCode === API_ERROR_CODE.ARREARS_REMINDER_DUPLICATE ||
+    e.code === 97005 ||
+    (e.code === 10002 && /已发送过/.test(e.message || ''))
   )
 }
 
@@ -512,7 +519,7 @@ function handleReminderSendError(e: unknown) {
     return
   }
   if (isPreviewExpiredError(e)) {
-    reminderError.value = '发送名单需要重新确认，请再次点击「确认发送」'
+    reminderError.value = '催缴预览已过期，请关闭后重新预览再发送'
     return
   }
   if (isWechatTemplateError(e)) {
@@ -521,7 +528,7 @@ function handleReminderSendError(e: unknown) {
   }
   if (isReminderWriteError(e)) {
     reminderError.value =
-      '催缴发送失败：后端写入催缴记录或物业聊天时异常。请关闭后重新预览再发；若仍失败，需要后端查催缴发送接口日志。'
+      '催缴发送失败：后端异常。请关闭后重新预览再发；若仍失败，把 Response 中 code/message/traceId 转后端。'
     return
   }
   reminderError.value = e instanceof ApiError ? e.message : '发送失败'
@@ -566,7 +573,7 @@ async function sendReminder() {
         await loadReminderPreview()
         reminderHint.value = '名单已刷新，请再次确认发送'
       } catch {
-        reminderError.value = '催缴发送范围已过期，请重新预览后再发送'
+        reminderError.value = '催缴预览已过期，请重新预览后再发送'
       }
       return
     }

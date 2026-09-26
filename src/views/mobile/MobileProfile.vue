@@ -18,6 +18,13 @@
   </section>
 
   <section class="profileCard">
+    <button
+      v-if="showTransferAccounts"
+      class="actionBtn"
+      @click="goTransferAccounts"
+    >
+      收款方式
+    </button>
     <button class="actionBtn" @click="goRoleHome">{{ homeActionLabel }}</button>
     <button class="actionBtn actionDanger" @click="logout">退出登录</button>
   </section>
@@ -49,6 +56,15 @@ const roleText = computed(() =>
 const homeActionLabel = computed(() =>
   isAdminRole(auth.profile?.role) ? '进入数据大盘' : '进入角色首页'
 )
+const showTransferAccounts = computed(() => {
+  const role = auth.profile?.role
+  return (
+    role === USER_ROLE.PROPERTY_ADMIN ||
+    role === USER_ROLE.COORDINATOR ||
+    role === USER_ROLE.SECTOR_LEADER ||
+    role === USER_ROLE.INDIVIDUAL_LEADER
+  )
+})
 
 async function loadCompanies() {
   if (!isAdminRole(auth.profile?.role)) return
@@ -68,6 +84,10 @@ async function loadCompanies() {
 
 function goRoleHome() {
   void router.push({ name: getRoleHomeRoute(auth.profile?.role) })
+}
+
+function goTransferAccounts() {
+  void router.push({ name: 'transfer-accounts' })
 }
 
 function logout() {

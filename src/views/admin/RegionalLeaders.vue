@@ -48,7 +48,7 @@
               <button
                 class="linkBtn danger"
                 :disabled="!item.residentId"
-                :title="item.residentId ? '停用该负责人账号' : '缺少住户账号标识，请联系后端补充 residentId'"
+                :title="item.residentId ? '停用该负责人账号' : '缺少住户账号标识，请联系后端补充'"
                 @click="removeRegional(item)"
               >
                 停用账号
@@ -74,7 +74,7 @@
               <button
                 class="linkBtn danger"
                 :disabled="!item.residentId"
-                :title="item.residentId ? '停用该负责人账号' : '缺少住户账号标识，请联系后端补充 residentId'"
+                :title="item.residentId ? '停用该负责人账号' : '缺少住户账号标识，请联系后端补充'"
                 @click="removeProject(item)"
               >
                 停用账号
@@ -467,7 +467,7 @@ async function submit() {
 
 async function removeRegional(item: RegionalLeaderItem) {
   if (!item.residentId) {
-    error.value = '该区域负责人缺少 residentId，无法安全停用；请联系后端补充账号标识'
+    error.value = '该区域负责人缺少住户账号标识，无法安全停用；请联系后端补充'
     return
   }
   if (
@@ -488,7 +488,7 @@ async function removeRegional(item: RegionalLeaderItem) {
 
 async function removeProject(item: ProjectLeaderItem) {
   if (!item.residentId) {
-    error.value = '该项目负责人缺少 residentId，无法安全停用；请联系后端补充账号标识'
+    error.value = '该项目负责人缺少住户账号标识，无法安全停用；请联系后端补充'
     return
   }
   if (

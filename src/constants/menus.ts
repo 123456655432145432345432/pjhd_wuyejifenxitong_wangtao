@@ -15,6 +15,7 @@ export const adminMenus: Menu[] = [
     children: [
       { name: '商家入驻审核', icon: 'merchant', route: 'merchant-onboarding-approval' },
       { name: '商家管理', icon: 'merchant', route: 'merchant' },
+      { name: '物业推荐', icon: 'merchant', route: 'merchant-recommended' },
       { name: '积分审批', icon: 'points', route: 'merchant-point-approval' },
       { name: '商家提现审批', icon: 'wallet', route: 'merchant-withdrawal-approval' },
       { name: '配送员提现审批', icon: 'wallet', route: 'role-withdrawal-approval' },
@@ -24,6 +25,8 @@ export const adminMenus: Menu[] = [
   },
   { name: '价格审批', icon: 'wallet', route: 'price-approvals' },
   { name: '权限配置', icon: 'permission', route: 'permission' },
+  { name: '物业公司', icon: 'home', route: 'property-companies' },
+  { name: '统筹人员', icon: 'people', route: 'coordinators' },
   { name: '板块负责人', icon: 'people', route: 'sector-leaders' },
   { name: '一级代理', icon: 'people', route: 'individual-leaders' },
   { name: '社区绑定', icon: 'home', route: 'community-entity' },
@@ -31,6 +34,11 @@ export const adminMenus: Menu[] = [
   { name: '参数配置', icon: 'param', route: 'param' },
   { name: '物业联系方式', icon: 'notice', route: 'property-contact' },
   { name: '积分管理', icon: 'points', route: 'points' },
+  { name: '发放审批', icon: 'points', route: 'reward-grant-approvals' },
+  { name: '物业银行卡', icon: 'bank', route: 'property-bank-cards' },
+  { name: '区域配额', icon: 'chart', route: 'region-quotas' },
+  { name: '导航配置', icon: 'param', route: 'navigation-items' },
+  { name: '活动组审核', icon: 'people', route: 'activity-group-reviews' },
   { name: '通告发布', icon: 'notice', route: 'notice' },
   { name: '定向推送', icon: 'target', route: 'directed-message' },
   { name: '住户消息', icon: 'notice', route: 'property-chat' },
@@ -50,15 +58,20 @@ export const adminMenus: Menu[] = [
   { name: '分成账户', icon: 'wallet', route: 'settlement-account' },
   { name: '分成明细', icon: 'history', route: 'distribution-records' },
   { name: '分成统计', icon: 'chart', route: 'distribution-stats' },
+  { name: '待追回台账', icon: 'history', route: 'split-recovery' },
+  { name: '我的收款方式', icon: 'wallet', route: 'transfer-accounts' },
   {
-    name: '微信收付通分账', icon: 'bank', route: 'cbk-accounts',
+    name: '结算与分账', icon: 'bank', route: 'settlement-config',
     children: [
-      { name: '收款账户（二级商户号）', icon: 'bank', route: 'cbk-accounts' },
-      { name: '分账对账台', icon: 'history', route: 'cbk-reconcile' }
+      { name: '结算配置', icon: 'bank', route: 'settlement-config' },
+      { name: '收款账户（历史）', icon: 'bank', route: 'cbk-accounts' },
+      { name: '分账对账台（历史）', icon: 'history', route: 'cbk-reconcile' }
     ]
   },
   { name: '区域/项目负责人', icon: 'people', route: 'regional-leaders' },
   { name: '平台分成配置', icon: 'money', route: 'platform-share-config' },
+  { name: '平台配置', icon: 'param', route: 'platform-config' },
+  { name: '住户注销终审', icon: 'resident', route: 'resident-deletion-reviews' },
   { name: '平台收益', icon: 'chart', route: 'platform-earnings' }
 ]
 
@@ -69,14 +82,25 @@ export const PROPERTY_LEADER_ONLY_ROUTES = [
   'property-operators',
   'company-account',
   'settlement-account',
-  'profile-rewards',
-  'community-points',
   'regional-leaders',
-  'price-approvals'
+  'price-approvals',
+  'coordinators',
+  'reward-grant-approvals',
+  'property-bank-cards',
+  'region-quotas',
+  'navigation-items',
+  'activity-group-reviews',
+  'settlement-config'
 ] as const
 
 /** 平台管理员专属菜单（其余角色侧栏不展示、路由不可进） */
-export const PLATFORM_ADMIN_ONLY_ROUTES = ['platform-share-config', 'platform-earnings'] as const
+export const PLATFORM_ADMIN_ONLY_ROUTES = [
+  'platform-share-config',
+  'platform-config',
+  'platform-earnings',
+  'property-companies',
+  'resident-deletion-reviews'
+] as const
 
 /** 物业操作员：日常操作权限，无参数配置 / 权限分配 / 人员管理 */
 export const propertyOperatorMenus: Menu[] = adminMenus.filter(
@@ -85,6 +109,7 @@ export const propertyOperatorMenus: Menu[] = adminMenus.filter(
 
 export const merchantMenus: Menu[] = [
   { name: '店铺概览', icon: 'dashboard', route: 'merchant-overview' },
+  { name: '微信收款', icon: 'wallet', route: 'wechat-applyment' },
   { name: '订单管理', icon: 'retail', route: 'merchant-orders' },
   { name: '商品管理', icon: 'merchant', route: 'merchant-products' },
   { name: '店铺动态', icon: 'notice', route: 'merchant-posts' },
@@ -118,7 +143,8 @@ export const coordinatorMenus: Menu[] = [
   { name: '转给物业对账', icon: 'history', route: 'transfer-to-property' },
   { name: '分成统计', icon: 'money', route: 'coordinator-stats' },
   { name: '分成明细', icon: 'history', route: 'coordinator-records' },
-  { name: '提现管理', icon: 'wallet', route: 'coordinator-withdrawals' }
+  { name: '提现管理', icon: 'wallet', route: 'coordinator-withdrawals' },
+  { name: '收款方式', icon: 'wallet', route: 'transfer-accounts' }
 ]
 
 export const sectorLeaderMenus: Menu[] = [
@@ -128,7 +154,8 @@ export const sectorLeaderMenus: Menu[] = [
   { name: '板块特惠', icon: 'retail', route: 'sector-leader-offers' },
   { name: '区域负责人', icon: 'people', route: 'regional-leaders' },
   { name: '转给物业对账', icon: 'history', route: 'transfer-to-property' },
-  { name: '提现管理', icon: 'wallet', route: 'sector-leader-withdrawals' }
+  { name: '提现管理', icon: 'wallet', route: 'sector-leader-withdrawals' },
+  { name: '收款方式', icon: 'wallet', route: 'transfer-accounts' }
 ]
 
 export const individualLeaderMenus: Menu[] = [
@@ -136,13 +163,15 @@ export const individualLeaderMenus: Menu[] = [
   { name: '商家管理', icon: 'merchant', route: 'individual-leader-merchants' },
   { name: '转给物业对账', icon: 'history', route: 'transfer-to-property' },
   { name: '我的服务', icon: 'home', route: 'individual-leader-services' },
-  { name: '提现记录', icon: 'wallet', route: 'individual-leader-withdrawals' }
+  { name: '提现记录', icon: 'wallet', route: 'individual-leader-withdrawals' },
+  { name: '收款方式', icon: 'wallet', route: 'transfer-accounts' }
 ]
 
 export const activityLeaderMenus: Menu[] = [
   { name: '工作台', icon: 'dashboard', route: 'activity-leader-overview' },
   { name: '我的活动组', icon: 'people', route: 'activity-leader-groups' },
   { name: '我的小店', icon: 'merchant', route: 'activity-leader-products' },
+  { name: '微信收款', icon: 'wallet', route: 'wechat-applyment' },
   { name: '提现管理', icon: 'wallet', route: 'activity-leader-withdrawals' }
 ]
 
@@ -150,6 +179,7 @@ export const technicianMenus: Menu[] = [
   { name: '工作台', icon: 'dashboard', route: 'technician-overview' },
   { name: '我的工单', icon: 'delivery', route: 'technician-tasks' },
   { name: '我的服务', icon: 'home', route: 'technician-services' },
+  { name: '微信收款', icon: 'wallet', route: 'wechat-applyment' },
   { name: '提现管理', icon: 'wallet', route: 'technician-withdrawals' }
 ]
 

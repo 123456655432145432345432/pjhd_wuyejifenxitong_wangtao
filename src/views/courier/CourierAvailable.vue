@@ -3,7 +3,7 @@
     <div class="header">
       <div>
         <h1 class="title">抢单大厅</h1>
-        <p class="desc">查看待配送订单并抢单 · 共 {{ total }} 单可抢 · 预计收入读取后端 courierEarning</p>
+        <p class="desc">查看待配送订单并抢单 · 共 {{ total }} 单可抢 · 预计收入以后端返回为准</p>
       </div>
       <button class="btnSecondary" :disabled="loading" @click="load(page)">刷新</button>
     </div>

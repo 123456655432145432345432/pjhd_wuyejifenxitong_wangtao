@@ -19,7 +19,7 @@ import type {
   ResidentItem,
   RolePresetDto
 } from './types'
-import { getEnumLabel, ANNOUNCEMENT_STATUS, ANNOUNCEMENT_STATUS_LABEL, ANNOUNCEMENT_TYPE_LABEL, COURIER_STATUS, COURIER_STATUS_LABEL, DELIVERY_SCOPE_LABEL, DELIVERY_STATUS, DELIVERY_STATUS_LABEL, MERCHANT_LEVEL_LABEL, MERCHANT_SOURCE_LABEL, MERCHANT_STATUS_LABEL, MERCHANT_TYPE, MERCHANT_TYPE_LABEL, PERMISSION_MODULE_LABEL, RESIDENT_STATUS, RESIDENT_STATUS_LABEL, RESIDENT_USER_TYPE, ROLE_LABEL, getMerchantAuditDisplayLabel, getMerchantOperatingDisplayLabel, resolveMerchantAuditDisplayStatus, resolveMerchantOperatingDisplayStatus, normalizeAnnouncementType, formatAnnouncementTargetRoles } from '../constants/enums'
+import { getEnumLabel, ANNOUNCEMENT_STATUS, ANNOUNCEMENT_STATUS_LABEL, ANNOUNCEMENT_TYPE_LABEL, COURIER_STATUS, COURIER_STATUS_LABEL, DELIVERY_SCOPE_LABEL, DELIVERY_STATUS, DELIVERY_STATUS_LABEL, MERCHANT_LEVEL_LABEL, MERCHANT_SOURCE_LABEL, MERCHANT_STATUS_LABEL, MERCHANT_TYPE, MERCHANT_TYPE_LABEL, PERMISSION_ACTION_LABEL, PERMISSION_MODULE_LABEL, RESIDENT_STATUS, RESIDENT_STATUS_LABEL, RESIDENT_USER_TYPE, ROLE_LABEL, getMerchantAuditDisplayLabel, getMerchantOperatingDisplayLabel, resolveMerchantAuditDisplayStatus, resolveMerchantOperatingDisplayStatus, normalizeAnnouncementType, formatAnnouncementTargetRoles } from '../constants/enums'
 
 const avatarColors = ['#5c5c9e', '#3aaf7d', '#f5a623', '#e05c5c', '#6a6aae']
 
@@ -101,42 +101,55 @@ export function extractPropertyCompanyConfig(
   return config
 }
 
+function pickShareRate(
+  raw: Partial<PropertyCompanyDetail & PropertyCompanyConfig> & Record<string, unknown>,
+  camel: keyof PropertyCompanyDetail,
+  snake: string
+): number | undefined {
+  const fromRoot = raw[camel] ?? raw[snake]
+  if (fromRoot !== undefined && fromRoot !== null && fromRoot !== '') return Number(fromRoot)
+  const cfg = (raw.config || {}) as Record<string, unknown>
+  const fromCfg = cfg[camel as string] ?? cfg[snake]
+  if (fromCfg !== undefined && fromCfg !== null && fromCfg !== '') return Number(fromCfg)
+  return undefined
+}
+
 export function normalizePropertyCompanyDetail(
-  raw: Partial<PropertyCompanyDetail & PropertyCompanyConfig>,
+  raw: Partial<PropertyCompanyDetail & PropertyCompanyConfig> & Record<string, unknown>,
   fallbackId = ''
 ): PropertyCompanyDetail {
   return {
-    id: raw.id || fallbackId,
-    name: raw.name,
-    logoUrl: raw.logoUrl,
-    contactPhone: raw.contactPhone,
-    address: raw.address,
-    status: raw.status,
-    communityCount: raw.communityCount,
-    communities: raw.communities,
-    admins: raw.admins,
-    pointEnabled: raw.pointEnabled,
-    pointDisplayEnabled: raw.pointDisplayEnabled,
-    coinEnabled: raw.coinEnabled,
-    coinDisplayEnabled: raw.coinDisplayEnabled,
-    deliveryPerKgFee: raw.deliveryPerKgFee,
-    pointExchangeRate: raw.pointExchangeRate,
-    platformShareRate: raw.platformShareRate,
-    platformDeliveryShareRate: raw.platformDeliveryShareRate,
-    platformWithdrawalFeeShareRate: raw.platformWithdrawalFeeShareRate,
-    regionalLeaderRate: raw.regionalLeaderRate,
-    projectLeaderRate: raw.projectLeaderRate,
-    autoWithdrawalEnabled: raw.autoWithdrawalEnabled,
-    autoWithdrawalPeriodDays: raw.autoWithdrawalPeriodDays,
-    coinUseCondition: raw.coinUseCondition,
-    coinPointThreshold: raw.coinPointThreshold,
-    companyAccountBalance: raw.companyAccountBalance,
-    residentPointShareRate: raw.residentPointShareRate,
-    merchantPointShareRate: raw.merchantPointShareRate,
-    coinPointShareRate: raw.coinPointShareRate,
-    sharedPointShareRate: raw.sharedPointShareRate,
-    createdAt: raw.createdAt,
-    updatedAt: raw.updatedAt,
+    id: (raw.id as string) || fallbackId,
+    name: raw.name as string | undefined,
+    logoUrl: raw.logoUrl as string | undefined,
+    contactPhone: raw.contactPhone as string | undefined,
+    address: raw.address as string | undefined,
+    status: raw.status as string | undefined,
+    communityCount: raw.communityCount as number | undefined,
+    communities: raw.communities as PropertyCompanyDetail['communities'],
+    admins: raw.admins as PropertyCompanyDetail['admins'],
+    pointEnabled: raw.pointEnabled as boolean | undefined,
+    pointDisplayEnabled: raw.pointDisplayEnabled as boolean | undefined,
+    coinEnabled: raw.coinEnabled as boolean | undefined,
+    coinDisplayEnabled: raw.coinDisplayEnabled as boolean | undefined,
+    deliveryPerKgFee: raw.deliveryPerKgFee as number | undefined,
+    pointExchangeRate: raw.pointExchangeRate as number | undefined,
+    platformShareRate: raw.platformShareRate as number | undefined,
+    platformDeliveryShareRate: raw.platformDeliveryShareRate as number | undefined,
+    platformWithdrawalFeeShareRate: raw.platformWithdrawalFeeShareRate as number | undefined,
+    regionalLeaderRate: raw.regionalLeaderRate as number | undefined,
+    projectLeaderRate: raw.projectLeaderRate as number | undefined,
+    autoWithdrawalEnabled: raw.autoWithdrawalEnabled as boolean | undefined,
+    autoWithdrawalPeriodDays: raw.autoWithdrawalPeriodDays as number | undefined,
+    coinUseCondition: raw.coinUseCondition as string | null | undefined,
+    coinPointThreshold: raw.coinPointThreshold as number | undefined,
+    companyAccountBalance: raw.companyAccountBalance as number | undefined,
+    residentPointShareRate: pickShareRate(raw, 'residentPointShareRate', 'resident_point_share_rate'),
+    merchantPointShareRate: pickShareRate(raw, 'merchantPointShareRate', 'merchant_point_share_rate'),
+    coinPointShareRate: pickShareRate(raw, 'coinPointShareRate', 'coin_point_share_rate'),
+    sharedPointShareRate: pickShareRate(raw, 'sharedPointShareRate', 'shared_point_share_rate'),
+    createdAt: raw.createdAt as string | undefined,
+    updatedAt: raw.updatedAt as string | undefined,
     config: extractPropertyCompanyConfig(raw)
   }
 }
@@ -407,10 +420,63 @@ export function normalizeMerchantItem(item: MerchantItem | Record<string, unknow
     'isCanteenMain',
     'is_canteen_main'
   ])
+  const config =
+    raw.config && typeof raw.config === 'object'
+      ? (raw.config as Record<string, unknown>)
+      : raw.customConfig && typeof raw.customConfig === 'object'
+        ? (raw.customConfig as Record<string, unknown>)
+        : null
+  const commissionRaw =
+    raw.commissionRate ?? raw.commission_rate ?? config?.commissionRate ?? config?.commission_rate
+  const pointExchangeRaw =
+    raw.pointExchangeRate ??
+    raw.point_exchange_rate ??
+    config?.pointExchangeRate ??
+    config?.point_exchange_rate
+  const coinRebateRaw = raw.coinRebateRate ?? raw.coin_rebate_rate
+  // v8.7 §7.1：列表项新增 isRecommended 字段
+  const isRecommendedRaw = pickBool(raw, [
+    'isRecommended',
+    'is_recommended'
+  ])
+  // v8.7 兼容老后端：详情 PUT 接口返回 isOfficialRecommended（camelCase）/ is_official_recommended
+  const isOfficialRecommendedRaw = pickBool(raw, [
+    'isOfficialRecommended',
+    'is_official_recommended'
+  ])
+  // 合并两个字段：v8.7 新字段优先，fallback 老字段
+  const isRecommendedMerged =
+    typeof isRecommendedRaw === 'boolean'
+      ? isRecommendedRaw
+      : typeof isOfficialRecommendedRaw === 'boolean'
+        ? isOfficialRecommendedRaw
+        : base.isRecommended
+  // recommendedSort 同样支持 snake_case
+  const recommendedSortRaw = raw.recommendedSort ?? raw.recommended_sort
+  const recommendedSort =
+    recommendedSortRaw === undefined || recommendedSortRaw === null
+      ? base.recommendedSort
+      : Number(recommendedSortRaw)
   return {
     ...base,
     merchantType: merchantType || base.merchantType,
-    isCanteenMainMerchant: isCanteenMainMerchant ?? base.isCanteenMainMerchant
+    isCanteenMainMerchant: isCanteenMainMerchant ?? base.isCanteenMainMerchant,
+    commissionRate:
+      commissionRaw === undefined || commissionRaw === null
+        ? base.commissionRate
+        : Number(commissionRaw),
+    pointExchangeRate:
+      pointExchangeRaw === undefined || pointExchangeRaw === null
+        ? base.pointExchangeRate
+        : Number(pointExchangeRaw),
+    coinRebateRate:
+      coinRebateRaw === undefined || coinRebateRaw === null
+        ? base.coinRebateRate
+        : Number(coinRebateRaw),
+    isRecommended: isRecommendedMerged,
+    isOfficialRecommended:
+      isOfficialRecommendedRaw ?? isRecommendedRaw ?? base.isOfficialRecommended,
+    recommendedSort
   }
 }
 
@@ -419,7 +485,7 @@ export function formatMerchantServiceScope(item: MerchantItem) {
   const names = (item.communityNames || []).map(name => name.trim()).filter(Boolean)
   if (names.length) return names.join('、')
   if (item.communityIds?.length) return `${item.communityIds.length} 个小区`
-  if (item.deliveryScope) return getEnumLabel(DELIVERY_SCOPE_LABEL, item.deliveryScope, item.deliveryScope)
+  if (item.deliveryScope) return getEnumLabel(DELIVERY_SCOPE_LABEL, item.deliveryScope, '—')
   return item.address || '—'
 }
 
@@ -447,9 +513,18 @@ export function mapMerchants(list: MerchantItem[]) {
       auditStatusCode,
       status,
       statusLabel: getMerchantOperatingDisplayLabel(row.status, row.auditStatus),
-      commissionRate: row.commissionRate !== undefined ? `${formatPercent(row.commissionRate)}%` : '-',
-      pointsRatio: row.pointExchangeRate !== undefined ? `1元=${row.pointExchangeRate}积分` : '-',
-      cashbackRate: row.coinRebateRate !== undefined ? `${formatPercent(row.coinRebateRate)}%` : '0%',
+      commissionRate:
+        row.commissionRate != null && !Number.isNaN(Number(row.commissionRate))
+          ? `${formatPercent(row.commissionRate)}%`
+          : '—',
+      pointsRatio:
+        row.pointExchangeRate != null && !Number.isNaN(Number(row.pointExchangeRate))
+          ? `1元=${row.pointExchangeRate}积分`
+          : '—',
+      cashbackRate:
+        row.coinRebateRate != null && !Number.isNaN(Number(row.coinRebateRate))
+          ? `${formatPercent(row.coinRebateRate)}%`
+          : '0%',
       ownerPrice: row.memberDiscountPrice ? `${row.memberDiscountPrice}元` : '-',
       contactPhone: row.contactPhone || '—',
       createdAt: row.createdAt || '—',
@@ -571,12 +646,12 @@ export function mapPointsUsers(list: ResidentItem[]) {
       roomRaw: roomPart,
       hasAddress,
       registerTime: item.createdAt || '',
-      points: `${formatMoney(item.pointBalance)} pts`,
+      points: `${formatMoney(item.pointBalance)} 积分`,
       familyPoints:
-        item.familyPointBalance == null ? '—' : `${formatMoney(item.familyPointBalance)} pts`,
+        item.familyPointBalance == null ? '—' : `${formatMoney(item.familyPointBalance)} 积分`,
       pointBalance: item.pointBalance ?? 0,
       familyPointBalance: item.familyPointBalance,
-      pcoin: `${formatMoney(item.coinBalance)} PCoin`,
+      pcoin: `${formatMoney(item.coinBalance)} 物业币`,
       coinBalance: item.coinBalance ?? 0,
       coinFrozen: !!item.coinFrozen,
       status: item.status === RESIDENT_STATUS.FROZEN || item.status === RESIDENT_STATUS.DISABLED
@@ -611,11 +686,18 @@ export function extractPermissionPool(data: PermissionItemDto[] | { permissions?
   return []
 }
 
+function permissionCategoryLabel(raw?: string) {
+  if (!raw) return '其他'
+  if (PERMISSION_MODULE_LABEL[raw]) return PERMISSION_MODULE_LABEL[raw]
+  if (/[\u4e00-\u9fff]/.test(raw)) return raw
+  return '其他'
+}
+
 export function buildPermissionGroups(pool: PermissionItemDto[], effectiveCodes: string[] = []) {
   const effective = new Set(effectiveCodes)
   const map = new Map<string, PermissionItemDto[]>()
   pool.forEach(item => {
-    const category = PERMISSION_MODULE_LABEL[item.module || ''] || item.module || item.category || item.group || '其他'
+    const category = permissionCategoryLabel(item.module || item.category || item.group)
     if (!map.has(category)) map.set(category, [])
     map.get(category)!.push(item)
   })
@@ -634,7 +716,7 @@ export function normalizePermissionGroups(data: PermissionItemDto[] | { permissi
   if (data && 'groups' in data && data.groups) {
     const effective = new Set(effectiveCodes)
     return data.groups.map(group => ({
-      category: group.category,
+      category: permissionCategoryLabel(group.category),
       items: group.items.map(item => ({
         code: item.code,
         name: item.name,
@@ -664,7 +746,7 @@ export function mapAdminUserAccounts(list: Array<{ id: string; name: string; pho
     name: item.name,
     phone: item.phone || '-',
     initials: initials(item.name),
-    role: getEnumLabel(ROLE_LABEL, item.role, item.role),
+    role: getEnumLabel(ROLE_LABEL, item.role, '—'),
     roleCode: item.role,
     permissionCount: item.effectivePermissionCount ?? 0
   }))
@@ -672,10 +754,10 @@ export function mapAdminUserAccounts(list: Array<{ id: string; name: string; pho
 
 export function mapPermissionChangeLogs(list: PermissionChangeLog[]) {
   return list.map(item => {
-    const actionLabel = item.action === 'grant' ? '授予' : item.action === 'revoke' ? '撤销' : item.action || '-'
+    const actionLabel = getEnumLabel(PERMISSION_ACTION_LABEL, item.action, '变更')
     const content = item.permissionCode
-      ? `${actionLabel} ${item.permissionCode}${item.reason ? `（${item.reason}）` : ''}`
-      : item.content || item.changeContent || '-'
+      ? `${actionLabel}权限${item.reason ? `（${item.reason}）` : ''}`
+      : item.content || item.changeContent || '—'
     return {
       id: item.id || `${item.createdAt}-${item.permissionCode}`,
       time: item.createdAt || '-',

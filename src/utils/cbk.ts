@@ -78,7 +78,7 @@ export function canRetryCbkReconcile(status?: string | null): boolean {
 }
 
 export function cbkPayoutLabel(status?: string | null): string {
-  return getEnumLabel(CBK_PAYOUT_STATUS_LABEL, status, status || '—')
+  return getEnumLabel(CBK_PAYOUT_STATUS_LABEL, status, '—')
 }
 
 const PAYOUT_ALIASES: Record<string, string> = {

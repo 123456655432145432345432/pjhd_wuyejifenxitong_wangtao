@@ -215,6 +215,7 @@ import type { CommunityServiceItem } from '../../api/types'
 import { ApiError } from '../../api/request'
 import {
   ENTITY_STATUS,
+  ENTITY_STATUS_LABEL,
   getEnumLabel,
   SERVICE_CATEGORY,
   SERVICE_CATEGORY_LABEL,
@@ -273,7 +274,7 @@ function formatMoney(value?: number | null) {
 function statusLabel(status?: string) {
   if (status === ENTITY_STATUS.ACTIVE) return '上架'
   if (status === ENTITY_STATUS.INACTIVE) return '下架'
-  return status || '—'
+  return getEnumLabel(ENTITY_STATUS_LABEL, status, '—')
 }
 
 function resetForm() {

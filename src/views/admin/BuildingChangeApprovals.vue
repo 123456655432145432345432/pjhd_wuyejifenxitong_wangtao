@@ -147,7 +147,7 @@ function isPending(value?: string) {
 }
 
 function statusLabel(value?: string) {
-  return getEnumLabel(BUILDING_CHANGE_STATUS_LABEL, value, value || '—')
+  return getEnumLabel(BUILDING_CHANGE_STATUS_LABEL, value, '—')
 }
 
 function formatAddress(item: BuildingChangeApplication, old = false) {

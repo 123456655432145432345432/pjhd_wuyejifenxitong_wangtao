@@ -377,8 +377,8 @@ export const FULFILLMENT_MODE = {
 } as const
 
 export const FULFILLMENT_MODE_LABEL: Record<string, string> = {
-  pending_choice: '待选择配送方式',
-  courier_hall: '平台配送（抢单大厅）',
+  pending_choice: '待选择',
+  courier_hall: '平台配送',
   merchant_self: '商家自配',
   none: '无需配送'
 }
@@ -508,6 +508,98 @@ export function isResidentMerchantPendingAudit(status?: string | null) {
     status === RESIDENT_MERCHANT_STATUS.PENDING_AUDIT ||
     status === RESIDENT_MERCHANT_STATUS.PENDING_REVIEW
   )
+}
+
+/** 业主商户保证金缴付/账户状态（depositStatus / deposits.status） */
+export const RESIDENT_MERCHANT_DEPOSIT_STATUS = {
+  UNPAID: 'unpaid',
+  PENDING: 'pending',
+  PAID: 'paid',
+  HELD: 'held',
+  DEDUCTED: 'deducted',
+  PARTIAL_DEDUCTED: 'partial_deducted',
+  REFUNDING: 'refunding',
+  REFUNDED: 'refunded',
+  FORFEITED: 'forfeited'
+} as const
+
+export const RESIDENT_MERCHANT_DEPOSIT_STATUS_LABEL: Record<string, string> = {
+  unpaid: '未缴纳',
+  pending: '缴纳中',
+  paid: '已缴纳',
+  held: '冻结中',
+  deducted: '已扣除',
+  partial_deducted: '部分扣除',
+  refunding: '退还中',
+  refunded: '已退还',
+  forfeited: '已罚没',
+  active: '有效',
+  inactive: '无效'
+}
+
+/** 业主商户结算明细状态 */
+export const RESIDENT_MERCHANT_SETTLEMENT_STATUS_LABEL: Record<string, string> = {
+  pending: '待结算',
+  settled: '已结算',
+  failed: '结算失败',
+  reversed: '已冲正',
+  cancelled: '已取消'
+}
+
+/** 资料奖励可配置字段（API 仍传英文 fieldName） */
+export const PROFILE_REWARD_FIELD_LABEL: Record<string, string> = {
+  birthday: '生日',
+  phone: '手机号',
+  hasChildren: '是否有子女',
+  has_children: '是否有子女',
+  maritalStatus: '婚姻状态',
+  marital_status: '婚姻状态',
+  gender: '性别',
+  avatar: '头像',
+  realName: '真实姓名',
+  real_name: '真实姓名',
+  idCard: '身份证号',
+  id_card: '身份证号'
+}
+
+export const PROFILE_REWARD_FIELD_OPTIONS = [
+  { value: 'birthday', label: '生日' },
+  { value: 'phone', label: '手机号' },
+  { value: 'hasChildren', label: '是否有子女' },
+  { value: 'maritalStatus', label: '婚姻状态' },
+  { value: 'gender', label: '性别' }
+]
+
+/** 账号启用态（操作员等，兼容 disabled） */
+export const ACCOUNT_STATUS_LABEL: Record<string, string> = {
+  active: '启用',
+  inactive: '停用',
+  disabled: '停用',
+  frozen: '已冻结'
+}
+
+/** 板块待审申请类型 */
+export const SECTOR_APPROVAL_TYPE_LABEL: Record<string, string> = {
+  merchant: '商家入驻',
+  individual: '个体负责人',
+  individual_leader: '个体负责人',
+  platform_merchant: '平台商家',
+  join: '入驻申请'
+}
+
+/** 建设积分流水来源 */
+export const COMMUNITY_POINT_SOURCE_LABEL: Record<string, string> = {
+  manual: '手动调整',
+  inject: '自动注入',
+  adjust: '手动调整',
+  order: '订单相关',
+  consume: '消耗',
+  system: '系统',
+  admin: '管理员调整',
+  grant: '发放',
+  reward: '奖励',
+  expire: '过期',
+  refund: '退回'
 }
 
 export const VOTE_OPTION = {
@@ -747,12 +839,16 @@ export const CONSULTATION_CATEGORY_OPTIONS = Object.entries(CONSULTATION_CATEGOR
 
 /** 二期业务错误码提示 */
 export const PHASE2_ERROR_MESSAGE: Record<number, string> = {
-  70021: '已超过履约选择时限，无法再选择',
-  70022: '本单无需配送，不可选择履约方式（团购单）',
+  70002: '订单当前状态不支持该操作',
+  70021: '已超时，系统已自动改派平台配送',
+  70022: '本单无需配送（团购/食堂单）',
   70023: '请先选择履约方式',
   70024: '配送未完成，不可完成订单',
-  70025: '履约方式已锁定，不可变更',
-  80010: '非配送员承运单，配送员不可抢单/操作',
+  70025: '已选择过履约方式，如需变更请联系物业',
+  80010: '配送价格区间不存在',
+  80020: '非配送员承运单，配送员不可抢单/操作',
+  80021: '配送单不存在',
+  90001: '特惠不存在',
   90101: '同一用户当日定向消息已达上限',
   90102: '物业公司当日定向推送任务已达上限',
   90103: '今日新聊人数已达上限',
@@ -766,9 +862,14 @@ export const PHASE2_ERROR_MESSAGE: Record<number, string> = {
   90111: '该店铺暂未对外展示',
   90120: '账号存在关联业务数据，无法彻底删除，请改用禁用或软删除',
   90121: '账号已删除，无法再次操作',
-  99002: '微信支付接口异常',
-  99003: '微信支付签名校验失败',
-  99004: '微信支付未配置',
+  99002: '微信接口异常',
+  99003: '电商收付通未配置或未启用',
+  99004: '该商家暂未完成微信进件，请使用积分/物业币支付',
+  99005: '微信平台证书未就绪，无法加密敏感信息',
+  99006: '微信进件申请不存在',
+  99007: '进件申请状态不允许该操作',
+  99008: '该商家已存在进件申请',
+  99009: '进件资料上传微信失败',
   99010: '商家核实时限已过，系统已自动通过',
   99011: '订单尚未通过商家核实',
   99012: '冻结期已过，不可申请退货',
@@ -864,7 +965,12 @@ export const ENTITY_STATUS = {
 
 export const ENTITY_STATUS_LABEL: Record<string, string> = {
   [ENTITY_STATUS.ACTIVE]: '启用',
-  [ENTITY_STATUS.INACTIVE]: '停用'
+  [ENTITY_STATUS.INACTIVE]: '停用',
+  disabled: '停用',
+  frozen: '已冻结',
+  stopped: '已停用',
+  kicked: '已踢出',
+  closed: '已关闭'
 }
 
 export const ENTITY_STATUS_OPTIONS = [
@@ -877,8 +983,11 @@ export const PERMISSION_MODULE_LABEL: Record<string, string> = {
   resident: '住户管理',
   merchant: '商家管理',
   reports: '报表数据',
+  report: '报表数据',
   announcements: '通告管理',
+  announcement: '通告管理',
   point_pool: '积分池',
+  points: '积分管理',
   coordinator: '统筹管理',
   delivery: '配送管理',
   property_company: '物业公司',
@@ -886,7 +995,19 @@ export const PERMISSION_MODULE_LABEL: Record<string, string> = {
   activity: '活动管理',
   notice: '通知收集',
   refund: '退款审批',
-  coin: '物业币'
+  coin: '物业币',
+  settlement: '结算管理',
+  withdrawal: '提现管理',
+  forum: '社区论坛',
+  community: '社区管理',
+  price_approval: '价格审批',
+  canteen: '社区食堂',
+  order: '订单管理',
+  finance: '财务管理',
+  platform: '平台配置',
+  navigation: '导航配置',
+  role: '角色账号',
+  operator: '操作员'
 }
 
 export const ROLE_LABEL: Record<string, string> = {
@@ -1013,6 +1134,19 @@ export const SECTOR_TYPE_OPTIONS = [
   { value: SECTOR_TYPE.OTHER, label: '其他' }
 ]
 
+/** 将详情/表单中的板块值归一为 API 枚举（cleaning/repair/...）；兼容中文标签 */
+export function normalizeSectorType(value?: string | null, fallback = ''): string {
+  const raw = (value || '').trim()
+  if (!raw) return fallback
+  const allowed = Object.values(SECTOR_TYPE) as string[]
+  if (allowed.includes(raw)) return raw
+  const lower = raw.toLowerCase()
+  if (allowed.includes(lower)) return lower
+  const byLabel = Object.entries(SECTOR_TYPE_LABEL).find(([, label]) => label === raw)
+  if (byLabel) return byLabel[0]
+  return raw
+}
+
 /** 特惠推送 targetType（API 值，与 SpecialOfferService.normalizeTargetType 对齐） */
 export const SPECIAL_OFFER_TARGET_TYPE = {
   ALL: 'all',
@@ -1071,9 +1205,9 @@ export const SPECIAL_OFFER_DISCOUNT_TYPE_LABEL: Record<string, string> = {
   percent: '百分比'
 }
 
+/** v8.3：无独立「待发布」态；历史 `active`/待发布 归一为 published */
 export const SPECIAL_OFFER_STATUS = {
   DRAFT: 'draft',
-  PENDING_PUBLISH: 'active',
   PUBLISHED: 'published',
   ENDED: 'ended',
   ARCHIVED: 'archived'
@@ -1081,31 +1215,37 @@ export const SPECIAL_OFFER_STATUS = {
 
 export const SPECIAL_OFFER_STATUS_LABEL: Record<string, string> = {
   [SPECIAL_OFFER_STATUS.DRAFT]: '草稿',
-  [SPECIAL_OFFER_STATUS.PENDING_PUBLISH]: '待发布',
   [SPECIAL_OFFER_STATUS.PUBLISHED]: '已发布',
   [SPECIAL_OFFER_STATUS.ENDED]: '已结束',
   [SPECIAL_OFFER_STATUS.ARCHIVED]: '已删除',
+  active: '已发布',
   草稿: '草稿',
-  待发布: '待发布',
+  待发布: '已发布',
   已发布: '已发布',
   已结束: '已结束',
-  pending_publish: '待发布'
+  pending_publish: '已发布'
 }
 
-/** 列表筛选 / 表单可选状态（不含已删除） */
+/** 列表筛选可选状态（不含已删除） */
 export const SPECIAL_OFFER_STATUS_OPTIONS = [
   { value: SPECIAL_OFFER_STATUS.DRAFT, label: '草稿' },
-  { value: SPECIAL_OFFER_STATUS.PENDING_PUBLISH, label: '待发布' },
   { value: SPECIAL_OFFER_STATUS.PUBLISHED, label: '已发布' },
   { value: SPECIAL_OFFER_STATUS.ENDED, label: '已结束' }
 ]
 
+/** 创建/编辑表单：仅草稿与已发布（结束由时间或业务态产生） */
+export const SPECIAL_OFFER_STATUS_FORM_OPTIONS = [
+  { value: SPECIAL_OFFER_STATUS.DRAFT, label: '草稿' },
+  { value: SPECIAL_OFFER_STATUS.PUBLISHED, label: '已发布' }
+]
+
 const SPECIAL_OFFER_STATUS_ALIASES: Record<string, string> = {
   草稿: SPECIAL_OFFER_STATUS.DRAFT,
-  待发布: SPECIAL_OFFER_STATUS.PENDING_PUBLISH,
+  待发布: SPECIAL_OFFER_STATUS.PUBLISHED,
   已发布: SPECIAL_OFFER_STATUS.PUBLISHED,
   已结束: SPECIAL_OFFER_STATUS.ENDED,
-  pending_publish: SPECIAL_OFFER_STATUS.PENDING_PUBLISH
+  active: SPECIAL_OFFER_STATUS.PUBLISHED,
+  pending_publish: SPECIAL_OFFER_STATUS.PUBLISHED
 }
 
 export function normalizeSpecialOfferTargetType(value?: string) {
@@ -1215,12 +1355,19 @@ export const POINT_POOL_RECORD_TYPE_LABEL: Record<string, string> = {
   exchange_diff: '差额注入',
   expiry_clear: '过期清零',
   coin_expired: '过期清零',
+  expire: '过期清零',
   fee_clear: '欠费清零',
   manual_adjust: '手工调整',
+  adjust: '手工调整',
+  manual: '手工调整',
   manual_out: '手工支出',
   spend: '兑换支出',
+  grant: '发放',
+  reward: '奖励',
   pool_in: '流入',
-  pool_out: '流出'
+  in: '流入',
+  pool_out: '流出',
+  out: '流出'
 }
 
 export const POINT_POOL_RECORD_TYPE_OPTIONS = [
@@ -1338,10 +1485,16 @@ export const ANNOUNCEMENT_LIST_TYPE_OPTIONS = [
   ...ANNOUNCEMENT_TYPE_OPTIONS
 ]
 
+export const ANNOUNCEMENT_COLLECT_FIELD_TYPE_LABEL: Record<string, string> = {
+  boolean: '是/否',
+  text: '文本',
+  number: '数字'
+}
+
 export const ANNOUNCEMENT_COLLECT_FIELD_TYPE_OPTIONS = [
-  { value: 'boolean', label: '是/否' },
-  { value: 'text', label: '文本' },
-  { value: 'number', label: '数字' }
+  { value: 'boolean', label: ANNOUNCEMENT_COLLECT_FIELD_TYPE_LABEL.boolean },
+  { value: 'text', label: ANNOUNCEMENT_COLLECT_FIELD_TYPE_LABEL.text },
+  { value: 'number', label: ANNOUNCEMENT_COLLECT_FIELD_TYPE_LABEL.number }
 ]
 
 /** 公告推送目标角色（targetRoles） */
@@ -1358,7 +1511,7 @@ export const ANNOUNCEMENT_TARGET_ROLE_OPTIONS = [
 
 export function formatAnnouncementTargetRoles(roles?: string[]) {
   if (!roles?.length) return '全部角色'
-  return roles.map((role) => getEnumLabel(ROLE_LABEL, role, role)).join('、')
+  return roles.map((role) => getEnumLabel(ROLE_LABEL, role, '—')).join('、')
 }
 
 export const COIN_ISSUE_MODE = {
@@ -1435,9 +1588,9 @@ export const DELIVERY_CAPACITY_DIMENSION = {
 
 export type AuditResult = (typeof AUDIT_RESULT)[keyof typeof AUDIT_RESULT]
 
-export function getEnumLabel(map: Record<string, string>, value?: string | null, fallback = '-') {
+export function getEnumLabel(map: Record<string, string>, value?: string | null, fallback = '—') {
   if (!value) return fallback
-  return map[value] ?? value
+  return map[value] ?? fallback
 }
 
 /** 终态优先：被踢/停用/退出时不得再展示「已通过」 */
@@ -1716,7 +1869,10 @@ export const DISTRIBUTION_RECORD_STATUS_LABEL: Record<string, string> = {
   [DISTRIBUTION_RECORD_STATUS.PENDING]: '待分账',
   [DISTRIBUTION_RECORD_STATUS.DISTRIBUTED]: '已分账',
   [DISTRIBUTION_RECORD_STATUS.REVERSED]: '已冲正',
-  [DISTRIBUTION_RECORD_STATUS.PARTIALLY_REVERSED]: '部分冲正'
+  [DISTRIBUTION_RECORD_STATUS.PARTIALLY_REVERSED]: '部分冲正',
+  success: '已分账',
+  completed: '已分账',
+  failed: '失败'
 }
 
 /** [ENUM] 配送结算状态 */
@@ -1771,13 +1927,17 @@ export const BILLING_CYCLE_OPTIONS = Object.entries(BILLING_CYCLE_LABEL).map(([v
   label
 }))
 
-/** 多角色提现类型 */
+/** 多角色提现类型（v8.5 补充 technician/activity_leader） */
 export const WITHDRAWAL_TYPE = {
   MERCHANT: 'merchant',
   INDIVIDUAL_LEADER: 'individual_leader',
   COURIER: 'courier',
   COORDINATOR: 'coordinator',
-  SECTOR_LEADER: 'sector_leader'
+  SECTOR_LEADER: 'sector_leader',
+  /** v8.5：技工商家提现（走商家提现接口，merchant_source=technician） */
+  TECHNICIAN: 'technician',
+  /** v8.5：组长商家提现（走商家提现接口，merchant_source=group_leader） */
+  ACTIVITY_LEADER: 'activity_leader'
 } as const
 
 export const WITHDRAWAL_TYPE_LABEL: Record<string, string> = {
@@ -1785,7 +1945,11 @@ export const WITHDRAWAL_TYPE_LABEL: Record<string, string> = {
   individual_leader: '个体负责人',
   courier: '配送员',
   coordinator: '统筹',
-  sector_leader: '板块负责人'
+  sector_leader: '板块负责人',
+  activity_leader: '活动组组长',
+  technician: '技工',
+  property_admin: '物业管理员',
+  platform_admin: '平台管理员'
 }
 
 /** GET /admin/role-withdrawals 的角色提现筛选（商家提现使用独立接口） */
@@ -1995,13 +2159,40 @@ export const ARREARS_REMINDER_TEMPLATE = {
   PROPERTY_FEE: 'property_fee_arrears_reminder_v1'
 } as const
 
-/** v5.3 后端稳定业务错误标识 */
+/** v5.3 / v8.2 后端稳定业务错误标识 */
 export const API_ERROR_CODE = {
   INVALID_SHARE_RATE_TOTAL: 'INVALID_SHARE_RATE_TOTAL',
+  /** v8.2：商品平台盘一级三档合计须 100%（数字码 97006） */
+  SHARE_RATE_PRIMARY_TOTAL_INVALID: 'SHARE_RATE_PRIMARY_TOTAL_INVALID',
   WECHAT_TEMPLATE_NOT_CONFIGURED: 'WECHAT_TEMPLATE_NOT_CONFIGURED',
   PREVIEW_EXPIRED: 'PREVIEW_EXPIRED',
   ARREARS_REMINDER_DUPLICATE: 'ARREARS_REMINDER_DUPLICATE',
-  CANTEEN_NOT_MAIN_MERCHANT: 'CANTEEN_NOT_MAIN_MERCHANT'
+  ARREARS_REMINDER_PERSIST_FAILED: 'ARREARS_REMINDER_PERSIST_FAILED',
+  CANTEEN_NOT_MAIN_MERCHANT: 'CANTEEN_NOT_MAIN_MERCHANT',
+  INDIVIDUAL_LEADER_APPLICATION_NOT_FOUND: 'INDIVIDUAL_LEADER_APPLICATION_NOT_FOUND',
+  INDIVIDUAL_LEADER_APPLICATION_ALREADY_AUDITED: 'INDIVIDUAL_LEADER_APPLICATION_ALREADY_AUDITED',
+  PROPERTY_COMPANY_HAS_RELATED_DATA: 'PROPERTY_COMPANY_HAS_RELATED_DATA',
+  /** v8.5 §97 电商收付通 */
+  WECHAT_API_ERROR: 'WECHAT_API_ERROR',
+  WECHAT_ECOMMERCE_NOT_CONFIGURED: 'WECHAT_ECOMMERCE_NOT_CONFIGURED',
+  ORDER_PAY_UNAVAILABLE: 'ORDER_PAY_UNAVAILABLE',
+  WECHAT_CERT_NOT_READY: 'WECHAT_CERT_NOT_READY',
+  APPLYMENT_NOT_FOUND: 'APPLYMENT_NOT_FOUND',
+  APPLYMENT_STATE_INVALID: 'APPLYMENT_STATE_INVALID',
+  APPLYMENT_ALREADY_EXISTS: 'APPLYMENT_ALREADY_EXISTS',
+  APPLYMENT_UPLOAD_FAILED: 'APPLYMENT_UPLOAD_FAILED',
+  TRANSFER_ACCOUNT_NOT_VERIFIED: 'TRANSFER_ACCOUNT_NOT_VERIFIED',
+  TRANSFER_NOT_FOUND: 'TRANSFER_NOT_FOUND',
+  TRANSFER_AMOUNT_INVALID: 'TRANSFER_AMOUNT_INVALID',
+  RECOVERY_NOT_FOUND: 'RECOVERY_NOT_FOUND'
+} as const
+
+/** 业务错误数字码（与 API 文档错误码速查表一致，判等优先用数字 code） */
+export const API_ERROR_NUMERIC = {
+  SHARE_RATE_PRIMARY_TOTAL_INVALID: 97006,
+  INDIVIDUAL_LEADER_APPLICATION_NOT_FOUND: 97030,
+  INDIVIDUAL_LEADER_APPLICATION_ALREADY_AUDITED: 97031,
+  PROPERTY_COMPANY_HAS_RELATED_DATA: 97033
 } as const
 
 /** 新旧资金切分：上线前内部钱包 vs 上线后微信支付分账 */
@@ -2051,12 +2242,12 @@ export const CBK_OWNER_TYPE_LABEL: Record<string, string> = {
 
 export const CBK_OWNER_ID_HINT: Record<string, string> = {
   PLATFORM: '固定填 PLATFORM',
-  PROPERTY: '物业 ID（pc_xxx）',
-  MERCHANT: '商家 ID（mer_xxx）',
-  COORDINATOR: '统筹账号 ID',
-  SECTOR_LEADER: '板块负责人 ID',
-  INDIVIDUAL_LEADER: '个体负责人 ID',
-  COURIER: '快递员 ID（cour_xxx）'
+  PROPERTY: '物业编号（如 pc_xxx）',
+  MERCHANT: '商家编号（如 mer_xxx）',
+  COORDINATOR: '统筹账号编号',
+  SECTOR_LEADER: '板块负责人编号',
+  INDIVIDUAL_LEADER: '个体负责人编号',
+  COURIER: '快递员编号（如 cour_xxx）'
 }
 
 export const CBK_OWNER_TYPE_OPTIONS = [
@@ -2086,7 +2277,13 @@ export const CBK_RECONCILE_STATUS_LABEL: Record<string, string> = {
   withdraw_failed: '结算提交失败',
   reverse_failed: '冲正失败',
   refund_failed: '退款失败',
-  skipped: '缺户跳过'
+  skipped: '缺户跳过',
+  success: '成功',
+  pending: '处理中',
+  processing: '处理中',
+  completed: '已完成',
+  finished: '已完结',
+  failed: '失败'
 }
 
 export const CBK_RECONCILE_STATUS_OPTIONS = [
@@ -2116,7 +2313,354 @@ export const CBK_ERROR_MESSAGE: Record<number, string> = {
   97020: '订单已完成，不支持退款',
   97021: '分账账户未就绪',
   97022: '支付通道异常',
-  99002: '微信支付接口异常',
-  99003: '微信支付签名校验失败',
-  99004: '微信支付未配置'
+  99002: '微信接口异常',
+  99003: '电商收付通未配置或未启用',
+  99004: '该商家暂未完成微信进件，请使用积分/物业币支付'
+}
+
+/** [ENUM] v8.5 §97 商家微信进件状态（applymentState） */
+export const APPLYMENT_STATE = {
+  INIT: 'init',
+  SUBMITTED: 'submitted',
+  AUDITING: 'auditing',
+  LEGAL_VALIDATING: 'legal_validating',
+  SIGNING: 'signing',
+  FINISHED: 'finished',
+  REJECTED: 'rejected'
+} as const
+
+export const APPLYMENT_STATE_LABEL: Record<string, string> = {
+  init: '资料草稿',
+  submitted: '已提交待审核',
+  auditing: '微信审核中',
+  legal_validating: '待法人验证',
+  signing: '待签约',
+  finished: '进件成功',
+  rejected: '已驳回'
+}
+
+/** 微信返回的 applymentState / wxState（含官方全大写码） */
+export const APPLYMENT_WX_STATE_LABEL: Record<string, string> = {
+  ...APPLYMENT_STATE_LABEL,
+  APPLYMENT_STATE_EDITTING: '编辑中',
+  APPLYMENT_STATE_EDITING: '编辑中',
+  APPLYMENT_STATE_WAITTING_FOR_AUDIT: '审核中',
+  APPLYMENT_STATE_WAITING_FOR_AUDIT: '审核中',
+  APPLYMENT_STATE_WAITTING_FOR_CONFIRM_CONTACT: '待确认联系人',
+  APPLYMENT_STATE_WAITTING_FOR_CONFIRM_LEGALPERSON: '待法人验证',
+  APPLYMENT_STATE_REJECTED: '已驳回',
+  APPLYMENT_STATE_FREEZED: '已冻结',
+  APPLYMENT_STATE_FROZEN: '已冻结',
+  APPLYMENT_STATE_CANCELED: '已作废',
+  APPLYMENT_STATE_CANCELLED: '已作废',
+  APPLYMENT_STATE_TO_BE_CONFIRMED: '待账户验证',
+  APPLYMENT_STATE_FINISH: '进件成功',
+  APPLYMENT_STATE_AUDITING: '审核中',
+  FINISH: '进件成功',
+  FINISHED: '进件成功',
+  REJECTED: '已驳回',
+  AUDITING: '审核中',
+  CANCELED: '已作废',
+  CANCELLED: '已作废',
+  FROZEN: '已冻结',
+  FREEZED: '已冻结',
+  EDITING: '编辑中',
+  EDITTING: '编辑中',
+  SUBMITTED: '已提交待审核',
+  SIGNING: '待签约'
+}
+
+export const APPLYMENT_ORGANIZATION_TYPE = {
+  ENTERPRISE: 'ENTERPRISE',
+  INDIVIDUAL: 'INDIVIDUAL',
+  MICRO: 'MICRO'
+} as const
+
+export const APPLYMENT_ORGANIZATION_TYPE_LABEL: Record<string, string> = {
+  ENTERPRISE: '企业',
+  INDIVIDUAL: '个体户',
+  MICRO: '小微（无营业执照）',
+  enterprise: '企业',
+  individual: '个体户',
+  micro: '小微（无营业执照）',
+  '2': '企业',
+  '4': '个体户',
+  '2401': '小微（无营业执照）'
+}
+
+export const APPLYMENT_ORGANIZATION_TYPE_OPTIONS = [
+  { value: APPLYMENT_ORGANIZATION_TYPE.INDIVIDUAL, label: APPLYMENT_ORGANIZATION_TYPE_LABEL.INDIVIDUAL },
+  { value: APPLYMENT_ORGANIZATION_TYPE.ENTERPRISE, label: APPLYMENT_ORGANIZATION_TYPE_LABEL.ENTERPRISE },
+  { value: APPLYMENT_ORGANIZATION_TYPE.MICRO, label: APPLYMENT_ORGANIZATION_TYPE_LABEL.MICRO }
+]
+
+export const APPLYMENT_BANK_ACCOUNT_TYPE = {
+  CORPORATE: 'BANK_ACCOUNT_TYPE_CORPORATE',
+  PERSONAL: 'BANK_ACCOUNT_TYPE_PERSONAL'
+} as const
+
+export const APPLYMENT_BANK_ACCOUNT_TYPE_LABEL: Record<string, string> = {
+  BANK_ACCOUNT_TYPE_CORPORATE: '对公账户',
+  BANK_ACCOUNT_TYPE_PERSONAL: '个人账户',
+  CORPORATE: '对公账户',
+  PERSONAL: '个人账户',
+  corporate: '对公账户',
+  personal: '个人账户'
+}
+
+export const APPLYMENT_BANK_ACCOUNT_TYPE_OPTIONS = [
+  { value: APPLYMENT_BANK_ACCOUNT_TYPE.PERSONAL, label: APPLYMENT_BANK_ACCOUNT_TYPE_LABEL.BANK_ACCOUNT_TYPE_PERSONAL },
+  { value: APPLYMENT_BANK_ACCOUNT_TYPE.CORPORATE, label: APPLYMENT_BANK_ACCOUNT_TYPE_LABEL.BANK_ACCOUNT_TYPE_CORPORATE }
+]
+
+export const APPLYMENT_SUBMIT_MODE = {
+  MANUAL: 'manual',
+  AUTO: 'auto'
+} as const
+
+export const APPLYMENT_SUBMIT_MODE_LABEL: Record<string, string> = {
+  manual: '运营后台提交',
+  auto: '审核通过自动提交'
+}
+
+/** 审核中非终态：不可改资料 / 不可重复提交 */
+export const APPLYMENT_IN_PROGRESS_STATES = [
+  APPLYMENT_STATE.SUBMITTED,
+  APPLYMENT_STATE.AUDITING,
+  APPLYMENT_STATE.LEGAL_VALIDATING,
+  APPLYMENT_STATE.SIGNING
+] as const
+
+export function isApplymentInProgress(state?: string | null) {
+  return (APPLYMENT_IN_PROGRESS_STATES as readonly string[]).includes(state || '')
+}
+
+export function isApplymentEditable(state?: string | null) {
+  return !state || state === APPLYMENT_STATE.INIT || state === APPLYMENT_STATE.REJECTED
+}
+
+export function isApplymentFinished(state?: string | null) {
+  return state === APPLYMENT_STATE.FINISHED
+}
+
+/** [ENUM] v8.5 §97 四层树内部结算收款渠道 */
+export const TRANSFER_ACCOUNT_CHANNEL = {
+  ZERO: 'zero',
+  BANK: 'bank'
+} as const
+
+export const TRANSFER_ACCOUNT_CHANNEL_LABEL: Record<string, string> = {
+  zero: '微信零钱',
+  bank: '银行卡'
+}
+
+export const TRANSFER_ACCOUNT_CHANNEL_OPTIONS = [
+  { value: TRANSFER_ACCOUNT_CHANNEL.ZERO, label: TRANSFER_ACCOUNT_CHANNEL_LABEL.zero },
+  { value: TRANSFER_ACCOUNT_CHANNEL.BANK, label: TRANSFER_ACCOUNT_CHANNEL_LABEL.bank }
+]
+
+export const TRANSFER_ACCOUNT_OWNER_TYPE = {
+  PROPERTY: 'PROPERTY',
+  COORDINATOR: 'COORDINATOR',
+  SECTOR_LEADER: 'SECTOR_LEADER',
+  INDIVIDUAL_LEADER: 'INDIVIDUAL_LEADER'
+} as const
+
+export const TRANSFER_ACCOUNT_OWNER_TYPE_LABEL: Record<string, string> = {
+  PROPERTY: '物业',
+  COORDINATOR: '统筹',
+  SECTOR_LEADER: '板块负责人',
+  INDIVIDUAL_LEADER: '个体负责人'
+}
+
+/** [ENUM] v8.5 §97 分账回退待追回台账 */
+export const SPLIT_RECOVERY_STATUS = {
+  PENDING: 'pending',
+  RECOVERED: 'recovered',
+  WRITTEN_OFF: 'written_off'
+} as const
+
+export const SPLIT_RECOVERY_STATUS_LABEL: Record<string, string> = {
+  pending: '待追回',
+  recovered: '已追回',
+  written_off: '已核销'
+}
+
+export const SPLIT_RECOVERY_STATUS_OPTIONS = [
+  { value: '', label: '全部状态' },
+  { value: SPLIT_RECOVERY_STATUS.PENDING, label: SPLIT_RECOVERY_STATUS_LABEL.pending },
+  { value: SPLIT_RECOVERY_STATUS.RECOVERED, label: SPLIT_RECOVERY_STATUS_LABEL.recovered },
+  { value: SPLIT_RECOVERY_STATUS.WRITTEN_OFF, label: SPLIT_RECOVERY_STATUS_LABEL.written_off }
+]
+
+export const SPLIT_RECOVERY_OWNER_TYPE_OPTIONS = [
+  { value: '', label: '全部角色' },
+  { value: CBK_OWNER_TYPE.COURIER, label: CBK_OWNER_TYPE_LABEL.COURIER },
+  { value: CBK_OWNER_TYPE.MERCHANT, label: CBK_OWNER_TYPE_LABEL.MERCHANT },
+  { value: CBK_OWNER_TYPE.PROPERTY, label: CBK_OWNER_TYPE_LABEL.PROPERTY }
+]
+
+/** §94.1 奖励金/积分发放申请类型 */
+export const GRANT_TYPE = {
+  POINTS: 'points',
+  REWARD: 'reward'
+} as const
+
+export const GRANT_TYPE_LABEL: Record<string, string> = {
+  [GRANT_TYPE.POINTS]: '积分',
+  [GRANT_TYPE.REWARD]: '奖励金'
+}
+
+export const GRANT_TYPE_OPTIONS = [
+  { value: '', label: '全部类型' },
+  { value: GRANT_TYPE.POINTS, label: GRANT_TYPE_LABEL[GRANT_TYPE.POINTS] },
+  { value: GRANT_TYPE.REWARD, label: GRANT_TYPE_LABEL[GRANT_TYPE.REWARD] }
+]
+
+/** §93.2 积分/奖励金归属模式 */
+export const ATTRIBUTION_MODE = {
+  PROPERTY: 'property',
+  RESIDENT: 'resident'
+} as const
+
+export const ATTRIBUTION_MODE_LABEL: Record<string, string> = {
+  [ATTRIBUTION_MODE.PROPERTY]: '到物业公司',
+  [ATTRIBUTION_MODE.RESIDENT]: '业主自用'
+}
+
+export const ATTRIBUTION_MODE_OPTIONS = [
+  { value: ATTRIBUTION_MODE.PROPERTY, label: ATTRIBUTION_MODE_LABEL[ATTRIBUTION_MODE.PROPERTY] },
+  { value: ATTRIBUTION_MODE.RESIDENT, label: ATTRIBUTION_MODE_LABEL[ATTRIBUTION_MODE.RESIDENT] }
+]
+
+/** §94.1 发放审批状态 */
+export const REWARD_GRANT_STATUS = {
+  PENDING: 'pending',
+  APPROVED: 'approved',
+  REJECTED: 'rejected'
+} as const
+
+export const REWARD_GRANT_STATUS_LABEL: Record<string, string> = {
+  [REWARD_GRANT_STATUS.PENDING]: '待审批',
+  [REWARD_GRANT_STATUS.APPROVED]: '已通过',
+  [REWARD_GRANT_STATUS.REJECTED]: '已驳回'
+}
+
+export const REWARD_GRANT_STATUS_OPTIONS = [
+  { value: '', label: '全部状态' },
+  { value: REWARD_GRANT_STATUS.PENDING, label: REWARD_GRANT_STATUS_LABEL[REWARD_GRANT_STATUS.PENDING] },
+  { value: REWARD_GRANT_STATUS.APPROVED, label: REWARD_GRANT_STATUS_LABEL[REWARD_GRANT_STATUS.APPROVED] },
+  { value: REWARD_GRANT_STATUS.REJECTED, label: REWARD_GRANT_STATUS_LABEL[REWARD_GRANT_STATUS.REJECTED] }
+]
+
+/** §94.6 手机端导航模块 */
+export const NAVIGATION_MODULE = {
+  HOME: 'home',
+  SERVICE: 'service',
+  ACTIVITY: 'activity',
+  RESIDENT_MERCHANT: 'resident_merchant'
+} as const
+
+export const NAVIGATION_MODULE_LABEL: Record<string, string> = {
+  [NAVIGATION_MODULE.HOME]: '首页',
+  [NAVIGATION_MODULE.SERVICE]: '服务',
+  [NAVIGATION_MODULE.ACTIVITY]: '活动',
+  [NAVIGATION_MODULE.RESIDENT_MERCHANT]: '业主商户'
+}
+
+export const NAVIGATION_MODULE_OPTIONS = [
+  { value: NAVIGATION_MODULE.HOME, label: NAVIGATION_MODULE_LABEL[NAVIGATION_MODULE.HOME] },
+  { value: NAVIGATION_MODULE.SERVICE, label: NAVIGATION_MODULE_LABEL[NAVIGATION_MODULE.SERVICE] },
+  { value: NAVIGATION_MODULE.ACTIVITY, label: NAVIGATION_MODULE_LABEL[NAVIGATION_MODULE.ACTIVITY] },
+  { value: NAVIGATION_MODULE.RESIDENT_MERCHANT, label: NAVIGATION_MODULE_LABEL[NAVIGATION_MODULE.RESIDENT_MERCHANT] }
+]
+
+/** 住户端导航路由码（配置值仍传英文，展示转中文） */
+export const NAVIGATION_ROUTE_LABEL: Record<string, string> = {
+  home: '首页',
+  service: '服务',
+  activity: '活动',
+  shop: '商城',
+  merchant: '商家',
+  canteen: '食堂',
+  forum: '论坛',
+  notice: '公告',
+  points: '积分',
+  profile: '我的',
+  order: '订单',
+  delivery: '配送',
+  resident_merchant: '业主商户',
+  index: '首页'
+}
+
+export const PERMISSION_ACTION_LABEL: Record<string, string> = {
+  grant: '授予',
+  revoke: '撤销',
+  update: '更新',
+  assign: '分配'
+}
+
+export function getNavigationRouteLabel(route?: string | null) {
+  if (!route) return '—'
+  return NAVIGATION_ROUTE_LABEL[route] || route
+}
+
+/** §94.7 物业银行卡用途 */
+export const BANK_CARD_PURPOSE = {
+  POINTS: 'points',
+  REWARD: 'reward'
+} as const
+
+export const BANK_CARD_PURPOSE_LABEL: Record<string, string> = {
+  [BANK_CARD_PURPOSE.POINTS]: '积分收款',
+  [BANK_CARD_PURPOSE.REWARD]: '奖励金收款'
+}
+
+export const BANK_CARD_PURPOSE_OPTIONS = [
+  { value: BANK_CARD_PURPOSE.POINTS, label: BANK_CARD_PURPOSE_LABEL[BANK_CARD_PURPOSE.POINTS] },
+  { value: BANK_CARD_PURPOSE.REWARD, label: BANK_CARD_PURPOSE_LABEL[BANK_CARD_PURPOSE.REWARD] }
+]
+
+/** §94.8 区域配额类型 */
+export const REGION_QUOTA_TYPE = {
+  POINT: 'point',
+  AMOUNT: 'amount'
+} as const
+
+export const REGION_QUOTA_TYPE_LABEL: Record<string, string> = {
+  [REGION_QUOTA_TYPE.POINT]: '积分',
+  [REGION_QUOTA_TYPE.AMOUNT]: '金额'
+}
+
+/** §93.1 一级经销商商品服务区间 */
+export const DISTRIBUTOR_SERVICE_SCOPE = {
+  CITY: 'city',
+  COMMUNITY: 'community'
+} as const
+
+export const DISTRIBUTOR_SERVICE_SCOPE_LABEL: Record<string, string> = {
+  [DISTRIBUTOR_SERVICE_SCOPE.CITY]: '本市',
+  [DISTRIBUTOR_SERVICE_SCOPE.COMMUNITY]: '小区'
+}
+
+export const DISTRIBUTOR_SERVICE_SCOPE_OPTIONS = [
+  { value: DISTRIBUTOR_SERVICE_SCOPE.CITY, label: DISTRIBUTOR_SERVICE_SCOPE_LABEL[DISTRIBUTOR_SERVICE_SCOPE.CITY] },
+  { value: DISTRIBUTOR_SERVICE_SCOPE.COMMUNITY, label: DISTRIBUTOR_SERVICE_SCOPE_LABEL[DISTRIBUTOR_SERVICE_SCOPE.COMMUNITY] }
+]
+
+/** §94.9 平台配置 */
+export const WITHDRAWAL_GRANULARITY = {
+  PER_ROLE: 'per_role',
+  MERCHANT: 'merchant',
+  RESIDENT: 'resident'
+} as const
+
+export const SHARE_DIMENSION = {
+  DEFAULT: 'default',
+  SIMPLE: 'simple'
+} as const
+
+export const SHARE_DIMENSION_LABEL: Record<string, string> = {
+  [SHARE_DIMENSION.DEFAULT]: '四级分成（默认）',
+  [SHARE_DIMENSION.SIMPLE]: '平台+物业两级'
 }

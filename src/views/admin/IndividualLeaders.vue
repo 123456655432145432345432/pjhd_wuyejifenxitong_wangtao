@@ -3,7 +3,10 @@
     <div class="header">
       <div>
         <h1 class="title">一级代理</h1>
-          <p class="desc">审核住户端申请（通过须指定板块负责人）；也可直接任命。撤销后状态为停用，无需填写原因。</p>
+          <p class="desc">
+            「已任命」可直接任命/撤销。「申请审核」走
+            <code>GET /admin/individual-leaders/applications</code>（v8.2 已实现字面量路由）。
+          </p>
       </div>
       <button class="btnPrimary" @click="openCreate">直接任命</button>
     </div>
@@ -222,9 +225,9 @@
             </div>
             <template v-if="auditForm.auditResult === AUDIT_RESULT.APPROVED">
               <div class="field">
-                <label class="label">所属板块负责人 <em>*</em></label>
+                <label class="label">所属板块负责人（可选，空则后端按板块自动挂）</label>
                 <select v-model="auditForm.sectorLeaderId" class="input">
-                  <option value="">请选择板块负责人</option>
+                  <option value="">不指定（后端按板块自动挂，可空）</option>
                   <option v-for="item in auditSectorLeaders" :key="sectorLeaderRecordId(item)" :value="sectorLeaderRecordId(item)">
                     {{ item.residentName || item.id }} · {{ getEnumLabel(SECTOR_TYPE_LABEL, item.sector) }}
                   </option>
@@ -274,6 +277,7 @@ import { ApiError, formatApiError } from '../../api/request'
 import {
   AUDIT_RESULT,
   ENTITY_STATUS,
+  ENTITY_STATUS_LABEL,
   ENTITY_STATUS_OPTIONS,
   getEnumLabel,
   INDIVIDUAL_LEADER_APPLICATION_STATUS,
@@ -287,7 +291,8 @@ import {
 
 type TabKey = 'applications' | 'appointed'
 
-const tab = ref<TabKey>('applications')
+/** 默认已任命：申请列表接口测服常未注册，避免首屏双请求报错 */
+const tab = ref<TabKey>('appointed')
 const leaders = ref<IndividualLeaderItem[]>([])
 const applications = ref<IndividualLeaderApplicationItem[]>([])
 const sectorLeaders = ref<SectorLeaderDetail[]>([])
@@ -338,15 +343,11 @@ const auditSectorLeaders = computed(() => {
 })
 
 function statusLabel(status?: string) {
-  return status === ENTITY_STATUS.ACTIVE
-    ? '启用'
-    : status === ENTITY_STATUS.INACTIVE
-      ? '停用'
-      : status || '—'
+  return getEnumLabel(ENTITY_STATUS_LABEL, status, '—')
 }
 
 function applicationStatusLabel(status?: string) {
-  return getEnumLabel(INDIVIDUAL_LEADER_APPLICATION_STATUS_LABEL, status, status || '—')
+  return getEnumLabel(INDIVIDUAL_LEADER_APPLICATION_STATUS_LABEL, status, '—')
 }
 
 function switchTab(next: TabKey) {
@@ -391,10 +392,11 @@ async function load(targetPage = 1) {
     )
     if (
       tab.value === 'applications' &&
-      /NoResourceFoundException|NoHandlerFoundException|ID格式不正确/i.test(error.value)
+      (e instanceof ApiError && (e.code === 404 || e.code === 400) ||
+        /NoResourceFoundException|NoHandlerFoundException|ID格式不正确|接口不存在|找不到/i.test(error.value))
     ) {
       error.value =
-        '申请列表加载失败。请确认后端已按 v6.3(1) 单独注册 GET /admin/individual-leaders/applications（query: auditStatus/sector/keyword），且该路径优先于详情 GET /{id}。'
+        '申请列表加载失败。请确认测服已部署最新接口；临时可用「已任命 → 直接任命」。'
     }
     leaders.value = []
     applications.value = []
@@ -462,7 +464,7 @@ async function submit() {
     return
   }
   if (!/^res_/i.test(form.residentId)) {
-    formError.value = '住户 ID 须为 res_ 前缀，请重新选择住户'
+    formError.value = '住户编号格式不正确，请重新选择住户'
     return
   }
   if (!form.sectorLeaderId) {
@@ -470,7 +472,7 @@ async function submit() {
     return
   }
   if (!/^sl_/i.test(form.sectorLeaderId)) {
-    formError.value = '板块负责人须为 sl_ 记录，不能用住户 ID'
+    formError.value = '请选择有效的板块负责人记录，不能用住户编号'
     return
   }
   if (!form.sector) {
@@ -500,11 +502,12 @@ async function submit() {
 async function removeLeader(item: IndividualLeaderItem) {
   if (!confirm(`确认撤销一级代理「${item.residentName || item.name || item.id}」？`)) return
   removingId.value = item.id
+  error.value = ''
   try {
-    await adminIndividualLeaderApi.remove(item.id)
+    await adminIndividualLeaderApi.remove(item.id, '管理端撤销')
     await load(page.value)
   } catch (e) {
-    error.value = e instanceof ApiError ? e.message : '撤销失败'
+    error.value = formatApiError(e, '撤销失败')
   } finally {
     removingId.value = ''
   }
@@ -536,15 +539,11 @@ async function submitAudit() {
   if (!auditTarget.value || auditing.value) return
   const applicationId = applicationRecordId(auditTarget.value)
   if (!/^ila_/i.test(applicationId)) {
-    auditError.value = `申请 ID 须为 ila_ 前缀，当前为「${applicationId || '空'}」，无法提交审核`
+    auditError.value = `申请编号格式不正确（当前为「${applicationId || '空'}」），无法提交审核`
     return
   }
-  if (auditForm.auditResult === AUDIT_RESULT.APPROVED && !auditForm.sectorLeaderId) {
-    auditError.value = '通过时请选择所属板块负责人'
-    return
-  }
-  if (auditForm.auditResult === AUDIT_RESULT.APPROVED && !/^sl_/i.test(auditForm.sectorLeaderId)) {
-    auditError.value = '板块负责人须为 sl_ 记录，不能用住户 ID'
+  if (auditForm.auditResult === AUDIT_RESULT.APPROVED && auditForm.sectorLeaderId && !/^sl_/i.test(auditForm.sectorLeaderId)) {
+    auditError.value = '请选择有效的板块负责人记录，不能用住户编号'
     return
   }
   if (auditForm.auditResult === AUDIT_RESULT.REJECTED && !auditForm.remark.trim()) {
@@ -560,7 +559,9 @@ async function submitAudit() {
     await adminIndividualLeaderApi.auditApplication(applicationId, {
       auditResult: auditForm.auditResult,
       sectorLeaderId:
-        auditForm.auditResult === AUDIT_RESULT.APPROVED ? auditForm.sectorLeaderId : undefined,
+        auditForm.auditResult === AUDIT_RESULT.APPROVED && auditForm.sectorLeaderId
+          ? auditForm.sectorLeaderId
+          : undefined,
       sector:
         auditForm.auditResult === AUDIT_RESULT.APPROVED
           ? selected?.sector || auditTarget.value.sector

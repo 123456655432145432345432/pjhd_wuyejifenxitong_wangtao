@@ -30,7 +30,7 @@
             <td>{{ item.memberCount ?? '—' }}</td>
             <td>{{ item.subscriberCount ?? '—' }}</td>
             <td>{{ item.monthlyFee != null ? `¥${formatMoney(item.monthlyFee)}` : '—' }}</td>
-            <td>{{ item.status === ENTITY_STATUS.ACTIVE ? '启用' : item.status || '—' }}</td>
+            <td>{{ item.status === ENTITY_STATUS.ACTIVE ? '启用' : getEnumLabel(ENTITY_STATUS_LABEL, item.status) }}</td>
             <td>
               <button class="btnGhostSm" @click="openEdit(item)">编辑</button>
             </td>
@@ -91,7 +91,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { activityGroupApi } from '../../api/services'
 import type { ActivityGroupItem } from '../../api/types'
 import { ApiError } from '../../api/request'
-import { ENTITY_STATUS } from '../../constants/enums'
+import { ENTITY_STATUS, ENTITY_STATUS_LABEL, getEnumLabel } from '../../constants/enums'
 import { useIsMobile } from '../../composables/useIsMobile'
 
 const groups = ref<ActivityGroupItem[]>([])

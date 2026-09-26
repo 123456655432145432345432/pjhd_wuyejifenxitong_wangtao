@@ -3,7 +3,10 @@
     <div class="header">
       <div>
         <h1 class="title">业主商户</h1>
-        <p class="desc">审核住户端「业主商户」二级分销申请（缴保证金后）。商品商家 / 技工 / 组长入驻请到「商家管理」。</p>
+        <p class="desc">
+          审核住户端「业主商户」二级分销申请（缴保证金后）。商品商家 / 技工 / 组长入驻请到「商家管理」。
+          分销商品支持新建、编辑内容、设置收费周期与软删除。
+        </p>
       </div>
       <div class="headerActions">
         <button type="button" class="btnSecondary" @click="openSettings">参数设置</button>
@@ -60,7 +63,7 @@
           <tr v-for="item in applications" :key="item.id">
             <td>{{ item.residentName || item.residentId }} · {{ item.phone || '' }}</td>
             <td>{{ item.communityName || item.communityId || '—' }}</td>
-            <td>{{ item.depositAmount ?? '—' }}（{{ item.depositStatus || '—' }}）</td>
+            <td>{{ item.depositAmount ?? '—' }}（{{ getEnumLabel(RESIDENT_MERCHANT_DEPOSIT_STATUS_LABEL, item.depositStatus) }}）</td>
             <td>{{ applicationStatusLabel(item) }}</td>
             <td>
               <span class="visibilityTag" :class="item.visibility || 'private'">
@@ -103,11 +106,7 @@
             <td>{{ item.residentName || item.residentId || '—' }}</td>
             <td>{{ item.amount ?? '—' }}</td>
             <td>{{ item.deductedAmount ?? 0 }}</td>
-            <td>{{ item.status || item.statusCode || '—' }}</td>
-            <td>{{ item.createdAt || '—' }}</td>
-            <td>
-              <button type="button" class="linkBtn" @click="openDeduct(item)">扣除</button>
-            </td>
+            <td>{{ getEnumLabel(RESIDENT_MERCHANT_DEPOSIT_STATUS_LABEL, item.status || item.statusCode) }}</td>
           </tr>
         </tbody>
       </table>
@@ -133,8 +132,7 @@
             <td>{{ item.retailAmount ?? '—' }}</td>
             <td>{{ item.commissionAmount ?? '—' }}</td>
             <td>{{ item.settlementAmount ?? '—' }}</td>
-            <td>{{ item.status || item.statusCode || '—' }}</td>
-            <td>{{ item.settledAt || item.createdAt || '—' }}</td>
+            <td>{{ getEnumLabel(RESIDENT_MERCHANT_SETTLEMENT_STATUS_LABEL, item.status || item.statusCode) }}</td>
           </tr>
         </tbody>
       </table>
@@ -161,6 +159,9 @@
         </div>
         <div v-if="isPlatformAdmin && !selectedPropertyId" class="productsNotice">
           <p class="hint">请先选择物业公司后再查看分销商品</p>
+          <p v-if="!propertyCompanies.length" class="subHint">
+            物业列表为空：请确认超管已登录并刷新页面；若仍无选项，请检查物业公司列表接口是否正常。
+          </p>
         </div>
         <table v-else-if="distributorProducts.length" class="table">
           <thead>
@@ -168,6 +169,8 @@
               <th>商品名称</th>
               <th>批发价</th>
               <th>建议零售价</th>
+              <th>加价%</th>
+              <th>库存</th>
               <th>收费周期</th>
               <th>创建时间</th>
               <th>操作</th>
@@ -178,10 +181,14 @@
               <td>{{ item.name || item.id }}</td>
               <td>{{ item.wholesalePrice ?? '—' }}</td>
               <td>{{ item.suggestedRetailPrice ?? '—' }}</td>
+              <td>{{ markupPercent(item) }}</td>
+              <td>{{ item.stock ?? '—' }}</td>
               <td>{{ getEnumLabel(BILLING_CYCLE_LABEL, item.billingCycle) }}</td>
               <td>{{ item.createdAt || '—' }}</td>
-              <td>
+              <td class="actions">
+                <button type="button" class="linkBtn" @click="openEditProduct(item)">编辑</button>
                 <button type="button" class="linkBtn" @click="openBillingCycle(item)">设置周期</button>
+                <button type="button" class="linkBtn danger" @click="removeProduct(item)">删除</button>
               </td>
             </tr>
           </tbody>
@@ -260,9 +267,20 @@
               <input v-model.number="settings.defaultDepositAmount" type="number" min="0" class="input" />
             </div>
             <div class="field">
-              <label class="label">平台抽成比例（0~1）</label>
+              <label class="label">平台抽成（自有商品，0~1）</label>
               <input
                 v-model.number="settings.platformCommissionRate"
+                type="number"
+                min="0"
+                max="1"
+                step="0.01"
+                class="input"
+              />
+            </div>
+            <div class="field">
+              <label class="label">平台抽成（经销商货品，0~1，默认 0.10）</label>
+              <input
+                v-model.number="settings.distributorProductCommissionRate"
                 type="number"
                 min="0"
                 max="1"
@@ -319,7 +337,7 @@
       <div v-if="createProductOpen" class="modalOverlay" @click.self="createProductOpen = false">
         <div class="modal">
           <div class="modalHeader">
-            <h3 class="modalTitle">新建分销商品</h3>
+            <h3 class="modalTitle">{{ editingProductId ? '编辑分销商品' : '新建分销商品' }}</h3>
             <button type="button" class="modalClose" @click="createProductOpen = false">&times;</button>
           </div>
           <div class="modalBody">
@@ -341,11 +359,24 @@
                 class="input"
               />
             </div>
+            <div class="field">
+              <label class="label">拿货名额（stock）</label>
+              <input v-model.number="createProductForm.stock" type="number" min="0" class="input" />
+            </div>
+            <div class="field">
+              <label class="label">服务区间</label>
+              <select v-model="createProductForm.serviceScope" class="input">
+                <option value="">不指定</option>
+                <option v-for="opt in DISTRIBUTOR_SERVICE_SCOPE_OPTIONS" :key="opt.value" :value="opt.value">
+                  {{ opt.label }}
+                </option>
+              </select>
+            </div>
             <p v-if="createProductError" class="error">{{ createProductError }}</p>
             <div class="modalFooter">
               <button type="button" class="btnSecondary" @click="createProductOpen = false">取消</button>
               <button type="button" class="btnPrimary" :disabled="createProductSaving" @click="submitCreateProduct">
-                {{ createProductSaving ? '提交中...' : '创建' }}
+                {{ createProductSaving ? '提交中...' : editingProductId ? '保存' : '创建' }}
               </button>
             </div>
           </div>
@@ -372,10 +403,14 @@ import {
   BILLING_CYCLE,
   BILLING_CYCLE_LABEL,
   BILLING_CYCLE_OPTIONS,
+  DISTRIBUTOR_SERVICE_SCOPE_OPTIONS,
   RESIDENT_MERCHANT_STATUS,
   RESIDENT_MERCHANT_STATUS_LABEL,
   RESIDENT_MERCHANT_STATUS_OPTIONS,
+  RESIDENT_MERCHANT_DEPOSIT_STATUS_LABEL,
+  RESIDENT_MERCHANT_SETTLEMENT_STATUS_LABEL,
   RESIDENT_SHOP_VISIBILITY_LABEL,
+  ENTITY_STATUS,
   USER_ROLE,
   getEnumLabel,
   isResidentMerchantPendingAudit
@@ -389,9 +424,16 @@ function visibilityLabel(value?: string) {
   return getEnumLabel(RESIDENT_SHOP_VISIBILITY_LABEL, value, '不对外')
 }
 
+function markupPercent(item: { wholesalePrice?: number; suggestedRetailPrice?: number }) {
+  const wholesale = Number(item.wholesalePrice)
+  const retail = Number(item.suggestedRetailPrice)
+  if (!Number.isFinite(wholesale) || wholesale <= 0 || !Number.isFinite(retail)) return '—'
+  return `${(((retail - wholesale) / wholesale) * 100).toFixed(1)}%`
+}
+
 function applicationStatusLabel(item: ResidentMerchantApplicationItem) {
   const status = item.statusCode || item.status
-  return getEnumLabel(RESIDENT_MERCHANT_STATUS_LABEL, status, status || '—')
+  return getEnumLabel(RESIDENT_MERCHANT_STATUS_LABEL, status, '—')
 }
 
 function canAuditApplication(item: ResidentMerchantApplicationItem) {
@@ -439,7 +481,8 @@ const settingsSaving = ref(false)
 const settingsError = ref('')
 const settings = ref<ResidentMerchantSettings>({
   defaultDepositAmount: 500,
-  platformCommissionRate: 0,
+  platformCommissionRate: 0.2,
+  distributorProductCommissionRate: 0.1,
   refundWindowDays: 7
 })
 
@@ -452,10 +495,13 @@ const billingCycleValue = ref(BILLING_CYCLE.ONE_TIME)
 const createProductOpen = ref(false)
 const createProductSaving = ref(false)
 const createProductError = ref('')
+const editingProductId = ref('')
 const createProductForm = ref({
   name: '',
   wholesalePrice: 0,
-  suggestedRetailPrice: 0
+  suggestedRetailPrice: 0,
+  stock: 0,
+  serviceScope: ''
 })
 
 function resolveError(e: unknown) {
@@ -470,12 +516,19 @@ function resolvePropertyCompanyId() {
 async function loadPropertyCompanies() {
   if (!isPlatformAdmin.value) return
   try {
-    const res = await propertyCompanyApi.list({ pageSize: 100 })
+    // list 第二参须为 true，否则无 Token，测服返回空列表
+    const res = await propertyCompanyApi.list(
+      { page: 1, pageSize: 100, status: ENTITY_STATUS.ACTIVE, sort: '-createdAt' },
+      true
+    )
     propertyCompanies.value = res.list || []
-    if (!selectedPropertyId.value && auth.propertyCompanyId) {
+    if (!selectedPropertyId.value && propertyCompanies.value.length === 1) {
+      selectedPropertyId.value = propertyCompanies.value[0].id
+    } else if (!selectedPropertyId.value && auth.propertyCompanyId) {
       selectedPropertyId.value = auth.propertyCompanyId
     }
   } catch (e) {
+    propertyCompanies.value = []
     error.value = resolveError(e)
   }
 }
@@ -636,7 +689,27 @@ async function saveSettings() {
 }
 
 function openCreateProduct() {
-  createProductForm.value = { name: '', wholesalePrice: 0, suggestedRetailPrice: 0 }
+  editingProductId.value = ''
+  createProductForm.value = {
+    name: '',
+    wholesalePrice: 0,
+    suggestedRetailPrice: 0,
+    stock: 0,
+    serviceScope: ''
+  }
+  createProductError.value = ''
+  createProductOpen.value = true
+}
+
+function openEditProduct(item: DistributorProductItem) {
+  editingProductId.value = item.id
+  createProductForm.value = {
+    name: item.name || '',
+    wholesalePrice: Number(item.wholesalePrice) || 0,
+    suggestedRetailPrice: Number(item.suggestedRetailPrice) || 0,
+    stock: Number(item.stock) || 0,
+    serviceScope: item.serviceScope || ''
+  }
   createProductError.value = ''
   createProductOpen.value = true
 }
@@ -649,17 +722,36 @@ async function submitCreateProduct() {
   createProductSaving.value = true
   createProductError.value = ''
   try {
-    await distributorProductApi.create({
+    const payload = {
       name: createProductForm.value.name.trim(),
       wholesalePrice: Number(createProductForm.value.wholesalePrice) || 0,
-      suggestedRetailPrice: Number(createProductForm.value.suggestedRetailPrice) || 0
-    })
+      suggestedRetailPrice: Number(createProductForm.value.suggestedRetailPrice) || 0,
+      stock: Number(createProductForm.value.stock) || 0,
+      serviceScope: createProductForm.value.serviceScope || undefined
+    }
+    if (editingProductId.value) {
+      await distributorProductApi.update(editingProductId.value, payload)
+    } else {
+      await distributorProductApi.create(payload)
+    }
+    const reloadPage = editingProductId.value ? productPage.value : 1
     createProductOpen.value = false
-    await loadDistributorProducts(1)
+    editingProductId.value = ''
+    await loadDistributorProducts(reloadPage)
   } catch (e) {
     createProductError.value = resolveError(e)
   } finally {
     createProductSaving.value = false
+  }
+}
+
+async function removeProduct(item: DistributorProductItem) {
+  if (!confirm(`确认删除分销商品「${item.name || item.id}」？将软删除（下架），历史拿货记录保留。`)) return
+  try {
+    await distributorProductApi.remove(item.id)
+    await loadDistributorProducts(productPage.value)
+  } catch (e) {
+    error.value = resolveError(e)
   }
 }
 
@@ -723,6 +815,7 @@ onMounted(async () => {
 .actions { display: flex; gap: 12px; flex-wrap: wrap; }
 .linkBtn { border: none; background: none; color: #5c5c9e; cursor: pointer; padding: 0; font-size: 14px; }
 .linkBtn.danger { color: #e05c5c; }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .muted { color: #8c8c9a; }
 .visibilityTag {
   display: inline-block;

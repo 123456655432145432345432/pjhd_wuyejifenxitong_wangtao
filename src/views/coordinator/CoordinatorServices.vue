@@ -52,7 +52,7 @@
             <td>{{ item.price != null ? `¥${formatMoney(item.price)}` : '—' }}</td>
             <td>{{ item.memberPrice != null ? `¥${formatMoney(item.memberPrice)}` : '—' }}</td>
             <td>{{ item.priceUnit || '—' }}</td>
-            <td>{{ item.status === ENTITY_STATUS.ACTIVE ? '上架' : item.status || '—' }}</td>
+            <td>{{ item.status === ENTITY_STATUS.ACTIVE ? '上架' : getEnumLabel(ENTITY_STATUS_LABEL, item.status) }}</td>
             <td>{{ item.createdAt || '—' }}</td>
           </tr>
         </tbody>
@@ -119,6 +119,7 @@ import type { CommunityServiceItem } from '../../api/types'
 import { ApiError } from '../../api/request'
 import {
   ENTITY_STATUS,
+  ENTITY_STATUS_LABEL,
   getEnumLabel,
   PROVIDER_TYPE_LABEL,
   PROVIDER_TYPE_OPTIONS,

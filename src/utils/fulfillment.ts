@@ -23,19 +23,20 @@ export function orderStatusOf(order: Pick<OrderItem, 'orderStatus' | 'status'>) 
   return order.orderStatus || order.status || ''
 }
 
-/** 空履约 + 已有配送单视为历史大厅单（§68 对照） */
+/**
+ * v8.4：历史 `fulfillmentMode=null` 时，后端按「需配送 → pending_choice」处理；
+ * 已有配送单且无明确 mode 时仍视为大厅单，避免误出选择按钮。
+ */
 export function fulfillmentModeOf(order: OrderItem) {
   if (order.fulfillmentMode) return order.fulfillmentMode
   if (order.requiresDelivery === false) return FULFILLMENT_MODE.NONE
   if (order.deliveryId) return FULFILLMENT_MODE.COURIER_HALL
-  return ''
+  return FULFILLMENT_MODE.PENDING_CHOICE
 }
 
 export function fulfillmentModeLabelOf(order: OrderItem) {
   if (order.fulfillmentModeLabel) return order.fulfillmentModeLabel
-  const mode = fulfillmentModeOf(order)
-  if (!mode && order.deliveryId) return '平台配送（历史单）'
-  return getEnumLabel(FULFILLMENT_MODE_LABEL, mode, '—')
+  return getEnumLabel(FULFILLMENT_MODE_LABEL, fulfillmentModeOf(order), '—')
 }
 
 export function carrierTypeOf(order: Pick<OrderItem, 'carrierType' | 'fulfillmentMode' | 'deliveryStatus'>) {
@@ -81,7 +82,9 @@ export function canMerchantVerify(order: OrderItem) {
 
 export function canMerchantChoose(order: OrderItem) {
   if (order.requiresDelivery === false) return false
+  if (fulfillmentModeOf(order) === FULFILLMENT_MODE.NONE) return false
   if (canMerchantVerify(order)) return false
+  if (isChoiceOverdue(order)) return false
   return (
     fulfillmentModeOf(order) === FULFILLMENT_MODE.PENDING_CHOICE &&
     orderStatusOf(order) === ORDER_STATUS.PAID

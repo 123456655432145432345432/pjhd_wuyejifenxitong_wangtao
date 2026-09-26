@@ -720,16 +720,16 @@ const detailRows = computed(() => {
     { label: '物业公司', value: d.propertyName || d.propertyCompanyId || '—' },
     { label: '小区', value: d.communityName || d.communityId || '—' },
     { label: '楼栋/楼层/单元/房号', value: [d.building, d.floor, d.unit, d.room].filter(Boolean).join('-') || '—' },
-    { label: '家庭 ID', value: d.familyId || '—' },
+    { label: '家庭编号', value: d.familyId || '—' },
     { label: '性别', value: genderLabel },
     { label: '生日', value: d.birthday || '—' },
     { label: '年龄', value: d.age !== undefined && d.age !== null ? String(d.age) : '—' },
     { label: '婚姻状态', value: getEnumLabel(MARITAL_STATUS_LABEL, d.maritalStatus, '—') },
     { label: '是否有子女', value: d.hasChildren === true ? '是' : d.hasChildren === false ? '否' : '—' },
-    { label: '个人积分', value: `${formatMoney(d.pointBalance)} pts` },
+    { label: '个人积分', value: `${formatMoney(d.pointBalance)} 积分` },
     {
       label: '家庭积分',
-      value: d.familyPointBalance == null ? '—（无家庭）' : `${formatMoney(d.familyPointBalance)} pts`
+      value: d.familyPointBalance == null ? '—（无家庭）' : `${formatMoney(d.familyPointBalance)} 积分`
     },
     { label: '物业币余额', value: `¥${formatMoney(d.coinBalance)}` },
     { label: '物业币冻结', value: d.coinFrozen ? '已冻结' : '未冻结' },
@@ -955,7 +955,7 @@ async function submitCreate() {
   resetFormError()
   const companyId = authStore.propertyCompanyId
   if (!companyId) {
-    formError.value = '未获取到物业公司 ID，请重新登录'
+    formError.value = '未获取到物业公司编号，请重新登录'
     return
   }
   if (!createForm.value.communityId.trim()) {
@@ -1183,7 +1183,7 @@ function buildUpdatePayload(): ResidentUpdatePayload {
 async function submitEdit() {
   if (!editingId.value) return
   if (!canEditResident.value) {
-    formError.value = '当前账号无编辑住户权限，请使用物业管理员（property_admin）账号登录'
+    formError.value = '当前账号无编辑住户权限，请使用物业管理员账号登录'
     return
   }
   resetFormError()

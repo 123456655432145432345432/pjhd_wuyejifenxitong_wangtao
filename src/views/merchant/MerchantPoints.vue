@@ -94,7 +94,7 @@
       <table v-else-if="purchases.length" class="table">
         <thead>
           <tr>
-            <th>记录 ID</th>
+            <th>记录编号</th>
             <th>时间</th>
             <th>积分</th>
             <th>剩余积分</th>
@@ -171,7 +171,7 @@ const POINT_PURCHASE_STATUS_LABEL: Record<string, string> = {
 }
 
 function pointPurchaseStatusLabel(status?: string) {
-  return getEnumLabel(POINT_PURCHASE_STATUS_LABEL, status, status || '—')
+  return getEnumLabel(POINT_PURCHASE_STATUS_LABEL, status, '—')
 }
 
 async function loadQuote() {

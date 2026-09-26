@@ -14,7 +14,7 @@
           <input
             v-model.trim="keyword"
             type="search"
-            placeholder="搜索住户姓名 / ID"
+            placeholder="搜索住户姓名 / 编号"
             @input="onSearchInput"
           />
         </form>
@@ -123,9 +123,9 @@
         </template>
         <div v-else class="emptyChat">
           <IconSvg name="notice" />
-          <p>请选择左侧会话，或输入住户 ID 直接发起</p>
+          <p>请选择左侧会话，或输入住户编号直接发起</p>
           <form class="startForm" @submit.prevent="startByResidentId">
-            <input v-model.trim="startResidentId" class="input" placeholder="住户 ID（如 res_xxx）" />
+            <input v-model.trim="startResidentId" class="input" placeholder="住户编号（如 res_xxx）" />
             <button type="submit" class="btnPrimary" :disabled="!startResidentId">开始聊天</button>
           </form>
         </div>

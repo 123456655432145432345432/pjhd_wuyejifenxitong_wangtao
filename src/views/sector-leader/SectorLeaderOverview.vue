@@ -39,6 +39,17 @@
             <li><span>统筹负责人</span><strong>{{ coordinatorName }}</strong></li>
             <li><span>个体负责人</span><strong>{{ individualLeaderCount }} 人</strong></li>
             <li><span>累计收益</span><strong>¥{{ formatMoney(totalEarnings) }}</strong></li>
+            <li><span>可提现</span><strong>¥{{ formatMoney(withdrawableAmount) }}</strong></li>
+          </ul>
+        </div>
+        <div v-if="earningsRecords.length" class="card">
+          <h3 class="cardTitle">收益明细</h3>
+          <ul class="earningsList">
+            <li v-for="(rec, idx) in earningsRecords" :key="rec.id || idx">
+              <span>{{ rec.description || rec.type || '收益' }}</span>
+              <strong>¥{{ formatMoney(rec.amount) }}</strong>
+              <time>{{ rec.createdAt || '' }}</time>
+            </li>
           </ul>
         </div>
         <div class="card">
@@ -47,6 +58,7 @@
             <RouterLink class="actionBtn" :to="{ name: 'sector-leader-merchants' }">管理板块商家</RouterLink>
             <RouterLink class="actionBtn" :to="{ name: 'sector-leader-ranking' }">调整板块排名</RouterLink>
             <RouterLink class="actionBtn" :to="{ name: 'sector-leader-offers' }">发布板块特惠</RouterLink>
+            <RouterLink class="actionBtn" :to="{ name: 'transfer-accounts' }">收款方式</RouterLink>
           </div>
           <ul class="tips">
             <li>管理本板块下的商家，有权踢出不合格商家</li>
@@ -62,6 +74,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
+import { sectorLeaderPortalApiExt } from '../../api/services'
 import { useAuthStore } from '../../stores/auth'
 import { useSectorLeaderPortalStore } from '../../stores/sectorLeaderPortal'
 import { getEnumLabel, SECTOR_TYPE_LABEL } from '../../constants/enums'
@@ -86,7 +99,11 @@ const coordinatorName = computed(() => detail.value?.coordinatorName || '—')
 const individualLeaderCount = computed(() => detail.value?.individualLeaderCount ?? 0)
 const merchantCount = computed(() => detail.value?.merchantCount ?? 0)
 const activeOfferCount = computed(() => detail.value?.activeSpecialOfferCount ?? 0)
-const totalEarnings = computed(() => detail.value?.totalEarnings)
+const totalEarnings = computed(() => earnings.value?.totalEarnings ?? detail.value?.totalEarnings)
+const withdrawableAmount = computed(() => earnings.value?.withdrawableAmount)
+const earningsRecords = computed(() => earnings.value?.records || [])
+
+const earnings = ref<{ totalEarnings?: number; withdrawableAmount?: number; records?: Array<{ id?: string; amount?: number; type?: string; description?: string; createdAt?: string }> } | null>(null)
 
 function formatMoney(value?: number) {
   if (value === undefined || value === null) return '0.00'
@@ -97,6 +114,10 @@ async function loadStats() {
   loading.value = true
   try {
     await portal.loadMy()
+    const id = portal.detail?.id
+    if (id) {
+      earnings.value = await sectorLeaderPortalApiExt.getEarnings(id)
+    }
   } finally {
     loading.value = false
   }
@@ -129,6 +150,9 @@ onMounted(loadStats)
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
 .actionBtn { padding: 10px 16px; border-radius: 8px; background: #5c5c9e; color: #fff; text-decoration: none; font-size: 14px; }
 .tips { padding-left: 18px; color: #5c5c66; line-height: 1.8; font-size: 14px; }
+.earningsList { list-style: none; font-size: 14px; }
+.earningsList li { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 10px 0; border-bottom: 1px solid #f0f0f3; }
+.earningsList time { grid-column: 1 / -1; font-size: 12px; color: #8c8c9a; }
 @media (max-width: 960px) {
   .stats { grid-template-columns: repeat(2, 1fr); }
   .grid { grid-template-columns: 1fr; }

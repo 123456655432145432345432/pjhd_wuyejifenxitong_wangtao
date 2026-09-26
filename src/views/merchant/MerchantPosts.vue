@@ -143,7 +143,7 @@ const form = reactive({
 })
 
 function statusLabel(status?: string) {
-  return getEnumLabel(MERCHANT_POST_STATUS_LABEL, status, status || '—')
+  return getEnumLabel(MERCHANT_POST_STATUS_LABEL, status, '—')
 }
 
 function normalizeImageUrls(value?: string[] | string): string[] {

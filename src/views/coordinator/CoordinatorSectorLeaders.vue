@@ -3,7 +3,10 @@
     <div class="header">
       <div>
         <h1 class="title">板块管理</h1>
-        <p class="desc">管理下属板块负责人</p>
+        <p class="desc">
+          管理本人名下板块负责人（需具备板块管理权限；操作非本人名下记录会被拒绝）。
+          若提示「只能操作本人名下」，请物业/平台在编辑时补挂统筹。
+        </p>
       </div>
       <button class="btnPrimary" @click="openCreate">新增板块负责人</button>
       <button class="btnSecondary" @click="openIndividualCreate">新增个体负责人</button>
@@ -12,6 +15,10 @@
 
     <div class="toolbar">
       <input v-model="keyword" class="input" placeholder="搜索姓名/手机号" @keyup.enter="reload" />
+      <select v-model="sectorFilter" class="input" @change="reload">
+        <option value="">全部板块</option>
+        <option v-for="opt in sectorOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+      </select>
       <select v-model="statusFilter" class="input" @change="reload">
         <option v-for="opt in statusOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
       </select>
@@ -40,7 +47,7 @@
             <td>{{ item.sectorName || getEnumLabel(SECTOR_TYPE_LABEL, item.sector) }}</td>
             <td>{{ item.individualLeaderCount ?? '—' }}</td>
             <td>
-              <span class="statusTag" :class="item.status">{{ statusLabel(item.status) }}</span>
+              <span class="statusTag" :class="item.status">{{ item.statusLabel || statusLabel(item.status) }}</span>
             </td>
             <td class="actions">
               <button class="btnGhostSm" @click="openEdit(item)">编辑</button>
@@ -89,6 +96,18 @@
                   {{ opt.label }}
                 </option>
               </select>
+            </div>
+            <div v-if="!editingId" class="field">
+              <label class="label">分成比例（0~1）</label>
+              <input
+                v-model.number="form.commissionRate"
+                type="number"
+                min="0"
+                max="1"
+                step="0.01"
+                class="input"
+                placeholder="可选，如 0.3 表示 30%"
+              />
             </div>
             <div class="field">
               <label class="label">工作说明</label>
@@ -177,8 +196,8 @@
           <div class="modalBody">
             <p v-if="merchantFormError" class="error">{{ merchantFormError }}</p>
             <div class="field">
-              <label class="label">平台商家 ID <em>*</em></label>
-              <input v-model="merchantForm.platformMerchantId" class="input" placeholder="pm_xxx" />
+              <label class="label">平台商家编号 <em>*</em></label>
+              <input v-model="merchantForm.platformMerchantId" class="input" placeholder="平台商家编号，如 pm_xxx" />
             </div>
             <div class="field">
               <label class="label">商家名称 <em>*</em></label>
@@ -213,12 +232,14 @@ import type { SectorLeaderDetail } from '../../api/types'
 import { ApiError, formatApiError } from '../../api/request'
 import {
   ENTITY_STATUS,
+  ENTITY_STATUS_LABEL,
   ENTITY_STATUS_OPTIONS,
   getEnumLabel,
   RESIDENT_STATUS,
   SECTOR_TYPE,
   SECTOR_TYPE_LABEL,
-  SECTOR_TYPE_OPTIONS
+  SECTOR_TYPE_OPTIONS,
+  normalizeSectorType
 } from '../../constants/enums'
 import { useCoordinatorPortalStore } from '../../stores/coordinatorPortal'
 import { useIsMobile } from '../../composables/useIsMobile'
@@ -229,6 +250,7 @@ const leaders = ref<SectorLeaderDetail[]>([])
 const loading = ref(false)
 const error = ref('')
 const keyword = ref('')
+const sectorFilter = ref('')
 const statusFilter = ref('')
 const page = ref(1)
 const totalPages = ref(1)
@@ -266,17 +288,14 @@ const form = reactive({
   residentId: '',
   sector: SECTOR_TYPE.CLEANING,
   description: '',
-  status: ENTITY_STATUS.ACTIVE
+  status: ENTITY_STATUS.ACTIVE,
+  commissionRate: undefined as number | undefined
 })
 
 const coordinatorId = computed(() => portal.detail?.id || '')
 
 function statusLabel(status?: string) {
-  return status === ENTITY_STATUS.ACTIVE
-    ? '启用'
-    : status === ENTITY_STATUS.INACTIVE
-      ? '停用'
-      : status || '—'
+  return getEnumLabel(ENTITY_STATUS_LABEL, status, '—')
 }
 
 async function ensurePortal() {
@@ -292,6 +311,7 @@ async function load(pageNo = 1) {
       page: pageNo,
       pageSize: 20,
       keyword: keyword.value.trim() || undefined,
+      sector: sectorFilter.value || undefined,
       status: statusFilter.value || undefined,
       sort: '-createdAt'
     })
@@ -319,6 +339,7 @@ function resetForm() {
   form.sector = SECTOR_TYPE.CLEANING
   form.description = ''
   form.status = ENTITY_STATUS.ACTIVE
+  form.commissionRate = undefined
   formError.value = ''
 }
 
@@ -330,7 +351,7 @@ function openCreate() {
 function openEdit(item: SectorLeaderDetail) {
   editingId.value = item.id
   form.residentId = item.residentId || ''
-  form.sector = item.sector || SECTOR_TYPE.CLEANING
+  form.sector = normalizeSectorType(item.sector || item.sectorName, SECTOR_TYPE.CLEANING)
   form.description = item.description || ''
   form.status = item.status || ENTITY_STATUS.ACTIVE
   formError.value = ''
@@ -354,22 +375,37 @@ async function submit() {
   submitting.value = true
   formError.value = ''
   try {
+    const sector = normalizeSectorType(form.sector, SECTOR_TYPE.CLEANING)
+    if (!Object.values(SECTOR_TYPE).includes(sector as (typeof SECTOR_TYPE)[keyof typeof SECTOR_TYPE])) {
+      formError.value = `板块不合法，请选择：保洁/维修/安保/绿化/其他（当前：${form.sector || '空'}）`
+      submitting.value = false
+      return
+    }
     if (editingId.value) {
       await coordinatorPortalApi.updateSectorLeader(editingId.value, {
-        sector: form.sector,
+        sector,
         description: form.description.trim() || undefined,
         status: form.status
       })
     } else {
       await coordinatorManageApi.createSectorLeader(coordinatorId.value, {
         residentId: form.residentId,
-        sector: form.sector
+        sector,
+        commissionRate:
+          form.commissionRate === undefined || form.commissionRate === null || Number.isNaN(Number(form.commissionRate))
+            ? undefined
+            : Number(form.commissionRate)
       })
     }
     closeModal()
     await load(page.value)
   } catch (e) {
-    formError.value = e instanceof ApiError ? e.message : '保存失败，请确认是否有板块管理权限'
+    formError.value =
+      e instanceof ApiError
+        ? e.message.includes('板块') || e.message.includes('sector')
+          ? `${e.message}（若改非保洁失败，多为同物业该板块已有其他负责人，见对接文档）`
+          : e.message
+        : '保存失败，请确认是否有板块管理权限'
   } finally {
     submitting.value = false
   }

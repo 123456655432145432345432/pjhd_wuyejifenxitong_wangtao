@@ -95,9 +95,8 @@
                     <span class="checkmark"><IconSvg v-if="item.checked" name="check" /></span>
                   </span>
                   <span class="permText">
-                    <span class="name">{{ item.name }}</span>
+                    <span class="name" :title="item.code">{{ item.name }}</span>
                     <span v-if="item.description" class="desc">{{ item.description }}</span>
-                    <span class="code">{{ item.code }}</span>
                   </span>
                 </label>
               </div>

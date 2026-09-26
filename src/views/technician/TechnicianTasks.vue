@@ -163,7 +163,7 @@ const actionError = ref('')
 
 function statusLabel(item: TechnicianTaskItem) {
   const status = item.status || item.statusCode
-  return getEnumLabel(TECHNICIAN_TASK_STATUS_LABEL, status, status || '—')
+  return getEnumLabel(TECHNICIAN_TASK_STATUS_LABEL, status, '—')
 }
 
 function contactText(item: TechnicianTaskItem) {

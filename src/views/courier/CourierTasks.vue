@@ -4,8 +4,7 @@
       <div>
         <h1 class="title">我的任务</h1>
         <p class="desc">
-          管理已接配送任务。单笔「预计收入」只读取 courierEarning；完成配送后立刻刷新
-          GET /courier-managers/my，账户「实际可拿」以 withdrawableAmount 为准，禁止前端加减。
+          管理已接配送任务。单笔「预计收入」以后端返回为准；完成配送后请刷新账户，可提现余额勿在前端加减。
         </p>
       </div>
       <button class="btnGhost" :disabled="loading" @click="load(page, true)">刷新</button>

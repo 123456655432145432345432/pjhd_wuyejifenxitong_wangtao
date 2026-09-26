@@ -74,7 +74,7 @@
               </td>
               <td>
                 <MobileCellText variant="nowrap">
-                  {{ getEnumLabel(RESIDENT_STATUS_LABEL, item.status, item.status || '—') }}
+                  {{ getEnumLabel(RESIDENT_STATUS_LABEL, item.status, '—') }}
                 </MobileCellText>
               </td>
               <td><MobileCellText variant="nowrap">{{ item.createdAt || '—' }}</MobileCellText></td>

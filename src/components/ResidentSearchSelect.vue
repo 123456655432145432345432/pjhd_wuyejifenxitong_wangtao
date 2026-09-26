@@ -65,7 +65,7 @@ function formatRoom(item: ResidentItem) {
 }
 
 function formatBalance(item: ResidentItem) {
-  return item.coinBalance != null ? `${item.coinBalance} PCoin` : '-'
+  return item.coinBalance != null ? `${item.coinBalance} 物业币` : '-'
 }
 
 function formatLabel(item: ResidentItem) {
