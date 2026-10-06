@@ -98,6 +98,12 @@ import type {
   ResidentUpdatePayload,
   ResidentStatusPayload,
   BuildingChangeApplication,
+  BuildingLeaderCreatePayload,
+  BuildingLeaderDetail,
+  BuildingLeaderListItem,
+  BuildingLeaderMy,
+  BuildingLeaderUpdatePayload,
+  SellerWalletOverview,
   TransferToPropertyItem,
   RoleAccountCreatePayload,
   RoleAccountCreateResult,
@@ -1927,6 +1933,130 @@ export const adminRoleWithdrawalApi = {
     return request<AdminRoleWithdrawalAuditResult>(
       `/admin/role-withdrawals/${id}/audit`,
       { method: 'POST', body: JSON.stringify(payload) }
+    )
+  }
+}
+
+/**
+ * v8.9 §99.1 管理端 — 单元楼长管理
+ * Roles: property_admin（限本物业）/ platform_admin（可跨物业）
+ */
+export const adminBuildingLeaderApi = {
+  list(params: {
+    page?: number
+    pageSize?: number
+    keyword?: string
+    status?: string
+    communityId?: string
+    building?: string
+    propertyCompanyId?: string
+  } = {}) {
+    return request<PageResult<BuildingLeaderListItem>>(
+      `/admin/building-leaders${buildQuery(params)}`
+    )
+  },
+
+  /** 指定楼长；新口径：不修改住户角色（role 保持 resident，凭 isBuildingLeader 识别） */
+  create(payload: BuildingLeaderCreatePayload) {
+    return request<BuildingLeaderDetail>('/admin/building-leaders', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+
+  detail(id: string) {
+    return request<BuildingLeaderDetail>(`/admin/building-leaders/${id}`)
+  },
+
+  /** 更新仅影响后续订单；已产生订单按下单快照结算 */
+  update(id: string, payload: BuildingLeaderUpdatePayload) {
+    return request<BuildingLeaderDetail>(`/admin/building-leaders/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
+  },
+
+  /** 撤销楼长；仅置 building_leaders.status=inactive，住户角色始终为 resident */
+  revoke(id: string, reason?: string) {
+    return request<BuildingLeaderDetail>(
+      `/admin/building-leaders/${id}${buildQuery({ reason })}`,
+      { method: 'DELETE' }
+    )
+  }
+}
+
+/**
+ * v8.9 §99.2 楼长工作台 — 本人接口
+ * Roles: resident（登录用户须为启用中的楼长，否则 91004）
+ */
+export const buildingLeaderPortalApi = {
+  /** 我的信息（小区/楼栋/比例/累计/已提现/在途/可提现） */
+  my() {
+    return request<BuildingLeaderMy>('/building-leaders/my')
+  },
+
+  /** 我的分成明细（PageResponse<DistributionRecordItemResponse>，含 buildingLeaderShare） */
+  distributionRecords(params: { page?: number; pageSize?: number } = {}) {
+    return request<PageResult<DistributionRecordItem>>(
+      `/building-leaders/my/distribution-records${buildQuery(params)}`
+    )
+  },
+
+  /** 申请提现（进入管理端多角色审核，withdrawal_type=building_leader） */
+  createWithdrawal(id: string, payload: RoleWithdrawalPayload) {
+    return request<RoleWithdrawalItem>(`/building-leaders/${id}/withdrawals`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+
+  /** 提现记录 */
+  withdrawals(
+    id: string,
+    params: {
+      page?: number
+      pageSize?: number
+      auditStatus?: string
+      startDate?: string
+      endDate?: string
+    } = {}
+  ) {
+    return request<PageResult<RoleWithdrawalItem>>(
+      `/building-leaders/${id}/withdrawals${buildQuery(params)}`
+    )
+  }
+}
+
+/**
+ * v8.9 §99.3 业主卖货钱包（resident）
+ * 卖货收益进独立钱包（不进物业币），仅可提现、不可消费
+ */
+export const residentSellerWalletApi = {
+  /** 钱包概览（累计卖货收益/已提现/在途/可提现） */
+  overview() {
+    return request<SellerWalletOverview>('/resident-merchants/seller-wallet')
+  },
+
+  /** 钱包提现申请（进入管理端多角色审核，withdrawal_type=resident_seller） */
+  createWithdrawal(payload: RoleWithdrawalPayload) {
+    return request<RoleWithdrawalItem>('/resident-merchants/seller-wallet/withdrawals', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+
+  /** 钱包提现记录 */
+  withdrawals(
+    params: {
+      page?: number
+      pageSize?: number
+      auditStatus?: string
+      startDate?: string
+      endDate?: string
+    } = {}
+  ) {
+    return request<PageResult<RoleWithdrawalItem>>(
+      `/resident-merchants/seller-wallet/withdrawals${buildQuery(params)}`
     )
   }
 }

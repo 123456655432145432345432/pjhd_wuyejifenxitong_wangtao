@@ -22,6 +22,7 @@
               <th v-if="showCoordinator">统筹</th>
               <th v-if="showSector">板块</th>
               <th v-if="showIndividual">个体</th>
+              <th v-if="showBuildingLeader">楼长</th>
               <th>状态</th>
             </tr>
           </thead>
@@ -51,6 +52,9 @@
               </td>
               <td v-if="showIndividual" :class="amountClass(shareOf(item, 'individual'))">
                 {{ formatMoney(shareOf(item, 'individual')) }}
+              </td>
+              <td v-if="showBuildingLeader" :title="item.buildingLeaderName || item.buildingLeaderId || ''">
+                {{ formatMoney(shareOf(item, 'buildingLeader')) }}
               </td>
               <td>{{ statusLabel(item.status) }}</td>
             </tr>
@@ -131,6 +135,10 @@
             <span>个体</span>
             <strong :class="amountClass(shareOf(item, 'individual'))">{{ formatMoney(shareOf(item, 'individual')) }}</strong>
           </div>
+          <div v-if="showBuildingLeader" class="recordRow">
+            <span>楼长{{ item.buildingLeaderName ? `（${item.buildingLeaderName}）` : '' }}</span>
+            <strong :class="amountClass(shareOf(item, 'buildingLeader'))">{{ formatMoney(shareOf(item, 'buildingLeader')) }}</strong>
+          </div>
           <h4 class="cardSection">配送费分账</h4>
           <div class="recordRow"><span>配送方式</span><strong>{{ fulfillmentLabel(item) }}</strong></div>
           <div class="recordRow">
@@ -180,7 +188,7 @@ import {
   getEnumLabel
 } from '../constants/enums'
 
-type ShareKey = 'merchant' | 'platform' | 'property' | 'coordinator' | 'sector' | 'individual'
+type ShareKey = 'merchant' | 'platform' | 'property' | 'coordinator' | 'sector' | 'individual' | 'buildingLeader'
 
 interface Props {
   records: DistributionRecordItem[]
@@ -197,6 +205,7 @@ interface Props {
   showCoordinator?: boolean
   showSector?: boolean
   showIndividual?: boolean
+  showBuildingLeader?: boolean
   showCourier?: boolean
 }
 
@@ -214,6 +223,7 @@ withDefaults(defineProps<Props>(), {
   showCoordinator: true,
   showSector: true,
   showIndividual: true,
+  showBuildingLeader: true,
   showCourier: true
 })
 const { isMobile } = useIsMobile()
@@ -241,7 +251,8 @@ const SHARE_FIELDS: Record<ShareKey, string[]> = {
     'individualLeaderAmount',
     'individual_leader_share',
     'individual_leader_amount'
-  ]
+  ],
+  buildingLeader: ['buildingLeaderShare', 'building_leader_share']
 }
 
 function shareOf(item: DistributionRecordItem, key: ShareKey) {

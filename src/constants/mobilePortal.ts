@@ -77,6 +77,7 @@ const ADMIN_WORKBENCH_BASE: MobileWorkbenchSection[] = [
       { name: '社区绑定', icon: 'home', route: 'community-entity' },
       { name: '统筹人员', icon: 'people', route: 'coordinators' },
       { name: '板块负责人', icon: 'people', route: 'sector-leaders' },
+      { name: '单元楼长', icon: 'people', route: 'building-leaders' },
       { name: '一级代理', icon: 'people', route: 'individual-leaders' },
       { name: '区域/项目负责人', icon: 'people', route: 'regional-leaders' },
       { name: '快递负责人', icon: 'people', route: 'courier-managers' },

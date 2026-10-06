@@ -55,6 +55,7 @@ import CommunityEntity from '../views/CommunityEntity.vue'
 import PropertyOperators from '../views/PropertyOperators.vue'
 import Delivery from '../views/Delivery.vue'
 import SectorLeaders from '../views/SectorLeaders.vue'
+import BuildingLeaders from '../views/admin/BuildingLeaders.vue'
 import Coordinators from '../views/admin/Coordinators.vue'
 import PropertyCompanies from '../views/admin/PropertyCompanies.vue'
 import SettlementConfig from '../views/admin/SettlementConfig.vue'
@@ -71,6 +72,10 @@ import MerchantRecommended from '../views/admin/MerchantRecommended.vue'
 import TransferAccounts from '../views/TransferAccounts.vue'
 import Login from '../views/Login.vue'
 import ResidentShop from '../views/resident/ResidentShop.vue'
+import ResidentSellerWallet from '../views/resident/ResidentSellerWallet.vue'
+import BuildingLeaderOverview from '../views/building-leader/BuildingLeaderOverview.vue'
+import BuildingLeaderRecords from '../views/building-leader/BuildingLeaderRecords.vue'
+import BuildingLeaderWithdrawals from '../views/building-leader/BuildingLeaderWithdrawals.vue'
 import PublicResidentShops from '../views/public/PublicResidentShops.vue'
 import PublicResidentShop from '../views/public/PublicResidentShop.vue'
 import MerchantOverview from '../views/merchant/MerchantOverview.vue'
@@ -282,6 +287,12 @@ const routes = [
         meta: { title: '板块负责人', roles: ADMIN_ROLE_LIST }
       },
       {
+        path: 'building-leaders',
+        name: 'building-leaders',
+        component: BuildingLeaders,
+        meta: { title: '单元楼长', roles: ADMIN_ROLE_LIST }
+      },
+      {
         path: 'individual-leaders',
         name: 'individual-leaders',
         component: IndividualLeaders,
@@ -382,6 +393,33 @@ const routes = [
         name: 'resident-shop',
         component: ResidentShop,
         meta: { title: '我的店铺', roles: [USER_ROLE.RESIDENT] }
+      },
+      {
+        // v8.9 楼长工作台：住户+楼长复合身份（role=resident，凭 isBuildingLeader 显示入口）；
+        // 非楼长访问时页面内按 91004 提示。兼容过渡期旧 JWT（role=building_leader）
+        path: 'building-leader/overview',
+        name: 'building-leader-overview',
+        component: BuildingLeaderOverview,
+        meta: { title: '楼长概览', roles: [USER_ROLE.RESIDENT, USER_ROLE.BUILDING_LEADER] }
+      },
+      {
+        path: 'building-leader/records',
+        name: 'building-leader-records',
+        component: BuildingLeaderRecords,
+        meta: { title: '楼长分成明细', roles: [USER_ROLE.RESIDENT, USER_ROLE.BUILDING_LEADER] }
+      },
+      {
+        path: 'building-leader/withdrawals',
+        name: 'building-leader-withdrawals',
+        component: BuildingLeaderWithdrawals,
+        meta: { title: '楼长提现', roles: [USER_ROLE.RESIDENT, USER_ROLE.BUILDING_LEADER] }
+      },
+      {
+        // v8.9 业主卖货钱包：卖货收益独立钱包，仅可提现
+        path: 'resident-seller-wallet',
+        name: 'resident-seller-wallet',
+        component: ResidentSellerWallet,
+        meta: { title: '卖货钱包', roles: [USER_ROLE.RESIDENT, USER_ROLE.BUILDING_LEADER] }
       },
       {
         path: 'delivery',

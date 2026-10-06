@@ -90,7 +90,12 @@ const KNOWN_ERROR_MESSAGES: Record<number, string> = {
   90001: '特惠或不存在的资源（越权与不存在同码）',
   30001: '店主手机号未在该物业注册',
   90120: '账号存在关联业务数据，无法彻底删除，请改用禁用或软删除',
-  90121: '账号已删除，无法再次操作'
+  90121: '账号已删除，无法再次操作',
+  /** v8.9：单元楼长（§99.5） */
+  91004: '楼长不存在或当前用户不是楼长',
+  10001: '参数缺失',
+  10002: '参数不合法',
+  97001: '物业公司不存在'
 }
 
 const KNOWN_ERROR_CODE_MESSAGES: Record<string, string> = {
@@ -204,7 +209,8 @@ function withCompanyQuery(path: string) {
   // 按 id 操作的撤销/详情：勿附带 propertyCompanyId（测服 DELETE 个体负责人附带时曾 500）
   if (
     /^\/admin\/individual-leaders\/[^/]+$/.test(pathname) ||
-    /^\/admin\/sector-leaders\/[^/]+$/.test(pathname)
+    /^\/admin\/sector-leaders\/[^/]+$/.test(pathname) ||
+    /^\/admin\/building-leaders\/[^/]+$/.test(pathname)
   ) {
     return path
   }

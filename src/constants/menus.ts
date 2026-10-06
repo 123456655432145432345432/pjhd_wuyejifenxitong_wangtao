@@ -28,6 +28,7 @@ export const adminMenus: Menu[] = [
   { name: '物业公司', icon: 'home', route: 'property-companies' },
   { name: '统筹人员', icon: 'people', route: 'coordinators' },
   { name: '板块负责人', icon: 'people', route: 'sector-leaders' },
+  { name: '单元楼长', icon: 'people', route: 'building-leaders' },
   { name: '一级代理', icon: 'people', route: 'individual-leaders' },
   { name: '社区绑定', icon: 'home', route: 'community-entity' },
   { name: '物业操作员', icon: 'people', route: 'property-operators' },
@@ -185,7 +186,18 @@ export const technicianMenus: Menu[] = [
 
 export const residentMenus: Menu[] = [
   { name: '我的店铺', icon: 'merchant', route: 'resident-shop' },
+  { name: '卖货钱包', icon: 'wallet', route: 'resident-seller-wallet' },
   { name: '公开橱窗', icon: 'retail', route: 'public-resident-shops' }
+]
+
+/**
+ * v8.9 单元楼长工作台菜单（「住户+楼长」复合身份）
+ * 楼长登录 role=resident，凭 /auth/profile 的 isBuildingLeader 在住户菜单前动态插入
+ */
+export const buildingLeaderMenus: Menu[] = [
+  { name: '楼长概览', icon: 'people', route: 'building-leader-overview' },
+  { name: '楼长分成明细', icon: 'chart', route: 'building-leader-records' },
+  { name: '楼长提现', icon: 'wallet', route: 'building-leader-withdrawals' }
 ]
 
 /** @deprecated 请使用 getMenusForRole */

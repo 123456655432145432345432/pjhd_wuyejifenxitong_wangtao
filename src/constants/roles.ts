@@ -2,6 +2,7 @@ import { PROPERTY_SUB_ROLE, USER_ROLE } from './enums'
 import {
   activityLeaderMenus,
   adminMenus,
+  buildingLeaderMenus,
   coordinatorMenus,
   courierMenus,
   individualLeaderMenus,
@@ -182,6 +183,9 @@ export function getRoleHomeRoute(role?: string | null): string {
       return 'technician-overview'
     case USER_ROLE.RESIDENT:
       return 'resident-shop'
+    // 过渡期兼容：SQL 回滚前旧 JWT 仍为 building_leader，直接进楼长工作台
+    case USER_ROLE.BUILDING_LEADER:
+      return 'building-leader-overview'
     case USER_ROLE.PLATFORM_ADMIN:
     case USER_ROLE.PROPERTY_ADMIN:
     default:
@@ -224,7 +228,8 @@ function filterAdminMenusForRole(role: string, propertySubRole?: string): Menu[]
 
 export function getMenusForRole(
   role?: string | null,
-  propertySubRole?: string | null
+  propertySubRole?: string | null,
+  options?: { isBuildingLeader?: boolean | null }
 ): Menu[] {
   const { role: normalizedRole, propertySubRole: sub } = normalizeAdminIdentity({
     role: role || '',
@@ -234,12 +239,26 @@ export function getMenusForRole(
   if (normalizedRole === USER_ROLE.PLATFORM_ADMIN || normalizedRole === USER_ROLE.PROPERTY_ADMIN) {
     return filterAdminMenusForRole(normalizedRole, sub)
   }
+  // v8.9：楼长为「住户+楼长」复合身份，登录 role=resident，
+  // 凭 isBuildingLeader 在住户菜单前动态插入楼长工作台
+  if (normalizedRole === USER_ROLE.RESIDENT) {
+    const base = ROLE_MENUS[normalizedRole] || residentMenus
+    return options?.isBuildingLeader ? [...buildingLeaderMenus, ...base] : base
+  }
+  // 过渡期兼容：SQL 回滚前旧 JWT 仍为 building_leader，展示楼长+住户菜单
+  if (normalizedRole === USER_ROLE.BUILDING_LEADER) {
+    return [...buildingLeaderMenus, ...residentMenus]
+  }
   return ROLE_MENUS[normalizedRole] || adminMenus
 }
 
-export function getMenusForProfile(profile?: Pick<UserProfile, 'role' | 'propertySubRole'> | null): Menu[] {
+export function getMenusForProfile(
+  profile?: Pick<UserProfile, 'role' | 'propertySubRole' | 'isBuildingLeader'> | null
+): Menu[] {
   const { role, propertySubRole } = normalizeAdminIdentity(profile)
-  return getMenusForRole(role, propertySubRole)
+  return getMenusForRole(role, propertySubRole, {
+    isBuildingLeader: profile?.isBuildingLeader === true
+  })
 }
 
 export function getPortalSubtitle(role?: string | null): string {

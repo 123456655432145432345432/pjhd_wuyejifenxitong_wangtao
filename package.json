@@ -8,7 +8,7 @@
     "build": "vue-tsc && vite build",
     "preview": "vite preview",
     "build:android": "vue-tsc && vite build && npx cap sync android",
-    "apk:debug": "npm run build:android && cd android && gradlew.bat assembleDebug --init-script init-mirrors.gradle",
+    "apk:debug": "npm run build:android && call android\\build-apk.bat",
     "open:android": "npx cap open android"
   },
   "dependencies": {

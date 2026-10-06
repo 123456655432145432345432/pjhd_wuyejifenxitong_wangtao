@@ -103,6 +103,10 @@
           <div class="label">个体分成</div>
           <div class="value">¥{{ formatMoney(stats.summary?.individualLeaderAmount) }}</div>
         </div>
+        <div class="statCard">
+          <div class="label">楼长分成</div>
+          <div class="value">{{ formatOptionalMoney(stats.summary?.buildingLeaderAmount) }}</div>
+        </div>
       </div>
 
       <div class="grid">

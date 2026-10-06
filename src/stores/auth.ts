@@ -28,6 +28,8 @@ type LooseProfile = UserProfile & {
   individual_leader_id?: string
   sector_leader_id?: string
   coordinator_id?: string
+  is_building_leader?: boolean
+  building_leader_id?: string | null
   resident?: LooseProfile
   user?: LooseProfile
 }
@@ -89,7 +91,9 @@ function normalizeProfile(raw: LooseProfile | UserProfile | null): UserProfile |
     propertySubRole,
     individualLeaderId: merged.individualLeaderId || merged.individual_leader_id,
     sectorLeaderId: merged.sectorLeaderId || merged.sector_leader_id,
-    coordinatorId: merged.coordinatorId || merged.coordinator_id
+    coordinatorId: merged.coordinatorId || merged.coordinator_id,
+    isBuildingLeader: merged.isBuildingLeader ?? merged.is_building_leader ?? false,
+    buildingLeaderId: merged.buildingLeaderId || merged.building_leader_id || undefined
   }
 }
 

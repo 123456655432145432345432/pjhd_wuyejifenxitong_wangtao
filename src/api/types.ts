@@ -57,6 +57,10 @@ export interface UserProfile {
   newUser?: boolean
   pointBalance?: number
   coinBalance?: number
+  /** v8.9：是否为启用中的单元楼长（「住户+楼长」复合身份，role 始终为 resident，勿用 role 判断） */
+  isBuildingLeader?: boolean
+  /** v8.9：楼长 ID（bl_ 前缀）；非楼长为 null */
+  buildingLeaderId?: string | null
 }
 
 export interface ResidentItem {
@@ -1587,6 +1591,12 @@ export interface DistributionRecordItem {
   individualLeaderAmount?: number
   /** 商家自配配送费分成；大厅为 0 */
   merchantDeliveryFeeShare?: number
+  /** v8.9：单元楼长分成（从物业分成中定向扣除，订单快照） */
+  buildingLeaderShare?: number
+  buildingLeaderId?: string
+  buildingLeaderName?: string
+  /** v8.9：下单快照的楼长比例（占物业分成） */
+  buildingLeaderRate?: number
   fulfillmentMode?: string
   fulfillmentModeLabel?: string
   carrierType?: string
@@ -1630,6 +1640,8 @@ export interface DistributionStats {
     platformAmount?: number
     /** 配送员收入合计 */
     courierAmount?: number
+    /** v8.9：单元楼长分成合计（从物业分成中定向扣除） */
+    buildingLeaderAmount?: number
   }
   byProperty?: Array<{ propertyCompanyId?: string; propertyName?: string; amount?: number }>
   byCoordinator?: Array<{ coordinatorId?: string; name?: string; amount?: number }>
@@ -1683,6 +1695,9 @@ export interface DistributionCalculateResult {
   coordinatorShare?: number
   sectorLeaderShare?: number
   individualLeaderShare?: number
+  /** v8.9：试算楼长分成分项（按住户当前楼栋实时解析） */
+  buildingLeaderShare?: number
+  buildingLeaderId?: string
   merchantDeliveryFeeShare?: number
   fulfillmentMode?: string
   carrierType?: string
@@ -3880,4 +3895,75 @@ export interface SplitRecoveryItem {
 
 export interface UpdateRecoveryPayload {
   remark?: string
+}
+
+/* ============ v8.9 单元楼长（building_leader）& 业主卖货钱包 ============ */
+
+/** GET/POST/PUT/DELETE /admin/building-leaders（§99.1），detail 与列表项同构 */
+export interface BuildingLeaderListItem {
+  id: string
+  residentId?: string
+  residentName?: string
+  residentPhone?: string
+  /** 旧字段，值同 residentPhone */
+  phone?: string
+  propertyCompanyId?: string
+  propertyCompanyName?: string
+  communityId?: string
+  communityName?: string
+  building?: string
+  /** 占物业公司分成的比例 (0,1] */
+  commissionRate?: number
+  description?: string
+  /** 累计楼长分成 */
+  totalEarning?: number
+  status?: string
+  createdAt?: string
+  appointedAt?: string
+}
+
+export type BuildingLeaderDetail = BuildingLeaderListItem
+
+/** POST /admin/building-leaders 请求体（§99.1.2） */
+export interface BuildingLeaderCreatePayload {
+  residentId: string
+  communityId?: string
+  building?: string
+  commissionRate?: number
+  description?: string
+  status?: string
+}
+
+/** PUT /admin/building-leaders/{id} 请求体（§99.1.4，字段全可选） */
+export interface BuildingLeaderUpdatePayload {
+  commissionRate?: number
+  description?: string
+  status?: string
+}
+
+/** GET /building-leaders/my（§99.2.1，楼长本人） */
+export interface BuildingLeaderMy {
+  buildingLeaderId?: string
+  residentId?: string
+  residentName?: string
+  propertyCompanyId?: string
+  communityId?: string
+  communityName?: string
+  building?: string
+  commissionRate?: number
+  status?: string
+  totalEarning?: number
+  withdrawnAmount?: number
+  pendingAmount?: number
+  withdrawableAmount?: number
+}
+
+/** GET /resident-merchants/seller-wallet（§99.3.1，业主卖货钱包） */
+export interface SellerWalletOverview {
+  residentId?: string
+  /** 累计卖货收益（已结算 reseller_profit 汇总） */
+  totalProfit?: number
+  withdrawnAmount?: number
+  pendingAmount?: number
+  withdrawableAmount?: number
 }

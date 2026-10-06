@@ -625,7 +625,14 @@ export const USER_ROLE = {
   SECTOR_LEADER: 'sector_leader',
   INDIVIDUAL_LEADER: 'individual_leader',
   ACTIVITY_LEADER: 'activity_leader',
-  TECHNICIAN: 'technician'
+  TECHNICIAN: 'technician',
+  /**
+   * v8.9：单元楼长（绑定小区+楼栋的推广角色，从物业分成中定向分成）。
+   * 注意（2026-10-04 新口径）：楼长为「住户+楼长」复合身份，登录 role 保持 resident，
+   * 前端凭 /auth/profile 的 isBuildingLeader 判定；本枚举仅作过渡期旧 JWT 兼容，
+   * 不作为菜单/路由角色使用。
+   */
+  BUILDING_LEADER: 'building_leader'
 } as const
 
 /**
@@ -1937,7 +1944,11 @@ export const WITHDRAWAL_TYPE = {
   /** v8.5：技工商家提现（走商家提现接口，merchant_source=technician） */
   TECHNICIAN: 'technician',
   /** v8.5：组长商家提现（走商家提现接口，merchant_source=group_leader） */
-  ACTIVITY_LEADER: 'activity_leader'
+  ACTIVITY_LEADER: 'activity_leader',
+  /** v8.9：单元楼长提现（走 /building-leaders/{id}/withdrawals） */
+  BUILDING_LEADER: 'building_leader',
+  /** v8.9：业主卖货钱包提现（走 /resident-merchants/seller-wallet/withdrawals） */
+  RESIDENT_SELLER: 'resident_seller'
 } as const
 
 export const WITHDRAWAL_TYPE_LABEL: Record<string, string> = {
@@ -1948,6 +1959,8 @@ export const WITHDRAWAL_TYPE_LABEL: Record<string, string> = {
   sector_leader: '板块负责人',
   activity_leader: '活动组组长',
   technician: '技工',
+  building_leader: '单元楼长',
+  resident_seller: '业主卖货',
   property_admin: '物业管理员',
   platform_admin: '平台管理员'
 }
@@ -1967,7 +1980,32 @@ export const ROLE_WITHDRAWAL_TYPE_OPTIONS = [
   {
     value: WITHDRAWAL_TYPE.SECTOR_LEADER,
     label: WITHDRAWAL_TYPE_LABEL[WITHDRAWAL_TYPE.SECTOR_LEADER]
+  },
+  {
+    value: WITHDRAWAL_TYPE.BUILDING_LEADER,
+    label: WITHDRAWAL_TYPE_LABEL[WITHDRAWAL_TYPE.BUILDING_LEADER]
+  },
+  {
+    value: WITHDRAWAL_TYPE.RESIDENT_SELLER,
+    label: WITHDRAWAL_TYPE_LABEL[WITHDRAWAL_TYPE.RESIDENT_SELLER]
   }
+]
+
+/** v8.9：单元楼长状态（§99） */
+export const BUILDING_LEADER_STATUS = {
+  ACTIVE: 'active',
+  INACTIVE: 'inactive'
+} as const
+
+export const BUILDING_LEADER_STATUS_LABEL: Record<string, string> = {
+  active: '在任',
+  inactive: '已撤销'
+}
+
+export const BUILDING_LEADER_STATUS_OPTIONS = [
+  { value: '', label: '全部状态' },
+  { value: BUILDING_LEADER_STATUS.ACTIVE, label: BUILDING_LEADER_STATUS_LABEL[BUILDING_LEADER_STATUS.ACTIVE] },
+  { value: BUILDING_LEADER_STATUS.INACTIVE, label: BUILDING_LEADER_STATUS_LABEL[BUILDING_LEADER_STATUS.INACTIVE] }
 ]
 
 /** 公告内容类型（三期） */
