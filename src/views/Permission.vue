@@ -13,10 +13,13 @@
             v-for="preset in roleList"
             :key="preset.id"
             class="btn"
-            :class="{ active: activePresetId === preset.id }"
+            :class="{ active: activePresetId === preset.id, locked: isPresetLocked(preset) }"
+            :disabled="isPresetLocked(preset)"
+            :title="isPresetLocked(preset) ? '内置预设不可整体套用，请在下方逐项勾选' : ''"
             @click="applyPreset(preset)"
           >
             {{ preset.name }}
+            <span v-if="preset.isBuiltin" class="builtinTag">内置</span>
           </button>
         </div>
       </section>
@@ -45,13 +48,19 @@
               v-for="account in accountList"
               :key="account.id"
               class="item"
-              :class="{ active: activeAccount?.id === account.id }"
+              :class="{
+                active: activeAccount?.id === account.id,
+                disabled: account.adminWorkspace === false
+              }"
               @click="selectMobileAccount(account)"
             >
               <div class="avatar">{{ account.initials }}</div>
               <div class="info">
                 <div class="name">{{ account.name }}</div>
-                <div class="role">{{ account.role }}</div>
+                <div class="role">
+                  {{ account.role }}
+                  <span v-if="account.adminWorkspace === false" class="noWorkspace">无管理端</span>
+                </div>
                 <div class="meta">{{ account.phone }} · {{ account.permissionCount }} 项权限</div>
               </div>
             </div>
@@ -73,6 +82,14 @@
                 <span v-if="activePresetName"> · 预设：{{ activePresetName }}</span>
               </p>
               <p v-else class="configHint">请先从左侧选择账号</p>
+              <p v-if="activeAccount && isTagIdentity" class="tagHint">
+                该账号是标签身份（{{ activeAccount.role }}），可授予的权限由后端 `grantableToTagIdentities`
+                决定：平台专属与物业领导专属权限不可授予，其余勾选后即可在管理端使用，数据范围按所属物业公司。
+                授予后需该账号重新登录或刷新页面，侧栏才会出现对应入口。
+              </p>
+              <p v-if="activeAccount && activeAccount.adminWorkspace === false" class="tagHint danger">
+                该账号不具备管理端工作台身份（adminWorkspace=false），即使授权也无法进入管理端，本页禁止配置。
+              </p>
             </div>
             <div class="search">
               <IconSvg name="search" class="searchIcon" />
@@ -104,11 +121,29 @@
           </div>
 
           <p v-if="saveMessage" class="success">{{ saveMessage }}</p>
+          <p v-if="activeAccount && !canManagePermission" class="readonlyHint">
+            当前账号没有「权限管理」权限，本页仅可查看，不能保存。
+          </p>
+          <div v-if="canManagePermission && activeAccount" class="reasonRow">
+            <label for="permReason">变更原因</label>
+            <input
+              id="permReason"
+              v-model="changeReason"
+              type="text"
+              maxlength="100"
+              placeholder="选填，会写入权限变更日志（如：统筹负责本物业商家与特惠）"
+            />
+          </div>
           <div class="footer">
             <button class="btnReset" :disabled="!activeAccount || saving" @click="resetPermissions">
               恢复当前生效
             </button>
-            <button class="btnSave" :disabled="!activeAccount || saving" @click="savePermissions">
+            <button
+              v-permission="'permission:manage'"
+              class="btnSave"
+              :disabled="!activeAccount || saving || activeAccount.adminWorkspace === false"
+              @click="handleSave"
+            >
               <IconSvg name="save" />
               <span>{{ saving ? '保存中...' : '保存权限' }}</span>
             </button>
@@ -164,10 +199,13 @@
 import { ref, computed, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { usePermissionStore } from '../stores/permission'
+import { useAuthStore } from '../stores/auth'
+import { vPermission } from '../directives/permission'
 import IconSvg from '../components/IconSvg.vue'
 import { useIsMobile } from '../composables/useIsMobile'
 
 const store = usePermissionStore()
+const auth = useAuthStore()
 const { isMobile } = useIsMobile()
 const {
   permissionList,
@@ -179,6 +217,7 @@ const {
   roleList,
   activePresetId,
   activePresetName,
+  changeReason,
   loading,
   saving,
   error,
@@ -196,9 +235,25 @@ const {
 } = store
 
 const keyword = ref('')
+/**
+ * v1.3：当前选中账号是否为标签身份（活动组长 / 统筹 / 板块 / 个体 / 社区管理员）。
+ * 用于提示「只有社区论坛相关权限可授予」，避免管理员勾了别的码却被后端 10002 拒绝。
+ */
+const isTagIdentity = computed(() => store.isTagIdentityAccount(activeAccount.value))
 const accountKeyword = ref('')
 const showConfigOnMobile = ref(false)
 let accountSearchTimer: ReturnType<typeof setTimeout>
+
+/** 保存权限需要 permission:manage；没有时只读（避免「能点、点了 403」） */
+const canManagePermission = computed(() => auth.hasPermission('permission:manage'))
+
+/**
+ * v2（文档 §5.4）：内置预设（rp_003 等，propertyCompanyId=null）不允许改权限码，
+ * 对标签身份整体套用会把预设里的权限覆盖到账号上，因此禁用按钮，改为在下方逐项勾选。
+ */
+function isPresetLocked(preset: { isBuiltin?: boolean }): boolean {
+  return preset.isBuiltin === true && isTagIdentity.value
+}
 
 const filteredGroups = computed(() => {
   if (!keyword.value.trim()) return permissionList.value
@@ -232,6 +287,17 @@ function selectMobileAccount(account: (typeof accountList.value)[number]) {
   if (isMobile.value) showConfigOnMobile.value = true
 }
 
+/**
+ * 保存后若改的是当前登录账号自己，立即刷新本地权限码，
+ * 否则要退出重登才生效（菜单/按钮仍按旧权限渲染）。
+ */
+async function handleSave() {
+  await savePermissions()
+  if (activeAccount.value && activeAccount.value.id === auth.profile?.id) {
+    await auth.loadMyPermissions()
+  }
+}
+
 onMounted(() => {
   load()
 })
@@ -258,6 +324,48 @@ onMounted(() => {
 .loadingBlock, .emptyHint, .emptyConfig, .emptyCell { text-align: center; color: #8c8c9a; padding: 24px; font-size: 14px; }
 .error { color: #e05c5c; font-size: 14px; margin-bottom: 16px; }
 .success { color: #3aaf7d; font-size: 13px; margin-bottom: 12px; }
+.tagHint {
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #fdf6e9;
+  color: #8a6420;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.tagHint.danger { background: #fdeeee; color: #b03a3a; }
+.reasonRow { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.reasonRow label { font-size: 13px; color: #5c5c66; flex-shrink: 0; }
+.reasonRow input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 12px;
+  border: 1px solid #e8e8ec;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #1f1f2e;
+  outline: none;
+}
+.reasonRow input:focus { border-color: #5c5c9e; }
+.builtinTag {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.06);
+  font-size: 11px;
+  color: #8c8c9a;
+}
+.rolePreset .btn.locked { opacity: 0.55; cursor: not-allowed; }
+.rolePreset .btn.locked:hover { border-color: #e8e8ec; color: #5c5c66; }
+.noWorkspace {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: #fdeeee;
+  color: #b03a3a;
+  font-size: 11px;
+}
+.readonlyHint { color: #b8714a; font-size: 13px; margin-bottom: 12px; background: #fdf2e9; border-radius: 8px; padding: 8px 12px; }
 
 .sectionTitle { font-size: 15px; font-weight: 500; color: #1f1f2e; margin-bottom: 0; }
 .sectionHint, .configHint { font-size: 12px; color: #8c8c9a; margin-top: 6px; }
@@ -293,6 +401,7 @@ onMounted(() => {
 .accountList .item { display: flex; align-items: center; padding: 12px; border-radius: 8px; cursor: pointer; transition: all 0.2s; }
 .accountList .item:hover { background: #f4f5f7; }
 .accountList .item.active { background: #5c5c9e; }
+.accountList .item.disabled { opacity: 0.55; }
 .accountList .avatar { width: 40px; height: 40px; border-radius: 50%; background: #f4f5f7; color: #5c5c66; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; margin-right: 12px; flex-shrink: 0; }
 .accountList .item.active .avatar { background: rgba(255,255,255,0.2); color: #ffffff; }
 .accountList .name { font-size: 14px; font-weight: 500; color: #1f1f2e; line-height: 20px; }

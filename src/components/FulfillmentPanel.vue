@@ -134,7 +134,11 @@ defineEmits<{
 const deliveryStatusText = computed(() => {
   return (
     props.order.deliveryStatusLabel ||
-    getEnumLabel(DELIVERY_STATUS_LABEL, props.order.deliveryStatus, '—')
+    getEnumLabel(
+      DELIVERY_STATUS_LABEL,
+      props.order.deliveryStatusCode || props.order.deliveryStatus,
+      '—'
+    )
   )
 })
 </script>

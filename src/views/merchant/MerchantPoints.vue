@@ -13,12 +13,14 @@
         <p v-if="purchaseMsg" :class="purchaseMsgType">{{ purchaseMsg }}</p>
         <div class="quoteBox">
           <span>100 元可购</span>
-          <strong>{{ quoteLoading ? '计算中…' : `${quotePointAmount} 积分` }}</strong>
+          <strong>{{ rateLoading ? '计算中…' : `${quotePointAmount} 积分` }}</strong>
         </div>
         <div class="field">
           <label class="label">积分数量</label>
           <input v-model.number="purchaseForm.pointAmount" type="number" min="1" class="input" />
-          <p class="hint">支付金额由系统按商家兑换比例自动计算（以商家挂接配置与审核记录为准）。</p>
+          <p class="hint">
+            兑换比 1 元 = {{ pointExchangeRate }} 积分（取自商家详情 pointExchangeRate）；支付金额以审核时后端计算为准。
+          </p>
         </div>
         <button class="btnPrimary" :disabled="purchaseSubmitting" @click="submitPurchase">
           {{ purchaseSubmitting ? '提交中...' : '提交购买申请' }}
@@ -136,8 +138,14 @@ const purchases = ref<MerchantPointPurchaseItem[]>([])
 const approvedPurchases = ref<MerchantPointPurchaseItem[]>([])
 const loading = ref(false)
 const approvedLoading = ref(false)
-const quoteLoading = ref(false)
-const quotePointAmount = ref(0)
+const rateLoading = ref(false)
+/** 1 元兑换的积分数，取自 GET /merchants/my 的 pointExchangeRate（缺失回退 100） */
+const pointExchangeRate = ref(100)
+/** 试算基准：100 元可购多少积分 */
+const QUOTE_PAY_AMOUNT = 100
+const quotePointAmount = computed(() =>
+  Math.floor(QUOTE_PAY_AMOUNT * (Number(pointExchangeRate.value) || 0))
+)
 const listError = ref('')
 const auditFilter = ref('')
 const purchaseSubmitting = ref(false)
@@ -174,15 +182,21 @@ function pointPurchaseStatusLabel(status?: string) {
   return getEnumLabel(POINT_PURCHASE_STATUS_LABEL, status, '—')
 }
 
-async function loadQuote() {
-  quoteLoading.value = true
+/**
+ * 兑换比本地试算。
+ * 后端 v8.28 明确 GET /merchant/points/quote **未实现**（调用必然失败），
+ * 正确口径是读 GET /merchants/my 的 pointExchangeRate（缺失/非正数时后端已回退 100）。
+ */
+async function loadExchangeRate() {
+  rateLoading.value = true
   try {
-    const quote = await merchantPortalApi.pointQuote(100)
-    quotePointAmount.value = Number(quote.pointAmount) || 0
+    const detail = await merchantPortalApi.my()
+    const rate = Number(detail.pointExchangeRate)
+    pointExchangeRate.value = Number.isFinite(rate) && rate > 0 ? rate : 100
   } catch {
-    quotePointAmount.value = 0
+    pointExchangeRate.value = 100
   } finally {
-    quoteLoading.value = false
+    rateLoading.value = false
   }
 }
 
@@ -222,7 +236,7 @@ async function loadPurchases(page = 1) {
 }
 
 async function reloadAll() {
-  await Promise.all([loadPurchases(1), loadApprovedPurchases(), loadQuote()])
+  await Promise.all([loadPurchases(1), loadApprovedPurchases(), loadExchangeRate()])
 }
 
 async function submitPurchase() {

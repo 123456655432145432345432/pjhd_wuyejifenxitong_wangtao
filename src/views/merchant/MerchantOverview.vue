@@ -35,8 +35,8 @@
           <div class="value">{{ shop.totalOrders ?? 0 }}</div>
         </div>
         <div class="statCard green">
-          <div class="label">累计收入</div>
-          <div class="value">¥{{ formatMoney(shop.totalRevenue) }}</div>
+          <div class="label">累计收入（已完成）</div>
+          <div class="value">{{ formatRevenue(shop.totalRevenue) }}</div>
         </div>
         <div class="statCard">
           <div class="label">可提现余额</div>
@@ -245,6 +245,15 @@ const form = reactive({
 function formatMoney(value?: number | string | null) {
   if (value === undefined || value === null || value === '') return '0.00'
   return Number(value).toFixed(2)
+}
+
+/**
+ * 累计收入：v8.28 起后端在 GET /merchants/my 下发 totalRevenue（已完成订单口径）。
+ * 字段缺失（旧后端/公开详情）显示 —，不要显示成 ¥0.00 误导商家。
+ */
+function formatRevenue(value?: number | string | null) {
+  if (value === undefined || value === null || value === '') return '—'
+  return `¥${formatMoney(value)}`
 }
 
 function sponsorLabel(value?: string) {

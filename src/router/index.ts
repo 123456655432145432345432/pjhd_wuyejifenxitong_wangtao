@@ -3,10 +3,14 @@ import { USER_ROLE } from '../constants/enums'
 import {
   ADMIN_ROLES,
   canAccessLeaderOnlyRoute,
-  canAccessRoute,
-  getRoleHomeRoute
+  canAccessRouteAny,
+  getEffectiveRoles,
+  getHomeRouteForProfile,
+  normalizeAdminIdentity
 } from '../constants/roles'
+import type { UserProfile } from '../api/types'
 import { isMobileShellRole, MOBILE_SHELL_ROLES } from '../constants/mobilePortal'
+import { PERMISSION_GUARD_ENABLED, isAdminWorkspaceIdentity, permissionForRoute } from '../constants/permissionCodes'
 import { useAuthStore } from '../stores/auth'
 import AppLayout from '../layouts/AppLayout.vue'
 import MobileHome from '../views/mobile/MobileHome.vue'
@@ -21,10 +25,12 @@ import OrderRefundApprovals from '../views/admin/OrderRefundApprovals.vue'
 import MerchantWithdrawalApproval from '../views/admin/MerchantWithdrawalApproval.vue'
 import RoleWithdrawalApproval from '../views/admin/RoleWithdrawalApproval.vue'
 import IndividualLeaders from '../views/admin/IndividualLeaders.vue'
+import DistributorApplications from '../views/admin/DistributorApplications.vue'
 import CoinWithdrawalApproval from '../views/admin/CoinWithdrawalApproval.vue'
 import PropertyContact from '../views/admin/PropertyContact.vue'
 import PlatformShareConfig from '../views/admin/PlatformShareConfig.vue'
 import PlatformEarnings from '../views/admin/PlatformEarnings.vue'
+import PlatformTransactions from '../views/admin/PlatformTransactions.vue'
 import CourierManagers from '../views/admin/CourierManagers.vue'
 import DeliveryPriceRanges from '../views/admin/DeliveryPriceRanges.vue'
 import PriceApprovals from '../views/admin/PriceApprovals.vue'
@@ -56,6 +62,7 @@ import PropertyOperators from '../views/PropertyOperators.vue'
 import Delivery from '../views/Delivery.vue'
 import SectorLeaders from '../views/SectorLeaders.vue'
 import BuildingLeaders from '../views/admin/BuildingLeaders.vue'
+import PropertyManagers from '../views/admin/PropertyManagers.vue'
 import Coordinators from '../views/admin/Coordinators.vue'
 import PropertyCompanies from '../views/admin/PropertyCompanies.vue'
 import SettlementConfig from '../views/admin/SettlementConfig.vue'
@@ -65,17 +72,23 @@ import PlatformConfig from '../views/admin/PlatformConfig.vue'
 import NavigationItems from '../views/admin/NavigationItems.vue'
 import RegionQuotas from '../views/admin/RegionQuotas.vue'
 import ActivityGroupReviews from '../views/admin/ActivityGroupReviews.vue'
+import ActivityLeaderApplications from '../views/admin/ActivityLeaderApplications.vue'
 import ResidentDeletionReviews from '../views/admin/ResidentDeletionReviews.vue'
 import SplitRecovery from '../views/admin/SplitRecovery.vue'
 import MerchantApplyment from '../views/admin/MerchantApplyment.vue'
 import MerchantRecommended from '../views/admin/MerchantRecommended.vue'
 import TransferAccounts from '../views/TransferAccounts.vue'
 import Login from '../views/Login.vue'
+import Forbidden from '../views/Forbidden.vue'
 import ResidentShop from '../views/resident/ResidentShop.vue'
 import ResidentSellerWallet from '../views/resident/ResidentSellerWallet.vue'
 import BuildingLeaderOverview from '../views/building-leader/BuildingLeaderOverview.vue'
 import BuildingLeaderRecords from '../views/building-leader/BuildingLeaderRecords.vue'
 import BuildingLeaderWithdrawals from '../views/building-leader/BuildingLeaderWithdrawals.vue'
+import PropertyManagerOverview from '../views/property-manager/PropertyManagerOverview.vue'
+import PropertyManagerLeaders from '../views/property-manager/PropertyManagerLeaders.vue'
+import PropertyManagerEarnings from '../views/property-manager/PropertyManagerEarnings.vue'
+import PropertyManagerWallet from '../views/property-manager/PropertyManagerWallet.vue'
 import PublicResidentShops from '../views/public/PublicResidentShops.vue'
 import PublicResidentShop from '../views/public/PublicResidentShop.vue'
 import MerchantOverview from '../views/merchant/MerchantOverview.vue'
@@ -137,6 +150,17 @@ const WECHAT_APPLYMENT_ROLES = [
   USER_ROLE.ACTIVITY_LEADER,
   USER_ROLE.TECHNICIAN
 ]
+/**
+ * v1.3：社区论坛页的准入身份。
+ * 关键：活动组长 / 统筹 / 板块 / 个体 / 楼长的 role 恒为 resident，
+ * 无法用具体角色码命中，只能先放 resident 过角色门，
+ * 真正的准入由 adminWorkspace + community:read 权限码把关（见守卫末段）。
+ */
+const COMMUNITY_FORUM_ROLES = [
+  ...ADMIN_ROLES,
+  USER_ROLE.RESIDENT,
+  USER_ROLE.COMMUNITY_ADMIN
+]
 
 const routes = [
   {
@@ -161,6 +185,12 @@ const routes = [
     path: '/',
     component: AppLayout,
     children: [
+      {
+        path: '403',
+        name: 'forbidden',
+        component: Forbidden,
+        meta: { title: '无访问权限' }
+      },
       {
         path: 'mobile/home',
         name: 'mobile-home',
@@ -293,10 +323,25 @@ const routes = [
         meta: { title: '单元楼长', roles: ADMIN_ROLE_LIST }
       },
       {
+        // v8.11 §100.1 物业公司经理管理（住户+经理复合身份，管理端指派）
+        path: 'property-managers',
+        name: 'property-managers',
+        component: PropertyManagers,
+        meta: { title: '物业经理', roles: ADMIN_ROLE_LIST }
+      },
+      {
+        // v8.12.1 R4 消歧：板块体系的「个体负责人」，与一级代理申请（distributor-applications）是两条链路
         path: 'individual-leaders',
         name: 'individual-leaders',
         component: IndividualLeaders,
-        meta: { title: '一级代理', roles: ADMIN_ROLE_LIST }
+        meta: { title: '个体负责人', roles: ADMIN_ROLE_LIST }
+      },
+      {
+        // v8.12.1 §60.16：一级代理（货源带货）自助申请审核，通过后后端自动建商家载体
+        path: 'distributor-applications',
+        name: 'distributor-applications',
+        component: DistributorApplications,
+        meta: { title: '一级代理申请', roles: ADMIN_ROLE_LIST }
       },
       {
         path: 'community-entity',
@@ -351,6 +396,12 @@ const routes = [
         name: 'activity-group-reviews',
         component: ActivityGroupReviews,
         meta: { title: '活动组审核', roles: ADMIN_LEADER_ROLES }
+      },
+      {
+        path: 'activity-leader-applications',
+        name: 'activity-leader-applications',
+        component: ActivityLeaderApplications,
+        meta: { title: '组长申请审核', roles: ADMIN_LEADER_ROLES }
       },
       {
         path: 'resident-deletion-reviews',
@@ -422,6 +473,32 @@ const routes = [
         meta: { title: '卖货钱包', roles: [USER_ROLE.RESIDENT, USER_ROLE.BUILDING_LEADER] }
       },
       {
+        // v8.11 §100.2 物业经理工作台：住户+经理复合身份（role=resident，凭 /property-managers/my 显示入口）；
+        // 非经理访问时页面内按 91005/91007 提示
+        path: 'property-manager/overview',
+        name: 'property-manager-overview',
+        component: PropertyManagerOverview,
+        meta: { title: '经理概览', roles: [USER_ROLE.RESIDENT] }
+      },
+      {
+        path: 'property-manager/leaders',
+        name: 'property-manager-leaders',
+        component: PropertyManagerLeaders,
+        meta: { title: '名下楼长', roles: [USER_ROLE.RESIDENT] }
+      },
+      {
+        path: 'property-manager/earnings',
+        name: 'property-manager-earnings',
+        component: PropertyManagerEarnings,
+        meta: { title: '抽成收益', roles: [USER_ROLE.RESIDENT] }
+      },
+      {
+        path: 'property-manager/wallet',
+        name: 'property-manager-wallet',
+        component: PropertyManagerWallet,
+        meta: { title: '钱包提现', roles: [USER_ROLE.RESIDENT] }
+      },
+      {
         path: 'delivery',
         name: 'delivery',
         component: Delivery,
@@ -444,6 +521,13 @@ const routes = [
         name: 'platform-earnings',
         component: PlatformEarnings,
         meta: { title: '平台收益', roles: PLATFORM_ADMIN_ONLY }
+      },
+      {
+        // §106 v8.20：平台交易明细ReadOnly账本，后端对非 platform_admin 硬校验 403 / 20004
+        path: 'platform-transactions',
+        name: 'platform-transactions',
+        component: PlatformTransactions,
+        meta: { title: '平台交易明细', roles: PLATFORM_ADMIN_ONLY }
       },
       {
         path: 'courier-managers',
@@ -486,7 +570,7 @@ const routes = [
         path: 'community-forum',
         name: 'community-forum',
         component: CommunityForum,
-        meta: { title: '社区论坛', roles: ADMIN_ROLE_LIST }
+        meta: { title: '社区论坛', roles: COMMUNITY_FORUM_ROLES }
       },
       {
         path: 'room-structure',
@@ -857,42 +941,95 @@ const router = createRouter({
   routes
 })
 
-function getEntryRouteName(role?: string | null): string {
+function getEntryRouteName(profile?: UserProfile | null): string {
   if (
     typeof window !== 'undefined' &&
     window.innerWidth <= 768 &&
-    isMobileShellRole(role)
+    isMobileShellRole(profile?.role)
   ) {
     return 'mobile-home'
   }
-  return getRoleHomeRoute(role)
+  return getHomeRouteForProfile(profile)
 }
 
 router.beforeEach((to) => {
   const auth = useAuthStore()
-  const role = auth.profile?.role
+  const profile = auth.profile
+  // v8.13+：负责人 role 已归一为 resident，准入判定改用「真实 role + 标签派生角色」
+  const effectiveRoles = getEffectiveRoles(profile)
 
   if (to.meta.public) {
     if (auth.isLoggedIn && to.name === 'login') {
-      return { name: getEntryRouteName(role) }
+      return { name: getEntryRouteName(profile) }
     }
     return true
   }
 
   if (!auth.isLoggedIn) return '/login'
 
+  const routeName = String(to.name || '')
+  // v2：权限码门控只在 ROUTE_PERMISSION 登记过的路由上生效（声明式白名单）
+  const requiredCode = PERMISSION_GUARD_ENABLED ? permissionForRoute(routeName) : undefined
   const allowedRoles = to.meta.roles as string[] | undefined
-  if (!canAccessRoute(role, allowedRoles)) {
-    const entry = getEntryRouteName(role)
+  const roleAllowed = canAccessRouteAny(effectiveRoles, allowedRoles)
+
+  /**
+   * v2：权限码放行通道。
+   *
+   * 活动组长 / 统筹 / 板块 / 个体 / 社区管理员的 `role` 恒为 resident（社区管理员除外），
+   * 它们的管理端能力由权限配置授予的权限码开通，因此不能再用 meta.roles 一票否决。
+   *
+   * 收紧条件（四条同时满足才放行）：
+   * 1. 该路由已在 ROUTE_PERMISSION 登记 —— 未登记的路由不会因此扩大可达范围；
+   * 2. 账号属于管理端 / 领导标签身份（platform_admin / property_admin / community_admin /
+   *    role=resident 的标签身份）。商家 / 配送员 / 技工**不走这条通道** —— 否则持有
+   *    delivery:grab 的快递员会顺着权限码进到管理端「送货管理」；
+   * 3. 具备管理端工作台身份（adminWorkspace 明确为 false 时不允许）；
+   * 4. 严格命中权限码（权限未加载一律拒绝，不走 fail-open）。
+   */
+  const identityRole = normalizeAdminIdentity(profile).role
+  const isConsoleIdentity =
+    identityRole === USER_ROLE.RESIDENT || isAdminWorkspaceIdentity(identityRole)
+  const viaPermission =
+    !roleAllowed &&
+    isConsoleIdentity &&
+    !!requiredCode &&
+    auth.canEnterAdminWorkspace() &&
+    auth.hasPermissionStrict(requiredCode)
+
+  if (!roleAllowed && !viaPermission) {
+    const entry = getEntryRouteName(profile)
     // 防止未知角色首页与目标页相同导致无限重定向
     if (to.name === entry) return true
     return { name: entry }
   }
 
-  if (to.meta.propertyLeaderOnly && !canAccessLeaderOnlyRoute(auth.profile, String(to.name || ''))) {
-    const entry = getEntryRouteName(role)
+  // 领导专属（参数配置 / 权限 / 操作员管理 / 价格审批）仍按领导身份判定；
+  // 凭权限码进入的标签身份不受这条约束（文档 §3.1 明确允许 coordinators 等被授予）。
+  if (!viaPermission && to.meta.propertyLeaderOnly && !canAccessLeaderOnlyRoute(profile, routeName)) {
+    const entry = getEntryRouteName(profile)
     if (to.name === entry) return true
     return { name: entry }
+  }
+
+  // v1.3：角色（或权限通道）通过后再判权限码
+  if (requiredCode) {
+    // 权限驱动型页面均属管理端，先过管理端总开关。
+    // 只在 adminWorkspace 明确为 false 时拦截：老环境不下发该字段（undefined）时保持放行。
+    if (!auth.canEnterAdminWorkspace()) {
+      if (to.name === 'forbidden') return true
+      return {
+        name: 'forbidden',
+        query: { code: 'admin_workspace', from: routeName }
+      }
+    }
+    if (!auth.hasPermission(requiredCode)) {
+      if (to.name === 'forbidden') return true
+      return {
+        name: 'forbidden',
+        query: { code: requiredCode, from: routeName }
+      }
+    }
   }
 
   return true

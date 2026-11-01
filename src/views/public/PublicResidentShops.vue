@@ -82,7 +82,11 @@ async function load(pageNo = 1) {
     page.value = res.pagination?.page ?? pageNo
     totalPages.value = res.pagination?.totalPages ?? 1
   } catch (e) {
-    error.value = e instanceof ApiError ? getPhase2ErrorMessage(e.code, e.message) : '加载失败'
+    if (e instanceof ApiError && e.code === 20001) {
+      error.value = '橱窗接口当前要求登录（缺少 Token），请重新登录后再打开'
+    } else {
+      error.value = e instanceof ApiError ? getPhase2ErrorMessage(e.code, e.message) : '加载失败'
+    }
     list.value = []
   } finally {
     loading.value = false

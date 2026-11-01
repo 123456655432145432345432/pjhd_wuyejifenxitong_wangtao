@@ -130,7 +130,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { deliveryPriceRangeApi, deliveryRulesApi, propertyCompanyApi } from '../../api/services'
+import { deliveryPriceRangeApi, propertyCompanyApi } from '../../api/services'
 import type { DeliveryPriceRangeItem, PropertyCompanyItem } from '../../api/types'
 import { ApiError, formatApiError } from '../../api/request'
 import {
@@ -192,26 +192,10 @@ function resolvePropertyCompanyId() {
   return auth.propertyCompanyId || selectedPropertyId.value || ''
 }
 
-async function loadScopeOptions() {
-  try {
-    const data = await deliveryRulesApi.scopeOptions()
-    if (data.distanceTypes?.length) {
-      distanceOptions.value = data.distanceTypes.map((item) => ({
-        value: item.code,
-        label: item.description
-      }))
-    }
-    if (data.deliveryScopes?.length) {
-      scopeOptions.value = data.deliveryScopes.map((item) => ({
-        value: item.code,
-        label: item.description
-      }))
-    }
-  } catch {
-    // 字典失败时回退本地枚举
-  }
-}
-
+/**
+ * 距离类型 / 配送范围字典已改为纯本地枚举（DISTANCE_TYPE_OPTIONS / DELIVERY_SCOPE_OPTIONS），
+ * 后端 2026-10-27 确认 GET /delivery-rules/scope-options 不补实现，不再请求。
+ */
 async function loadPropertyCompanies() {
   if (!isPlatformAdmin.value) return
   try {
@@ -341,7 +325,7 @@ onMounted(async () => {
   if (!isPlatformAdmin.value) {
     selectedPropertyId.value = auth.propertyCompanyId || ''
   }
-  await Promise.all([loadScopeOptions(), loadPropertyCompanies()])
+  await loadPropertyCompanies()
   await load()
 })
 </script>

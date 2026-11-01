@@ -1,7 +1,8 @@
-import { ApiError, buildQuery, request, requestBlob } from './request'
+import { ApiError, buildQuery, request, requestBlob, requestBlobResponse } from './request'
 import { normalizeBuildingChangeApplication, normalizeMerchantItem } from './mappers'
 import { getAccessToken } from '../stores/tokenStore'
 import { normalizePageResult } from '../utils/pageResult'
+import { newRequestId } from '../utils/idempotency'
 import { normalizeDistributionRecords } from '../utils/distribution'
 import { normalizeCbkAccount, normalizeCbkReconcileItem } from '../utils/cbk'
 import { MERCHANT_AUDIT_STATUS, ORDER_STATUS } from '../constants/enums'
@@ -9,6 +10,7 @@ import type {
   AgeBracketItem,
   AnnouncementCreatePayload,
   AnnouncementItem,
+  MyPermissionsResult,
   AnnouncementReadStats,
   AnnouncementUpdatePayload,
   CommunityEntityCreatePayload,
@@ -28,14 +30,17 @@ import type {
   DeliveryOverview,
   DeliveryRule,
   DeliveryRuleUpsertPayload,
-  DeliveryScopeOptions,
   DeliveryTaskItem,
   DeliveryTodayStats,
   DevicePushTokenPayload,
   DevicePushTokenResult,
+  DistributorApplicationAuditPayload,
+  DistributorApplicationAuditResult,
+  DistributorApplicationItem,
   DirectedMessageCreatePayload,
   DirectedMessageRecipientItem,
   DirectedMessageSendResult,
+  DirectedMessageStats,
   DirectedMessageTaskItem,
   DistributorProductCreatePayload,
   DistributorProductUpdatePayload,
@@ -77,6 +82,7 @@ import type {
   UserPermissionsDetail,
   PointPool,
   PropertyCompanyConfig,
+  PropertyCompanyAdmin,
   PropertyCompanyDetail,
   PropertyCompanyItem,
   PropertyCompanyCommunity,
@@ -104,7 +110,18 @@ import type {
   BuildingLeaderMy,
   BuildingLeaderUpdatePayload,
   SellerWalletOverview,
+  PropertyManagerListItem,
+  PropertyManagerDetail,
+  CreatePropertyManagerPayload,
+  UpdatePropertyManagerPayload,
+  PropertyManagerMy,
+  PropertyManagerEarningItem,
+  PropertyManagerWallet,
+  PropertyManagerBuildingLeaderPayload,
   TransferToPropertyItem,
+  TransactionLedgerItem,
+  TransactionOverview,
+  TransactionQueryParams,
   RoleAccountCreatePayload,
   RoleAccountCreateResult,
   RoleAccountDeleteResult,
@@ -139,6 +156,8 @@ import type {
   MerchantPointPurchasePayload,
   MerchantWithdrawalItem,
   MerchantWithdrawalPayload,
+  MerchantWechatAccount,
+  MerchantWechatAccountPayload,
   MyMerchantDetail,
   ProductCreatePayload,
   ProductItem,
@@ -182,6 +201,7 @@ import type {
   CommunityPostItem,
   ContentReportItem,
   ContentReportHandlePayload,
+  ForumBanItem,
   PlatformShareRates,
   UpdatePlatformShareRatesPayload,
   PlatformEarningsStats,
@@ -208,6 +228,9 @@ import type {
   IndividualLeaderApplicationItem,
   IndividualLeaderApplicationAuditPayload,
   IndividualLeaderApplicationAuditResult,
+  ActivityLeaderApplicationItem,
+  ActivityLeaderApplicationAuditPayload,
+  ActivityLeaderApplicationAuditResult,
   OrderRefundItem,
   OrderRefundAuditPayload,
   OrderRefundAuditResult,
@@ -326,6 +349,16 @@ export const authApi = {
 
   profile(options: { softAuth?: boolean } = {}) {
     return request<UserProfile>('/auth/profile', { softAuth: options.softAuth })
+  },
+
+  /**
+   * GET /auth/my-permissions（v1.2）
+   * 任意登录角色可取当前有效权限码（`resource:action` 冒号格式）。
+   * 用于：① 登录后写入 auth store；② 权限配置保存后刷新；③ merchant/courier 等
+   * 调不了 /auth/profile 的角色作为唯一权限来源。
+   */
+  myPermissions() {
+    return request<MyPermissionsResult>('/auth/my-permissions')
   }
 
 }
@@ -953,11 +986,14 @@ export const deliveryApi = {
 
 /** 配送规则 / 可选项（§76） */
 export const deliveryRulesApi = {
-  /** GET /delivery-rules/scope-options — 公开字典 */
-  scopeOptions() {
-    return request<DeliveryScopeOptions>('/delivery-rules/scope-options', {}, false)
-  },
-
+  /**
+   * 原 GET /delivery-rules/scope-options 已删除。
+   * 后端 2026-10-27 回复：该接口确认不补（附录 B 列为未实现），
+   * 字典由前端本地维护，两套枚举不可混用：
+   * - 配送价格区间 distanceType：DISTANCE_TYPE_OPTIONS（1km/3km/5km/citywide/any）
+   * - 商家配送 distanceType：MERCHANT_DISTANCE_TYPE_OPTIONS（any/radius/district/city）
+   * - 消息服务半径 serviceRadius：SERVICE_RADIUS_OPTIONS（1km/3km/5km/district/city）
+   */
   list(params: Record<string, string | number | undefined> = {}) {
     return request<PageResult<DeliveryRule> | DeliveryRule[]>(
       `/delivery-rules${buildQuery(params)}`
@@ -1007,7 +1043,8 @@ export const propertyCompanyApi = {
   /**
    * POST /property-companies — 创建物业公司（§14.3 / v8.1）
    * 与 POST /admin/property-companies 共用后端逻辑；推荐本路径。
-   * 成功时 data.adminAccount.initialPassword 仅返回一次（默认 admin123456）。
+   * 成功时 data.adminAccount.initialPassword 仅返回一次，为后端随机生成的 14 位密码；
+   * 前端**不得**用任何固定值兜底（后端存的是随机密码哈希，兜底值必然登录失败）。
    */
   create(payload: PropertyCompanyCreatePayload) {
     return request<PropertyCompanyCreateResult>('/property-companies', {
@@ -1056,6 +1093,39 @@ export const propertyCompanyApi = {
       method: 'PATCH',
       body: JSON.stringify({ status })
     })
+  },
+
+  /**
+   * v2（文档 §8）：PUT /admin/property-companies/{id}/coin-display
+   * 开关本物业是否向住户显示物业币，权限码 coin:display_control。
+   * 标签身份只能操作本物业，跨物业返回 403。
+   */
+  setCoinDisplay(id: string, enabled: boolean) {
+    return request<{ id: string; coinDisplayEnabled?: boolean }>(
+      `/admin/property-companies/${id}/coin-display`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ enabled })
+      }
+    )
+  },
+
+  /** GET /admin/property-companies/{id} — §51.3 详情（含 admins/adminAccounts 与小区列表） */
+  detail(id: string) {
+    return request<PropertyCompanyDetail>(`/admin/property-companies/${id}`)
+  },
+
+  /**
+   * POST /admin/property-companies/{id}/admin-accounts/{accountId}/reset-password — v8.28 新增
+   * 仅 `platform_admin` 可调。重置后旧密码立即失效，且该管理员已签发的 token 全部失效（需重新登录）。
+   * 响应里的 `initialPassword` 为新随机 14 位密码，仅本次返回一次。
+   * `accountId` 取自详情 `adminAccounts[].id`（历史字段名 `admins[].id`）。
+   */
+  resetAdminPassword(companyId: string, accountId: string) {
+    return request<PropertyCompanyAdmin>(
+      `/admin/property-companies/${companyId}/admin-accounts/${accountId}/reset-password`,
+      { method: 'POST' }
+    )
   }
 }
 
@@ -1106,9 +1176,14 @@ export const configApi = {
 
 export const permissionApi = {
 
-  users(params: { keyword?: string; page?: number; pageSize?: number } = {}) {
+  /**
+   * v1.3：默认 adminOnly=true，只返回具备管理端工作台身份的账号
+   * （物业/平台/社区管理员，或持活动组长/负责人标签的住户）。
+   * 传 false 才会带出普通住户，权限配置页不应使用 false。
+   */
+  users(params: { keyword?: string; page?: number; pageSize?: number; adminOnly?: boolean } = {}) {
     return request<{ accounts: AdminUserAccount[]; total: number }>(
-      `/admin/users${buildQuery(params)}`
+      `/admin/users${buildQuery({ adminOnly: true, ...params })}`
     )
   },
 
@@ -1131,10 +1206,10 @@ export const permissionApi = {
     })
   },
 
-  revokePermissions(userId: string, permissionCodes: string[]) {
+  revokePermissions(userId: string, permissionCodes: string[], reason?: string) {
     return request<unknown>(`/admin/users/${userId}/permissions/revoke`, {
       method: 'POST',
-      body: JSON.stringify({ permissionCodes })
+      body: JSON.stringify({ permissionCodes, reason })
     })
   },
 
@@ -1335,6 +1410,11 @@ export const merchantPortalApi = {
     })
   },
 
+  /**
+   * @deprecated 后端 v8.28 确认 `GET /merchant/points/quote` **未实现**，调用必然失败。
+   * 积分试算请读 `GET /merchants/my` 的 `pointExchangeRate` 本地计算（元金额 × 汇率）。
+   * 保留方法仅为避免旧调用点编译失败，不要再新增调用。
+   */
   pointQuote(payAmount = 100) {
     return request<MerchantPointQuote>(
       `/merchant/points/quote${buildQuery({ payAmount })}`
@@ -1361,9 +1441,18 @@ export const merchantPortalApi = {
     })
   },
 
-  createWithdrawal(payload: MerchantWithdrawalPayload) {
+  /**
+   * POST /merchant/withdrawals — 商家提现申请
+   *
+   * v8.19 §105.2：本接口在幂等覆盖清单内，须带 `X-Request-Id`。
+   * - 不传时后端不做幂等（等同旧版本），故此处默认生成一个；
+   * - 页面重试请传同一个 `requestId`，后端会回放首次成功响应，避免重复提现；
+   * - 首次处理中重复提交返回 409 / `70003 请求处理中，请稍后重试`。
+   */
+  createWithdrawal(payload: MerchantWithdrawalPayload, requestId?: string) {
     return request<MerchantWithdrawalItem>('/merchant/withdrawals', {
       method: 'POST',
+      headers: { 'X-Request-Id': requestId || newRequestId() },
       body: JSON.stringify(payload)
     })
   },
@@ -1439,6 +1528,19 @@ export const merchantPortalApi = {
 
   createAd(payload: MerchantAdCreatePayload) {
     return request<MerchantAdItem>('/merchant/ads', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+
+  /**
+   * v8.26 §2.2-5：POST /merchant/ads/{id}/repay — 待支付广告续付。
+   * 仅 `status=pending_payment` 可续付；响应重新带 `paymentRecordId` 与 `payParams`。
+   * ⚠️ 本仓为 Web 管理端，无 wx.requestPayment 能力，返回的 `payParams` 无法在此调起支付，
+   * 如需闭环须由微信小程序端消费该参数。
+   */
+  repayAd(id: string, payload: { openid?: string } = {}) {
+    return request<MerchantAdItem>(`/merchant/ads/${id}/repay`, {
       method: 'POST',
       body: JSON.stringify(payload)
     })
@@ -2127,6 +2229,16 @@ export const directedMessageApi = {
     return request<DirectedMessageTaskItem>(`/admin/directed-messages/${id}`)
   },
 
+  /**
+   * v2（文档 §8）：定向消息统计，权限码 directed_message:stats。
+   * 返回任务数 / 触达 / 已读 / 已读率 / 今日与近 7 天发送量。
+   */
+  getStats(params: { propertyCompanyId?: string } = {}) {
+    return request<DirectedMessageStats>(
+      `/admin/directed-messages/stats${buildQuery(params)}`
+    )
+  },
+
   create(payload: DirectedMessageCreatePayload) {
     return request<DirectedMessageSendResult>('/admin/directed-messages', {
       method: 'POST',
@@ -2376,7 +2488,11 @@ export const residentMerchantApi = {
     })
   },
 
-  /** GET /resident-merchants/public — Auth Optional */
+  /**
+   * GET /resident-merchants/public — 文档标注 Auth Optional，但测试服网关仍强制校验 token
+   * （无 token 实测返回 401 {"code":20001,"message":"Token缺失"}）。
+   * 故改为可选鉴权：登录用户带 token 正常取数，未登录不再因缺 token 直接报错。
+   */
   listPublic(
     params: {
       page?: number
@@ -2387,17 +2503,15 @@ export const residentMerchantApi = {
   ) {
     return request<PageResult<ResidentMerchantPublicItem>>(
       `/resident-merchants/public${buildQuery(params)}`,
-      {},
-      false
+      { optionalAuth: true }
     )
   },
 
-  /** GET /resident-merchants/public/{residentId} — Auth Optional */
+  /** GET /resident-merchants/public/{residentId} — 同上，可选鉴权 */
   getPublic(residentId: string) {
     return request<ResidentMerchantPublicDetail>(
       `/resident-merchants/public/${residentId}`,
-      {},
-      false
+      { optionalAuth: true }
     )
   },
 
@@ -2652,6 +2766,33 @@ function normalizeIndividualLeaderApplication(raw: unknown): IndividualLeaderApp
   }
 }
 
+/** §101.1 组长申请列表项归一化（ala_ 前缀） */
+function normalizeActivityLeaderApplication(raw: unknown): ActivityLeaderApplicationItem {
+  const source = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+  return {
+    id: pickPrefixedId(source, 'ala_', ['applicationId', 'application_id', 'id']) || '',
+    residentId: pickApplicationField(source, ['residentId', 'resident_id']),
+    residentName: pickApplicationField(source, ['residentName', 'resident_name', 'name']),
+    residentPhone: pickApplicationField(source, ['residentPhone', 'resident_phone', 'phone']),
+    phone: pickApplicationField(source, ['phone', 'residentPhone', 'resident_phone']),
+    activityField: pickApplicationField(source, ['activityField', 'activity_field']),
+    remark: pickApplicationField(source, ['remark', 'intro', 'description', 'message']),
+    auditStatus: pickApplicationField(source, ['auditStatus', 'audit_status', 'status']),
+    status: pickApplicationField(source, ['auditStatus', 'audit_status', 'status']),
+    rejectReason: pickApplicationField(source, ['rejectReason', 'reject_reason', 'reason']),
+    activityLeaderIdentityId: pickApplicationField(source, [
+      'activityLeaderIdentityId',
+      'activity_leader_identity_id',
+      'identityId',
+      'identity_id'
+    ]),
+    createdAt: pickApplicationField(source, ['createdAt', 'created_at', 'appliedAt', 'applied_at']),
+    auditedAt: pickApplicationField(source, ['auditedAt', 'audited_at']),
+    propertyCompanyId: pickApplicationField(source, ['propertyCompanyId', 'property_company_id']),
+    propertyCompanyName: pickApplicationField(source, ['propertyCompanyName', 'property_company_name'])
+  }
+}
+
 /** 管理端个体负责人（一级代理）§37 */
 export const adminIndividualLeaderApi = {
   list(params: {
@@ -2766,6 +2907,58 @@ export const adminIndividualLeaderApi = {
       }
     }
     throw lastError
+  }
+}
+
+/** §101 管理端 — 活动组组长申请审核（v8.14 新增，v8.15 修复审核通过 400）
+ * 审核通过后后端同事务创建组长身份 + 自动开通组长小店，前端不要再调开店接口。 */
+export const adminActivityLeaderApplicationApi = {
+  async list(params: {
+    page?: number
+    pageSize?: number
+    auditStatus?: string
+    /** 仅 platform_admin 跨物业查询时传；不传即返回全部物业 */
+    propertyCompanyId?: string
+  } = {}) {
+    const query = buildQuery({
+      page: params.page,
+      pageSize: params.pageSize,
+      auditStatus: params.auditStatus,
+      propertyCompanyId: params.propertyCompanyId
+    })
+    const raw = await request<PageResult<ActivityLeaderApplicationItem> | unknown>(
+      `/admin/activity-leader-applications${query}`
+    )
+    const result = normalizePageResult<ActivityLeaderApplicationItem>(
+      raw,
+      params.page ?? 1,
+      params.pageSize ?? 20
+    )
+    return {
+      ...result,
+      list: result.list.map(normalizeActivityLeaderApplication)
+    }
+  },
+
+  audit(applicationId: string, payload: ActivityLeaderApplicationAuditPayload) {
+    return request<ActivityLeaderApplicationAuditResult>(
+      `/admin/activity-leader-applications/${applicationId.trim()}/audit`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          auditStatus: payload.auditStatus,
+          rejectReason: payload.rejectReason
+        })
+      }
+    )
+  },
+
+  /** §101.3 撤销组长身份。只置 revoked，历史活动组/小店/订单保留 */
+  revoke(residentId: string) {
+    return request<ActivityLeaderApplicationAuditResult>(
+      `/admin/activity-leaders/${residentId.trim()}/revoke`,
+      { method: 'POST' }
+    )
   }
 }
 
@@ -3088,6 +3281,245 @@ export const distributorProductApi = {
   }
 }
 
+/**
+ * v8.11 §60.12 管理端 — 一级代理权限开通/取消
+ * Roles: property_admin / platform_admin（物业隔离）
+ * - enable：商家 is_distributor=1，仅审核通过（approved）商家可开通
+ * - disable：is_distributor=0，已有货源商品保留
+ */
+export const distributorAdminApi = {
+  enable(merchantId: string) {
+    return request<null>(`/admin/distributors/${merchantId}/enable`, { method: 'POST' })
+  },
+
+  disable(merchantId: string) {
+    return request<null>(`/admin/distributors/${merchantId}/disable`, { method: 'POST' })
+  }
+}
+
+function pickDistributorApplicationField(source: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = source[key]
+    if (value === undefined || value === null || value === '') continue
+    return String(value)
+  }
+  return undefined
+}
+
+/** 兼容 camelCase 与 snake_case 两种返回风格 */
+function normalizeDistributorApplication(raw: unknown): DistributorApplicationItem {
+  const source = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+  return {
+    id:
+      pickDistributorApplicationField(source, ['id', 'applicationId', 'application_id']) || '',
+    residentId: pickDistributorApplicationField(source, ['residentId', 'resident_id']),
+    residentName: pickDistributorApplicationField(source, [
+      'residentName',
+      'resident_name',
+      'name'
+    ]),
+    residentPhone: pickDistributorApplicationField(source, [
+      'residentPhone',
+      'resident_phone',
+      'phone'
+    ]),
+    propertyCompanyId: pickDistributorApplicationField(source, [
+      'propertyCompanyId',
+      'property_company_id'
+    ]),
+    propertyCompanyName: pickDistributorApplicationField(source, [
+      'propertyCompanyName',
+      'property_company_name'
+    ]),
+    contactName: pickDistributorApplicationField(source, ['contactName', 'contact_name']),
+    contactPhone: pickDistributorApplicationField(source, ['contactPhone', 'contact_phone']),
+    businessScope: pickDistributorApplicationField(source, ['businessScope', 'business_scope']),
+    serviceScope: pickDistributorApplicationField(source, ['serviceScope', 'service_scope']),
+    remark: pickDistributorApplicationField(source, ['remark']),
+    auditStatus: pickDistributorApplicationField(source, [
+      'auditStatus',
+      'audit_status',
+      'status'
+    ]),
+    rejectReason: pickDistributorApplicationField(source, [
+      'rejectReason',
+      'reject_reason',
+      'reason'
+    ]),
+    distributorMerchantId: pickDistributorApplicationField(source, [
+      'distributorMerchantId',
+      'distributor_merchant_id'
+    ]),
+    createdAt: pickDistributorApplicationField(source, [
+      'createdAt',
+      'created_at',
+      'submittedAt',
+      'submitted_at'
+    ]),
+    submittedAt: pickDistributorApplicationField(source, ['submittedAt', 'submitted_at']),
+    auditedAt: pickDistributorApplicationField(source, ['auditedAt', 'audited_at']),
+    auditedBy: pickDistributorApplicationField(source, ['auditedBy', 'audited_by'])
+  }
+}
+
+/**
+ * v8.12.1 §60.16 管理端 — 一级代理申请审核
+ * Roles: property_admin / platform_admin（按物业隔离，platform_admin 可跨物业）
+ * - approved：后端同事务自动建商家载体并开通一级代理（幂等）
+ * - rejected：记录 rejectReason，C 端可带原因重新申请
+ * 错误码：97040 申请不存在 / 97041 已审核不可重复 / （C 端）97042 重复提交 / 97043 已是一级代理
+ */
+export const adminDistributorApplicationApi = {
+  async list(params: {
+    page?: number
+    pageSize?: number
+    keyword?: string
+    auditStatus?: string
+    propertyCompanyId?: string
+  } = {}) {
+    const query = buildQuery({
+      page: params.page,
+      pageSize: params.pageSize,
+      keyword: params.keyword,
+      auditStatus: params.auditStatus,
+      propertyCompanyId: params.propertyCompanyId
+    })
+    const raw = await request<PageResult<DistributorApplicationItem> | unknown>(
+      `/admin/distributor-applications${query}`
+    )
+    const result = normalizePageResult<DistributorApplicationItem>(
+      raw,
+      params.page ?? 1,
+      params.pageSize ?? 20
+    )
+    return {
+      ...result,
+      list: result.list.map(normalizeDistributorApplication)
+    }
+  },
+
+  audit(id: string, payload: DistributorApplicationAuditPayload) {
+    return request<DistributorApplicationAuditResult>(
+      `/admin/distributor-applications/${id.trim()}/audit`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          auditResult: payload.auditResult,
+          auditStatus: payload.auditResult,
+          rejectReason: payload.rejectReason
+        })
+      }
+    )
+  }
+}
+
+/**
+ * v8.11 §100.1 管理端 — 物业公司经理管理
+ * Roles: property_admin（限本物业）/ platform_admin
+ * 「住户 + 经理」复合身份，登录 role 仍为 resident（不占用 residents.role）。
+ */
+export const adminPropertyManagerApi = {
+  list(params: {
+    page?: number
+    pageSize?: number
+    keyword?: string
+    status?: string
+    propertyCompanyId?: string
+  } = {}) {
+    return request<PageResult<PropertyManagerListItem>>(
+      `/admin/property-managers${buildQuery(params)}`
+    )
+  },
+
+  create(payload: CreatePropertyManagerPayload) {
+    return request<PropertyManagerDetail>('/admin/property-managers', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+
+  detail(id: string) {
+    return request<PropertyManagerDetail>(`/admin/property-managers/${id}`)
+  },
+
+  /** 更新抽成比例/状态；经理本人改自己的 commissionRate 返回 91008 */
+  update(id: string, payload: UpdatePropertyManagerPayload) {
+    return request<PropertyManagerDetail>(`/admin/property-managers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
+  },
+
+  /** 停用（置 inactive），历史订单快照不受影响 */
+  disable(id: string) {
+    return request<PropertyManagerDetail>(`/admin/property-managers/${id}`, { method: 'DELETE' })
+  }
+}
+
+/**
+ * v8.11 §100.2 物业经理工作台 — 本人接口
+ * Roles: resident（须为在职物业经理：非经理 91005 / 已停用 91007）
+ */
+export const propertyManagerPortalApi = {
+  /** 我的身份与抽成比例；可用于判定是否展示经理工作台入口 */
+  my() {
+    return request<PropertyManagerMy>('/property-managers/my')
+  },
+
+  /** 名下楼长列表（本物业范围） */
+  buildingLeaders(params: {
+    page?: number
+    pageSize?: number
+    keyword?: string
+    status?: string
+  } = {}) {
+    return request<PageResult<BuildingLeaderListItem>>(
+      `/property-managers/my/building-leaders${buildQuery(params)}`
+    )
+  },
+
+  /** 指定单元楼长（限本物业）；unit 为单元 */
+  appointBuildingLeader(payload: PropertyManagerBuildingLeaderPayload) {
+    return request<BuildingLeaderDetail>('/property-managers/my/building-leaders', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+
+  /** 我的抽成收益流水（pageSize 上限 100） */
+  earnings(params: { page?: number; pageSize?: number } = {}) {
+    return request<PageResult<PropertyManagerEarningItem>>(
+      `/property-managers/my/earnings${buildQuery(params)}`
+    )
+  },
+
+  /** 我的钱包概览 */
+  wallet() {
+    return request<PropertyManagerWallet>('/property-managers/my/wallet')
+  },
+
+  /** 申请提现（withdrawalType=property_manager） */
+  createWithdrawal(payload: RoleWithdrawalPayload) {
+    return request<RoleWithdrawalItem>('/property-managers/my/withdrawals', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+
+  /** 提现记录 */
+  withdrawals(params: {
+    page?: number
+    pageSize?: number
+    auditStatus?: string
+    startDate?: string
+    endDate?: string
+  } = {}) {
+    return request<PageResult<RoleWithdrawalItem>>(
+      `/property-managers/my/withdrawals${buildQuery(params)}`
+    )
+  }
+}
+
 /** 配送提现：role=courier 即可（负责人汇总 / 普通配送员看本人），不强制快递负责人 */
 export const courierWithdrawalApi = {
   create(payload: RoleWithdrawalPayload) {
@@ -3205,14 +3637,27 @@ export const coinWithdrawalAdminApi = {
       body: JSON.stringify(payload)
     })
   },
-  getSettings() {
-    return request<CoinWithdrawalSettings>('/admin/coin-withdrawals/settings')
+  getSettings(propertyCompanyId?: string) {
+    return request<CoinWithdrawalSettings>(
+      `/admin/coin-withdrawals/settings${buildQuery({ propertyCompanyId })}`
+    )
   },
-  updateSettings(payload: { autoEnabled?: boolean; periodDays?: number }) {
-    return request<CoinWithdrawalSettings>('/admin/coin-withdrawals/settings', {
-      method: 'PUT',
-      body: JSON.stringify(payload)
-    })
+  /**
+   * §80.2 PUT /admin/coin-withdrawals/settings
+   * platform_admin 必须带 propertyCompanyId，否则后端无法确定写哪家物业的公司级参数；
+   * property_admin 不传则取当前物业。
+   */
+  updateSettings(
+    payload: { autoEnabled?: boolean; periodDays?: number },
+    propertyCompanyId?: string
+  ) {
+    return request<CoinWithdrawalSettings>(
+      `/admin/coin-withdrawals/settings${buildQuery({ propertyCompanyId })}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      }
+    )
   },
   blockResident(id: string, payload: WithdrawalBlockPayload) {
     return request<{ success?: boolean }>(`/admin/coin-withdrawals/residents/${id}/block`, {
@@ -3252,25 +3697,50 @@ export const propertyContactAdminApi = {
  * 居民端发帖/点赞/评论不在本管理端仓库实现
  */
 export const communityForumAdminApi = {
+  /**
+   * 帖子列表。v8.14：必须带 adminView=true 才会返回 shadowBanned 标记，
+   * 否则被影子封禁的内容在管理端同样不可见，无法管理。
+   */
   listPosts(params: {
     page?: number
     pageSize?: number
     status?: string
     keyword?: string
+    adminView?: boolean
   } = {}) {
     return request<PageResult<CommunityPostItem>>(
-      `/admin/community/posts${buildQuery(params)}`
+      `/admin/community/posts${buildQuery({ adminView: true, ...params })}`
     )
   },
   deletePost(id: string) {
     return request<null>(`/admin/community/posts/${id}`, { method: 'DELETE' })
+  },
+  /** v8.14 影子封禁下发：expiresAt 不传 = 永久 */
+  forumBan(residentId: string, payload: { expiresAt?: string; reason?: string } = {}) {
+    return request<ForumBanItem>(`/admin/community/users/${residentId}/forum-ban`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+  /** v8.14 禁言名单：status 支持 active / lifted / expired */
+  listForumBans(params: { page?: number; pageSize?: number; status?: string } = {}) {
+    return request<PageResult<ForumBanItem>>(`/admin/community/forum-bans${buildQuery(params)}`)
+  },
+  /**
+   * v8.14 §C.16 解除禁言。
+   * 后端 2026-10-27 回复：不需要先查名单再决定调用，直接调即可 ——
+   * 有生效禁言则解除成功（回补评论计数、shadow_banned 置回 false、历史内容恢复对外可见），
+   * 无生效记录返回 404 / 97051「该用户没有被生效中的禁言记录」，前端直接 toast message。
+   */
+  liftForumBan(residentId: string) {
+    return request<null>(`/admin/community/users/${residentId}/forum-ban`, { method: 'DELETE' })
   },
   /** 该帖评论列表：优先管理端路径，未发布时回退居民端 §C.7 */
   async listComments(
     postId: string,
     params: { page?: number; pageSize?: number } = {}
   ) {
-    const query = buildQuery(params)
+    const query = buildQuery({ adminView: true, ...params })
     const page = params.page ?? 1
     const pageSize = params.pageSize ?? 50
     try {
@@ -3907,6 +4377,25 @@ export const adminMerchantApplymentApi = {
     return request<ApplymentDetail>(`/admin/merchants/${merchantId}/applyment/refresh`, {
       method: 'POST'
     })
+  },
+
+  /** GET .../wechat-account — 附录 C.3.3：查 sub_mchid 绑定，未绑定返回 data=null */
+  getWechatAccount(merchantId: string) {
+    return request<MerchantWechatAccount | null>(
+      `/admin/merchants/${merchantId}/wechat-account`
+    )
+  },
+
+  /**
+   * PUT .../wechat-account — 附录 C.3.3：绑定/修正 sub_mchid（仅 platform_admin）。
+   * `subMchid` 8~20 位数字，不能等于服务商 sp_mchid 或平台直连商户号；
+   * 只有 status=active 且 subMchid 非空时才可用于下单。
+   */
+  saveWechatAccount(merchantId: string, payload: MerchantWechatAccountPayload) {
+    return request<MerchantWechatAccount>(
+      `/admin/merchants/${merchantId}/wechat-account`,
+      { method: 'PUT', body: JSON.stringify(payload) }
+    )
   }
 }
 
@@ -4056,6 +4545,78 @@ export const fileApi = {
   },
   remove(id: string) {
     return request<import('./types').DeleteFileResponse>(`/files/${id}`, { method: 'DELETE' })
+  }
+}
+
+/**
+ * §106 平台交易明细 v8.20 — 只读对账账本，仅 platform_admin
+ * 后端已做硬校验（非平台管理员 403 / 20004），前端不重试。
+ * 注意：本组接口已加入 request.ts 的 propertyCompanyId 注入白名单，
+ * 由页面显式传参控制「全部物业」与单物业切换。
+ */
+export const adminTransactionApi = {
+  /** 交易明细分页列表 */
+  async list(params: TransactionQueryParams = {}) {
+    const query = buildQuery({
+      propertyCompanyId: params.propertyCompanyId,
+      startDate: params.startDate,
+      endDate: params.endDate,
+      group: params.group,
+      category: params.category,
+      direction: params.direction,
+      status: params.status,
+      keyword: params.keyword,
+      page: params.page,
+      pageSize: params.pageSize
+    })
+    const raw = await request<PageResult<TransactionLedgerItem> | unknown>(
+      `/admin/transactions${query}`
+    )
+    return normalizePageResult<TransactionLedgerItem>(
+      raw,
+      params.page ?? 1,
+      params.pageSize ?? 20
+    )
+  },
+
+  /** 交易总览：分组/分类/状态分布/日趋势。参数同列表（不含分页） */
+  overview(params: Omit<TransactionQueryParams, 'page' | 'pageSize'> = {}) {
+    return request<TransactionOverview>(
+      `/admin/transactions/overview${buildQuery({
+        propertyCompanyId: params.propertyCompanyId,
+        startDate: params.startDate,
+        endDate: params.endDate,
+        group: params.group,
+        category: params.category,
+        direction: params.direction,
+        status: params.status,
+        keyword: params.keyword
+      })}`
+    )
+  },
+
+  /**
+   * 导出 CSV（UTF-8 BOM）。参数与当前筛选一致，最多 50000 行。
+   * 跨域未暴露响应头时 rows / truncated 取不到值，退化为不提示。
+   */
+  async exportCsv(
+    params: Omit<TransactionQueryParams, 'page' | 'pageSize'> = {}
+  ): Promise<{ rows: number; truncated: boolean; blob: Blob }> {
+    const res = await requestBlobResponse(
+      `/admin/transactions/export${buildQuery({
+        propertyCompanyId: params.propertyCompanyId,
+        startDate: params.startDate,
+        endDate: params.endDate,
+        group: params.group,
+        category: params.category,
+        direction: params.direction,
+        status: params.status,
+        keyword: params.keyword
+      })}`
+    )
+    const rows = Number(res.headers.get('X-Export-Rows') || '') || 0
+    const truncated = res.headers.get('X-Export-Truncated') === 'true'
+    return { rows, truncated, blob: await res.blob() }
   }
 }
 

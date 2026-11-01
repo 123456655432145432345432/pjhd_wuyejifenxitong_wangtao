@@ -7,7 +7,7 @@
             <IconSvg name="wallet" class="icon" />
           </div>
           <div class="body">
-            <div class="value">{{ poolLoading ? '加载中...' : `¥ ${poolOverview.poolAmount}` }}</div>
+            <div class="value">{{ poolLoading ? '加载中...' : `¥ ${poolOverview?.poolAmount ?? '0.00'}` }}</div>
             <div class="tag">
               <IconSvg name="info" />
               <span>来源：兑换比例差额自动注入</span>
@@ -484,7 +484,7 @@ const auth = useAuthStore()
 
 const loading = ref(true)
 const poolLoading = ref(true)
-const poolOverview = ref(mapPointPoolOverview())
+const poolOverview = ref<ReturnType<typeof mapPointPoolOverview> | null>(mapPointPoolOverview())
 const overview = ref(mapPointsOverview())
 const formattedTotal = computed(() => overview.value.pcoinTotal.toLocaleString())
 const formattedConsumed = computed(() =>

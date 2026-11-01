@@ -118,7 +118,7 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { deliveryRulesApi, merchantPortalApi, serviceCategoryApi } from '../../api/services'
+import { merchantPortalApi, serviceCategoryApi } from '../../api/services'
 import { ApiError } from '../../api/request'
 import type { MerchantServiceScopeCommunity, ServiceCategoryDictItem } from '../../api/types'
 import {
@@ -204,19 +204,12 @@ function clearCommunitySelection() {
   selectedIds.value = []
 }
 
-async function loadScopeOptions() {
-  try {
-    const data = await deliveryRulesApi.scopeOptions()
-    if (data.distanceTypes?.length) {
-      distanceOptions.value = data.distanceTypes.map((item) => ({
-        value: item.code,
-        label: item.description
-      }))
-    }
-  } catch {
-    // 回退本地枚举
-  }
-}
+/**
+ * 商家配送距离字典走本地 MERCHANT_DISTANCE_TYPE_OPTIONS（any/radius/district/city）。
+ * 注意与「消息服务半径」serviceRadius 的 SERVICE_RADIUS（1km/3km/5km/district/city）不是同一套，
+ * 前者提交到 PUT /merchants/{id} 的 distanceType，后者走 /merchants/my/message-service。
+ * 后端 2026-10-27 确认 GET /delivery-rules/scope-options 不补实现。
+ */
 
 async function loadDeliveryMode() {
   modeLoading.value = true
@@ -330,7 +323,7 @@ async function saveMessageService() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadScopeOptions(), loadDeliveryMode(), loadScope(), loadCategories()])
+  await Promise.all([loadDeliveryMode(), loadScope(), loadCategories()])
 })
 </script>
 

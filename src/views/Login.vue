@@ -146,7 +146,7 @@ import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import IconSvg from '../components/IconSvg.vue'
 import { useAuthStore } from '../stores/auth'
-import { getRoleHomeRoute } from '../constants/roles'
+import { getHomeRouteForProfile } from '../constants/roles'
 import { isMobileShellRole } from '../constants/mobilePortal'
 import { ApiError } from '../api/request'
 import ccbBg from '../assets/images/ccb.jpg'
@@ -207,7 +207,7 @@ async function handleSubmit() {
     const entryRoute =
       window.innerWidth <= 768 && isMobileShellRole(auth.profile?.role)
         ? 'mobile-home'
-        : getRoleHomeRoute(auth.profile?.role)
+        : getHomeRouteForProfile(auth.profile)
     await router.replace({ name: entryRoute })
 
   } catch (e) {

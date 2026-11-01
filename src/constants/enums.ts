@@ -67,7 +67,7 @@ export const BUILDING_CHANGE_STATUS_OPTIONS = [
   { value: BUILDING_CHANGE_STATUS.REJECTED, label: '已拒绝' }
 ]
 
-/** [ENUM] 一级代理（个体负责人）住户申请状态，对齐住户端 pending / approved / rejected */
+/** [ENUM] 个体负责人住户申请状态，对齐住户端 pending / approved / rejected（勿与 §60.16 一级代理申请混淆） */
 export const INDIVIDUAL_LEADER_APPLICATION_STATUS = {
   PENDING: 'pending',
   PENDING_AUDIT: 'pending_audit',
@@ -93,6 +93,38 @@ export function isIndividualLeaderApplicationPending(status?: string | null) {
   return (
     status === INDIVIDUAL_LEADER_APPLICATION_STATUS.PENDING ||
     status === INDIVIDUAL_LEADER_APPLICATION_STATUS.PENDING_AUDIT
+  )
+}
+
+/** [ENUM] 活动组组长申请状态（§101，v8.14 新增 / v8.15 修复审核通过 400）
+ * 与个体负责人申请同形，但多一个 revoked：撤销身份接口会返回该状态 */
+export const ACTIVITY_LEADER_APPLICATION_STATUS = {
+  PENDING: 'pending',
+  PENDING_AUDIT: 'pending_audit',
+  APPROVED: 'approved',
+  REJECTED: 'rejected',
+  REVOKED: 'revoked'
+} as const
+
+export const ACTIVITY_LEADER_APPLICATION_STATUS_LABEL: Record<string, string> = {
+  pending: '待审核',
+  pending_audit: '待审核',
+  approved: '已通过',
+  rejected: '已驳回',
+  revoked: '已撤销'
+}
+
+export const ACTIVITY_LEADER_APPLICATION_STATUS_OPTIONS = [
+  { value: '', label: '全部状态' },
+  { value: ACTIVITY_LEADER_APPLICATION_STATUS.PENDING, label: '待审核' },
+  { value: ACTIVITY_LEADER_APPLICATION_STATUS.APPROVED, label: '已通过' },
+  { value: ACTIVITY_LEADER_APPLICATION_STATUS.REJECTED, label: '已驳回' }
+]
+
+export function isActivityLeaderApplicationPending(status?: string | null) {
+  return (
+    status === ACTIVITY_LEADER_APPLICATION_STATUS.PENDING ||
+    status === ACTIVITY_LEADER_APPLICATION_STATUS.PENDING_AUDIT
   )
 }
 
@@ -441,26 +473,47 @@ export const PAYMENT_METHOD_LABEL: Record<string, string> = {
   alipay: '支付宝'
 }
 
-/** 商家广告投放支付方式（§59 按天计价） */
+/**
+ * 商家广告投放支付方式（§59 按天计价）
+ * v8.26：`coin`（物业币）/ `point`（商家积分）/ `mock`（模拟支付）已下线，
+ * 继续传后端返回 10002「广告已不支持物业币、商家积分或模拟支付」。
+ * 仅保留 free / wechat，且微信入口须由 GET /merchant/ads/quote 与 /quota
+ * 的 `wechatPaymentEnabled` 动态控制，不要写死。
+ */
 export const MERCHANT_AD_PAYMENT_METHOD = {
   FREE: 'free',
-  COIN: 'coin',
-  POINT: 'point',
-  WECHAT: 'wechat',
-  MOCK: 'mock'
+  WECHAT: 'wechat'
 } as const
 
 export const MERCHANT_AD_PAYMENT_METHOD_LABEL: Record<string, string> = {
   free: '免费额度',
-  coin: '物业币',
-  point: '商家积分',
   wechat: '微信支付',
-  mock: '模拟支付'
+  /** 以下仅用于历史记录回显（已下线，不可提交） */
+  coin: '物业币（已下线）',
+  point: '商家积分（已下线）',
+  mock: '模拟支付（已下线）'
 }
 
 export const MERCHANT_AD_PAYMENT_METHOD_OPTIONS = Object.entries(
   MERCHANT_AD_PAYMENT_METHOD_LABEL
-).map(([value, label]) => ({ value, label }))
+)
+  .filter(([value]) => value === MERCHANT_AD_PAYMENT_METHOD.FREE || value === MERCHANT_AD_PAYMENT_METHOD.WECHAT)
+  .map(([value, label]) => ({ value, label }))
+
+/** 商家广告投放状态（v8.26 §2，`merchant_ads.status`） */
+export const MERCHANT_AD_STATUS = {
+  /** 微信预下单成功但未收到款项：不投放、不占额度 */
+  PENDING_PAYMENT: 'pending_payment',
+  ACTIVE: 'active',
+  /** 支付超时/失败/主动取消 */
+  CANCELLED: 'cancelled'
+} as const
+
+export const MERCHANT_AD_STATUS_LABEL: Record<string, string> = {
+  pending_payment: '待支付',
+  active: '投放中',
+  cancelled: '已取消'
+}
 
 /** 业主商户对外展示（§60.9） */
 export const RESIDENT_SHOP_VISIBILITY = {
@@ -626,6 +679,12 @@ export const USER_ROLE = {
   INDIVIDUAL_LEADER: 'individual_leader',
   ACTIVITY_LEADER: 'activity_leader',
   TECHNICIAN: 'technician',
+  /**
+   * v1.3：社区管理员（社区论坛管理工作台）。
+   * 来源《管理端权限与工作台》文档：adminWorkspace=true，默认自带 community:read / community:manage，
+   * 其余管理端页面仍需单独授权。
+   */
+  COMMUNITY_ADMIN: 'community_admin',
   /**
    * v8.9：单元楼长（绑定小区+楼栋的推广角色，从物业分成中定向分成）。
    * 注意（2026-10-04 新口径）：楼长为「住户+楼长」复合身份，登录 role 保持 resident，
@@ -1000,13 +1059,15 @@ export const PERMISSION_MODULE_LABEL: Record<string, string> = {
   property_company: '物业公司',
   permission: '权限管理',
   activity: '活动管理',
+  activity_group: '活动组',
   notice: '通知收集',
   refund: '退款审批',
   coin: '物业币',
   settlement: '结算管理',
   withdrawal: '提现管理',
   forum: '社区论坛',
-  community: '社区管理',
+  community: '社区论坛',
+  community_entity: '社区管理',
   price_approval: '价格审批',
   canteen: '社区食堂',
   order: '订单管理',
@@ -1014,7 +1075,21 @@ export const PERMISSION_MODULE_LABEL: Record<string, string> = {
   platform: '平台配置',
   navigation: '导航配置',
   role: '角色账号',
-  operator: '操作员'
+  operator: '操作员',
+  // v1.2 后端权限池新增 module（44 个权限码里的）
+  config: '参数配置',
+  consultation: '咨询板块',
+  data: '数据查看',
+  distribution: '分成记录',
+  individual: '个体负责人',
+  log: '操作日志',
+  message: '定向消息',
+  pool: '积分池',
+  promotion: '特惠推送',
+  property_fee: '物业费管理',
+  rank: '排名管理',
+  sector: '板块管理',
+  user: '用户管理'
 }
 
 export const ROLE_LABEL: Record<string, string> = {
@@ -1031,6 +1106,8 @@ export const ROLE_LABEL: Record<string, string> = {
   /** 兼容：子角色值被误当作主角色返回时的展示 */
   [PROPERTY_SUB_ROLE.LEADER]: '物业领导',
   [PROPERTY_SUB_ROLE.OPERATOR]: '物业管理员',
+  [USER_ROLE.COMMUNITY_ADMIN]: '社区管理员',
+  /** 兼容后端历史叫法 community_manager */
   community_manager: '社区管理员',
   property_employee: '物业员工'
 }
@@ -1546,45 +1623,69 @@ export const COURIER_STATUS_LABEL: Record<string, string> = {
   offline: '离线'
 }
 
+/**
+ * 配送单状态（`deliveries.status`）。
+ *
+ * 后端 2026-10-27 回复 §3.5 确认口径：
+ * - 现行取值：`pending` / `accepted` / `picked` / `delivering` / `completed` / `failed`
+ *   / `property_fallback` / `merchant_self` / `merchant_delivering` / `refunded`；
+ * - **`completed` 是现行完成态**（配送员点送达 → 配送单 completed，订单仍停在 `delivering` + `deliveredAt` 落库）；
+ * - `delivered` 是**历史遗留完成态**，读写两侧均已归一为 `completed`，不会再下发。
+ */
 export const DELIVERY_STATUS = {
   PENDING: 'pending',
   ACCEPTED: 'accepted',
+  /** 已抢单：配送员端旧契约，后端现行列表以 accepted 表达 */
   GRABBED: 'grabbed',
+  /** 已取货（v8.25 §3.5 现行配送单状态） */
+  PICKED: 'picked',
   DELIVERING: 'delivering',
   /** 商家自配进行中（API v5.7 §68） */
   MERCHANT_SELF: 'merchant_self',
-  /** 已送达（配送完成；配送侧可提现在 complete 成功后刷新 /courier-managers/my） */
-  DELIVERED: 'delivered',
-  /**
-   * @deprecated 历史脏数据/旧契约；后端已归一为 delivered，展示与判定请兼容两者
-   */
+  /** 商家自配配送中（v8.25 §3.5） */
+  MERCHANT_DELIVERING: 'merchant_delivering',
+  /** 完成态：配送单送达即 completed，不等待居民确认收货 */
   COMPLETED: 'completed',
+  /** 物业兜底配送（v8.25 §3.5） */
+  PROPERTY_FALLBACK: 'property_fallback',
+  /** 配送单已退款（v8.25 §3.5） */
+  REFUNDED: 'refunded',
   CANCELLED: 'cancelled',
-  FAILED: 'failed'
+  FAILED: 'failed',
+  /**
+   * @deprecated 历史遗留完成态（旧部署写入）。读写两侧均已归一为 `completed`，不会下发；
+   * 仅用于兼容存量数据展示与判定。
+   */
+  DELIVERED: 'delivered'
 } as const
 
 export const DELIVERY_STATUS_LABEL: Record<string, string> = {
   pending: '待抢单',
   accepted: '已接单',
   grabbed: '已抢单',
+  picked: '已取货',
   delivering: '配送中',
   merchant_self: '商家自配中',
-  delivered: '已送达',
+  merchant_delivering: '商家配送中',
   completed: '已完成',
+  property_fallback: '物业兜底配送',
+  refunded: '已退款',
   cancelled: '已取消',
-  failed: '配送失败'
+  failed: '配送失败',
+  /** 历史值，仅存量数据回显 */
+  delivered: '已送达（历史）'
 }
 
-/** 配送是否已完成（兼容 delivered / 历史 completed） */
+/** 配送是否已完成（现行 completed；兼容历史 delivered） */
 export function isDeliveryFinished(status?: string | null) {
-  return status === DELIVERY_STATUS.DELIVERED || status === DELIVERY_STATUS.COMPLETED
+  return status === DELIVERY_STATUS.COMPLETED || status === DELIVERY_STATUS.DELIVERED
 }
 
 export const COURIER_TASK_STATUS_OPTIONS = [
   { value: '', label: '全部状态' },
   { value: DELIVERY_STATUS.ACCEPTED, label: '已接单' },
   { value: DELIVERY_STATUS.DELIVERING, label: '配送中' },
-  { value: DELIVERY_STATUS.DELIVERED, label: '已送达' },
+  { value: DELIVERY_STATUS.COMPLETED, label: '已完成' },
   { value: DELIVERY_STATUS.CANCELLED, label: '已取消' }
 ]
 
@@ -1948,7 +2049,21 @@ export const WITHDRAWAL_TYPE = {
   /** v8.9：单元楼长提现（走 /building-leaders/{id}/withdrawals） */
   BUILDING_LEADER: 'building_leader',
   /** v8.9：业主卖货钱包提现（走 /resident-merchants/seller-wallet/withdrawals） */
-  RESIDENT_SELLER: 'resident_seller'
+  RESIDENT_SELLER: 'resident_seller',
+  /**
+   * v8.26：住户钱包提现（奖励金转入钱包后提现，走 /wallet/withdrawals）。
+   * 与 RESIDENT_SELLER 是两个不同资金池，不可混用：
+   * - resident_seller = 商城卖货差价，独立钱包，仅可提现
+   * - resident_wallet = 个人奖励金（residents.coin_balance）转入，家庭池不参与
+   */
+  RESIDENT_WALLET: 'resident_wallet',
+  /** v8.11：物业公司经理抽成提现（走 /property-managers/my/withdrawals） */
+  PROPERTY_MANAGER: 'property_manager',
+  /**
+   * v8.12.1：一级代理商提现。复用 /merchant/withdrawals，靠 withdrawal_type 区分。
+   * 口径待后端确认（见影响面清单 N3）：若后端实际下发 merchant，本值仅作兼容保留。
+   */
+  DISTRIBUTOR: 'distributor'
 } as const
 
 export const WITHDRAWAL_TYPE_LABEL: Record<string, string> = {
@@ -1961,6 +2076,9 @@ export const WITHDRAWAL_TYPE_LABEL: Record<string, string> = {
   technician: '技工',
   building_leader: '单元楼长',
   resident_seller: '业主卖货',
+  resident_wallet: '住户钱包提现',
+  property_manager: '物业经理',
+  distributor: '一级代理商',
   property_admin: '物业管理员',
   platform_admin: '平台管理员'
 }
@@ -1988,6 +2106,19 @@ export const ROLE_WITHDRAWAL_TYPE_OPTIONS = [
   {
     value: WITHDRAWAL_TYPE.RESIDENT_SELLER,
     label: WITHDRAWAL_TYPE_LABEL[WITHDRAWAL_TYPE.RESIDENT_SELLER]
+  },
+  {
+    // v8.26 住户钱包提现（奖励金转钱包后提现），与「业主卖货」是不同资金池
+    value: WITHDRAWAL_TYPE.RESIDENT_WALLET,
+    label: WITHDRAWAL_TYPE_LABEL[WITHDRAWAL_TYPE.RESIDENT_WALLET]
+  },
+  {
+    value: WITHDRAWAL_TYPE.PROPERTY_MANAGER,
+    label: WITHDRAWAL_TYPE_LABEL[WITHDRAWAL_TYPE.PROPERTY_MANAGER]
+  },
+  {
+    value: WITHDRAWAL_TYPE.DISTRIBUTOR,
+    label: WITHDRAWAL_TYPE_LABEL[WITHDRAWAL_TYPE.DISTRIBUTOR]
   }
 ]
 
@@ -2087,6 +2218,29 @@ export const COMMUNITY_POST_STATUS_OPTIONS = [
   { value: COMMUNITY_POST_STATUS.DELETED, label: '已删除' }
 ]
 
+/**
+ * [ENUM] v8.14 论坛影子封禁 — 禁言记录状态（resident_forum_bans）
+ * 解除接口路径后端尚未确认，见影响面清单 #28
+ */
+export const FORUM_BAN_STATUS = {
+  ACTIVE: 'active',
+  LIFTED: 'lifted',
+  EXPIRED: 'expired'
+} as const
+
+export const FORUM_BAN_STATUS_LABEL: Record<string, string> = {
+  active: '生效中',
+  lifted: '已解除',
+  expired: '已到期'
+}
+
+export const FORUM_BAN_STATUS_OPTIONS = [
+  { value: '', label: '全部状态' },
+  { value: FORUM_BAN_STATUS.ACTIVE, label: '生效中' },
+  { value: FORUM_BAN_STATUS.LIFTED, label: '已解除' },
+  { value: FORUM_BAN_STATUS.EXPIRED, label: '已到期' }
+]
+
 /** [ENUM] 社区论坛 — 评论状态 */
 export const COMMUNITY_COMMENT_STATUS = {
   PUBLISHED: 'published',
@@ -2162,8 +2316,9 @@ export const COMMUNITY_FORUM_ERROR_MESSAGE: Record<number, string> = {
 
 /**
  * 文件上传分类（POST /files/upload multipart 字段 category）
- * 契约：avatar | announcement | merchant | service | activity
- * C 端另用 proof / community，后端已兼容时可用
+ * v8.25 白名单：avatar | announcement | merchant | service | activity | product
+ * v8.26 新增：delivery_proof（配送凭证专用），并把 proof / delivery / deliveryProof 作为别名归一为 delivery_proof
+ * C 端另有 community（社区论坛图片）
  */
 export const FILE_CATEGORY = {
   AVATAR: 'avatar',
@@ -2171,6 +2326,23 @@ export const FILE_CATEGORY = {
   MERCHANT: 'merchant',
   SERVICE: 'service',
   ACTIVITY: 'activity',
+  PRODUCT: 'product',
+  /**
+   * v8.26：配送凭证专用分类。10MB / jpg·jpeg·png·webp·mp4 / 累计不限，
+   * 单笔配送最多 5 张由 proofImageUrls 的 @Size(max=5) 限制。
+   * 配送凭证一律用这个值，不要再用 service（service 有每人累计 6 个文件的历史上限）。
+   */
+  DELIVERY_PROOF: 'delivery_proof',
+  /**
+   * v8.28：提现/财务人工转账凭证专用分类。10MB / jpg·jpeg·png·webp / 累计不限。
+   * 财务凭证一律用这个值，**不要**再用 proof（会被归一成配送凭证）。
+   */
+  WITHDRAWAL_PROOF: 'withdrawal_proof',
+  /**
+   * @deprecated v8.26 起后端把 `proof` 视为 `delivery_proof` 的别名并自动归一。
+   * 结果：用 `proof` 上传的文件会落进「配送凭证」分类。
+   * 财务转账凭证请用 WITHDRAWAL_PROOF，配送凭证请用 DELIVERY_PROOF。
+   */
   PROOF: 'proof',
   COMMUNITY: 'community'
 } as const
@@ -2183,7 +2355,10 @@ export const FILE_CATEGORY_LABEL: Record<string, string> = {
   merchant: '商家图片/视频',
   service: '服务图片',
   activity: '活动组图片',
-  proof: '送达凭证',
+  product: '商品图片',
+  delivery_proof: '配送凭证',
+  withdrawal_proof: '提现转账凭证',
+  proof: '配送凭证（旧值）',
   community: '社区论坛'
 }
 
@@ -2351,6 +2526,9 @@ export const CBK_ERROR_MESSAGE: Record<number, string> = {
   97020: '订单已完成，不支持退款',
   97021: '分账账户未就绪',
   97022: '支付通道异常',
+  /** 后端 2026-10-30 §1：功能开关关闭的拒绝码（原 97020/97021 撞码，已改用 97070/97071） */
+  97070: '本小区未启用积分功能，请联系物业开通',
+  97071: '本小区未启用物业币功能，请联系物业开通',
   99002: '微信接口异常',
   99003: '电商收付通未配置或未启用',
   99004: '该商家暂未完成微信进件，请使用积分/物业币支付'
@@ -2407,6 +2585,25 @@ export const APPLYMENT_WX_STATE_LABEL: Record<string, string> = {
   SUBMITTED: '已提交待审核',
   SIGNING: '待签约'
 }
+
+/** [ENUM] v8.28 C.3.3 商家特约商户号（sub_mchid）绑定状态，仅 active 可用于下单 */
+export const WECHAT_SUB_MCH_STATUS = {
+  ACTIVE: 'active',
+  AUDITING: 'auditing',
+  FROZEN: 'frozen'
+} as const
+
+export const WECHAT_SUB_MCH_STATUS_LABEL: Record<string, string> = {
+  active: 'active（可用）',
+  auditing: 'auditing（审核中）',
+  frozen: 'frozen（已冻结）'
+}
+
+export const WECHAT_SUB_MCH_STATUS_OPTIONS = [
+  { value: WECHAT_SUB_MCH_STATUS.ACTIVE, label: WECHAT_SUB_MCH_STATUS_LABEL.active },
+  { value: WECHAT_SUB_MCH_STATUS.AUDITING, label: WECHAT_SUB_MCH_STATUS_LABEL.auditing },
+  { value: WECHAT_SUB_MCH_STATUS.FROZEN, label: WECHAT_SUB_MCH_STATUS_LABEL.frozen }
+]
 
 export const APPLYMENT_ORGANIZATION_TYPE = {
   ENTERPRISE: 'ENTERPRISE',
@@ -2685,6 +2882,47 @@ export const DISTRIBUTOR_SERVICE_SCOPE_OPTIONS = [
   { value: DISTRIBUTOR_SERVICE_SCOPE.CITY, label: DISTRIBUTOR_SERVICE_SCOPE_LABEL[DISTRIBUTOR_SERVICE_SCOPE.CITY] },
   { value: DISTRIBUTOR_SERVICE_SCOPE.COMMUNITY, label: DISTRIBUTOR_SERVICE_SCOPE_LABEL[DISTRIBUTOR_SERVICE_SCOPE.COMMUNITY] }
 ]
+
+/** v8.12.1 §60.16 一级代理申请的「经营品类」（businessScope） */
+export const DISTRIBUTOR_BUSINESS_SCOPE = {
+  FRESH: 'fresh',
+  DAILY: 'daily',
+  GRAIN: 'grain',
+  OTHER: 'other'
+} as const
+
+export const DISTRIBUTOR_BUSINESS_SCOPE_LABEL: Record<string, string> = {
+  [DISTRIBUTOR_BUSINESS_SCOPE.FRESH]: '生鲜',
+  [DISTRIBUTOR_BUSINESS_SCOPE.DAILY]: '日用品',
+  [DISTRIBUTOR_BUSINESS_SCOPE.GRAIN]: '粮油',
+  [DISTRIBUTOR_BUSINESS_SCOPE.OTHER]: '其他'
+}
+
+/** v8.12.1 §60.16 一级代理申请审核状态（含 none：尚无申请） */
+export const DISTRIBUTOR_APPLICATION_STATUS = {
+  NONE: 'none',
+  PENDING: 'pending',
+  APPROVED: 'approved',
+  REJECTED: 'rejected'
+} as const
+
+export const DISTRIBUTOR_APPLICATION_STATUS_LABEL: Record<string, string> = {
+  [DISTRIBUTOR_APPLICATION_STATUS.NONE]: '未申请',
+  [DISTRIBUTOR_APPLICATION_STATUS.PENDING]: '待审核',
+  [DISTRIBUTOR_APPLICATION_STATUS.APPROVED]: '已通过',
+  [DISTRIBUTOR_APPLICATION_STATUS.REJECTED]: '已驳回'
+}
+
+export const DISTRIBUTOR_APPLICATION_STATUS_OPTIONS = [
+  { value: '', label: '全部状态' },
+  { value: DISTRIBUTOR_APPLICATION_STATUS.PENDING, label: '待审核' },
+  { value: DISTRIBUTOR_APPLICATION_STATUS.APPROVED, label: '已通过' },
+  { value: DISTRIBUTOR_APPLICATION_STATUS.REJECTED, label: '已驳回' }
+]
+
+export function isDistributorApplicationPending(status?: string | null) {
+  return status === DISTRIBUTOR_APPLICATION_STATUS.PENDING
+}
 
 /** §94.9 平台配置 */
 export const WITHDRAWAL_GRANULARITY = {

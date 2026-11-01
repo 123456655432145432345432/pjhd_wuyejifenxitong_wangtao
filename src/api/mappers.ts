@@ -457,10 +457,13 @@ export function normalizeMerchantItem(item: MerchantItem | Record<string, unknow
     recommendedSortRaw === undefined || recommendedSortRaw === null
       ? base.recommendedSort
       : Number(recommendedSortRaw)
+  // v8.11 §60.12：一级代理标志（is_distributor）
+  const isDistributorRaw = pickBool(raw, ['isDistributor', 'is_distributor'])
   return {
     ...base,
     merchantType: merchantType || base.merchantType,
     isCanteenMainMerchant: isCanteenMainMerchant ?? base.isCanteenMainMerchant,
+    isDistributor: isDistributorRaw ?? base.isDistributor,
     commissionRate:
       commissionRaw === undefined || commissionRaw === null
         ? base.commissionRate
@@ -509,6 +512,7 @@ export function mapMerchants(list: MerchantItem[]) {
         MERCHANT_TYPE_LABEL.goods
       ),
       isCanteenMainMerchant: !!row.isCanteenMainMerchant,
+      isDistributor: !!row.isDistributor,
       auditStatus: getMerchantAuditDisplayLabel(row.auditStatus, row.status),
       auditStatusCode,
       status,
@@ -736,18 +740,46 @@ export function normalizeRolePresets(data: RolePresetDto[] | { presets?: RolePre
     code: item.id || item.code || item.name,
     name: item.name,
     role: item.role || '',
-    permissionCodes: item.permissionCodes || item.permissions || []
+    permissionCodes: item.permissionCodes || item.permissions || [],
+    // v1.3：内置预设（isBuiltin=true，或 propertyCompanyId=null）权限码不可编辑
+    isBuiltin: item.isBuiltin !== undefined ? item.isBuiltin : item.propertyCompanyId === null
   }))
 }
 
-export function mapAdminUserAccounts(list: Array<{ id: string; name: string; phone?: string; role: string; effectivePermissionCount?: number }>) {
+/**
+ * v1.3：标签身份中文名。
+ * 活动组长等身份的 role 恒为 resident，必须靠 roleCodes 展示，否则会被误显示成「住户」。
+ */
+const ROLE_TAG_LABEL: Record<string, string> = {
+  activity_leader: '活动组组长',
+  coordinator: '统筹',
+  sector_leader: '板块负责人',
+  individual_leader: '个体负责人',
+  building_leader: '单元楼长',
+  community_admin: '社区管理员',
+  merchant: '商家',
+  technician: '技工',
+  courier: '快递员'
+}
+
+function pickRoleTags(item: { role: string; roleCodes?: string[] }): string[] {
+  const codes = Array.isArray(item.roleCodes) ? item.roleCodes : []
+  const tags = codes.filter((code) => ROLE_TAG_LABEL[code]).map((code) => ROLE_TAG_LABEL[code])
+  // 标签身份优先：郑美丽的 role=resident，只看 role 会显示成「住户」
+  return tags.length ? tags : [getEnumLabel(ROLE_LABEL, item.role, '—')]
+}
+
+export function mapAdminUserAccounts(list: Array<{ id: string; name: string; phone?: string; role: string; roleCodes?: string[]; adminWorkspace?: boolean; effectivePermissionCount?: number }>) {
   return list.map(item => ({
     id: item.id,
     name: item.name,
     phone: item.phone || '-',
     initials: initials(item.name),
-    role: getEnumLabel(ROLE_LABEL, item.role, '—'),
+    role: pickRoleTags(item).join(' / '),
     roleCode: item.role,
+    roleTags: pickRoleTags(item),
+    /** adminWorkspace 明确为 false 的账号不允许授权（文档 §4.1） */
+    adminWorkspace: item.adminWorkspace !== false,
     permissionCount: item.effectivePermissionCount ?? 0
   }))
 }
@@ -834,9 +866,34 @@ export function mapPointsOverview(pool?: PointPool, overview?: DashboardOverview
 function deliveryStatusClass(status?: string) {
   if (status === DELIVERY_STATUS.ACCEPTED || status === DELIVERY_STATUS.GRABBED) return 'grabbed'
   if (status === DELIVERY_STATUS.PENDING) return 'pending'
-  if (status === DELIVERY_STATUS.DELIVERING || status === DELIVERY_STATUS.MERCHANT_SELF) return 'delivering'
-  if (status === DELIVERY_STATUS.DELIVERED || status === DELIVERY_STATUS.COMPLETED) return 'completed'
-  return 'completed'
+  /**
+   * 配送单状态样式归类。
+   * 后端 2026-10-27 确认口径（此前本仓「两套口径相反」的理解有误）：
+   * - 订单状态里**没有 delivered**，订单态只有 pending/paid/delivering/completed/cancelled/refunding/refunded；
+   * - delivered 是历史配送单状态，读写两侧均已归一为 completed，不再下发；
+   * - 「已送达待居民确认」不是任何字段的取值，而是派生状态：
+   *   配送单 completed + 订单仍 delivering + 订单 deliveredAt 已落库。
+   * 故此处只需兼容历史数据，把 delivered 归到 completed 同一档。
+   */
+  if (
+    status === DELIVERY_STATUS.PICKED ||
+    status === DELIVERY_STATUS.DELIVERING ||
+    status === DELIVERY_STATUS.MERCHANT_SELF ||
+    status === DELIVERY_STATUS.MERCHANT_DELIVERING ||
+    status === DELIVERY_STATUS.PROPERTY_FALLBACK
+  ) {
+    return 'delivering'
+  }
+  if (status === DELIVERY_STATUS.COMPLETED || status === DELIVERY_STATUS.DELIVERED) return 'completed'
+  if (
+    status === DELIVERY_STATUS.FAILED ||
+    status === DELIVERY_STATUS.CANCELLED ||
+    status === DELIVERY_STATUS.REFUNDED
+  ) {
+    return 'cancelled'
+  }
+  // 未知状态给中性样式，不再一律当成「已完成」
+  return ''
 }
 
 function courierStatusClass(status?: string) {

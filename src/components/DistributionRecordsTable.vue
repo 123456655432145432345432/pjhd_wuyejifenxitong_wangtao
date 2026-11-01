@@ -214,7 +214,7 @@ withDefaults(defineProps<Props>(), {
   error: '',
   page: 1,
   totalPages: 1,
-  banner: '商品货款和配送费分开记账。金额为负数表示退款冲账。大厅配送费归配送员，商家自配时归商家。',
+  banner: '商品货款和配送费分开记账。金额为负数表示退款冲账。大厅配送费扣除平台配送抽成后结算给配送员（默认全额），商家自配时归商家。',
   showResident: true,
   showCommission: true,
   showMerchant: true,

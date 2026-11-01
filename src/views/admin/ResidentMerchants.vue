@@ -42,15 +42,25 @@
             {{ opt.label }}
           </option>
         </select>
+        <input
+          v-model="applicationKeyword"
+          class="input toolbarInput"
+          placeholder="搜索住户姓名/手机号/店铺名称"
+          @keyup.enter="loadCurrent"
+        />
+        <button type="button" class="btnSecondary" :disabled="loading" @click="loadCurrent">搜索</button>
       </div>
 
+      <p v-if="toggleSuccess" class="bannerSuccess">{{ toggleSuccess }}</p>
+      <p v-if="error" class="bannerError">{{ error }}</p>
+
       <div v-if="loading" class="hint">加载中...</div>
-      <p v-else-if="error" class="error">{{ error }}</p>
 
       <table v-else-if="activeTab === 'applications' && applications.length" class="table">
         <thead>
           <tr>
             <th>申请人</th>
+            <th>店铺</th>
             <th>小区</th>
             <th>保证金</th>
             <th>状态</th>
@@ -62,6 +72,17 @@
         <tbody>
           <tr v-for="item in applications" :key="item.id">
             <td>{{ item.residentName || item.residentId }} · {{ item.phone || '' }}</td>
+            <td>
+              <div class="shopCell">
+                <img v-if="item.coverUrl" :src="item.coverUrl" class="shopCover" alt="店铺封面" />
+                <div class="shopMeta">
+                  <div class="shopName">{{ item.shopName || '—' }}</div>
+                  <div v-if="item.businessHours" class="shopSub">营业时间：{{ item.businessHours }}</div>
+                  <div v-if="item.contactPhone" class="shopSub">联系电话：{{ item.contactPhone }}</div>
+                  <div v-if="item.description" class="shopSub shopDesc">{{ item.description }}</div>
+                </div>
+              </div>
+            </td>
             <td>{{ item.communityName || item.communityId || '—' }}</td>
             <td>{{ item.depositAmount ?? '—' }}（{{ getEnumLabel(RESIDENT_MERCHANT_DEPOSIT_STATUS_LABEL, item.depositStatus) }}）</td>
             <td>{{ applicationStatusLabel(item) }}</td>
@@ -107,6 +128,10 @@
             <td>{{ item.amount ?? '—' }}</td>
             <td>{{ item.deductedAmount ?? 0 }}</td>
             <td>{{ getEnumLabel(RESIDENT_MERCHANT_DEPOSIT_STATUS_LABEL, item.status || item.statusCode) }}</td>
+            <td>{{ item.createdAt || '—' }}</td>
+            <td class="actions">
+              <button type="button" class="linkBtn danger" @click="openDeduct(item)">扣除保证金</button>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -133,9 +158,108 @@
             <td>{{ item.commissionAmount ?? '—' }}</td>
             <td>{{ item.settlementAmount ?? '—' }}</td>
             <td>{{ getEnumLabel(RESIDENT_MERCHANT_SETTLEMENT_STATUS_LABEL, item.status || item.statusCode) }}</td>
+            <td>{{ item.settledAt || item.createdAt || '—' }}</td>
           </tr>
         </tbody>
       </table>
+
+      <template v-else-if="activeTab === 'distributors'">
+        <div class="productsToolbar">
+          <select
+            v-if="isPlatformAdmin"
+            v-model="selectedPropertyId"
+            class="input toolbarInput"
+            @change="reloadDistributors"
+          >
+            <option value="">请选择物业公司</option>
+            <option v-for="pc in propertyCompanies" :key="pc.id" :value="pc.id">{{ pc.name }}</option>
+          </select>
+          <input
+            v-model="distributorKeyword"
+            class="input toolbarInput"
+            placeholder="搜索商家名称"
+            @keyup.enter="reloadDistributors"
+          />
+          <button type="button" class="btnSecondary" :disabled="loading" @click="reloadDistributors">搜索</button>
+        </div>
+        <div class="distributorNotice">
+          <p class="hint">开通后该商家可作为一级代理上架货源商品，并接收业主小店按件拿货的货款。</p>
+          <p class="subHint">仅「审核通过（approved）」的商家可开通；已有货源商品在取消后保留（历史可追溯）。</p>
+          <p v-if="distributorStateUnavailable" class="subHint warnHint">
+            注意：后端商家列表暂未返回「一级代理」状态字段，本列仅反映本次页面上的操作结果；刷新页面后可能回到「未开通」。
+            请以每次开通/取消后的提示为准（实际权限已在后端生效）。
+          </p>
+        </div>
+        <div v-if="isPlatformAdmin && !selectedPropertyId" class="productsNotice">
+          <p class="hint">请先选择物业公司后再查看商家</p>
+        </div>
+        <table v-else-if="distributors.length" class="table">
+          <thead>
+            <tr>
+              <th>商家名称</th>
+              <th>类目</th>
+              <th>审核状态</th>
+              <th>一级代理</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="item in distributors" :key="item.id">
+              <td>{{ item.name || item.id }}</td>
+              <td>{{ item.category || '—' }}</td>
+              <td>{{ getEnumLabel(MERCHANT_AUDIT_STATUS_LABEL, item.auditStatus, '—') }}</td>
+              <td>
+                <span class="visibilityTag" :class="isDistributorOf(item) ? 'public' : 'private'">
+                  {{ isDistributorOf(item) ? '已开通' : '未开通' }}
+                </span>
+              </td>
+              <td class="actions">
+                <button
+                  v-if="!isDistributorOf(item)"
+                  type="button"
+                  class="linkBtn"
+                  :disabled="togglingId === item.id"
+                  @click="toggleDistributor(item, true)"
+                >
+                  {{ togglingId === item.id ? '开通中…' : '开通' }}
+                </button>
+                <button
+                  v-else
+                  type="button"
+                  class="linkBtn danger"
+                  :disabled="togglingId === item.id"
+                  @click="toggleDistributor(item, false)"
+                >
+                  {{ togglingId === item.id ? '取消中…' : '取消' }}
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div v-else class="productsNotice">
+          <p class="hint">暂无商家</p>
+          <p class="subHint">商品商家 / 技工 / 组长入驻请到「商家管理」。</p>
+        </div>
+        <div v-if="distributorTotalPages > 1" class="pager">
+          <button
+            type="button"
+            class="pageBtn"
+            :disabled="distributorPage <= 1 || loading"
+            @click="changeDistributorPage(distributorPage - 1)"
+          >
+            &lt;
+          </button>
+          <span>{{ distributorPage }} / {{ distributorTotalPages }}</span>
+          <button
+            type="button"
+            class="pageBtn"
+            :disabled="distributorPage >= distributorTotalPages || loading"
+            @click="changeDistributorPage(distributorPage + 1)"
+          >
+            &gt;
+          </button>
+        </div>
+      </template>
 
       <template v-else-if="activeTab === 'products'">
         <div class="productsToolbar">
@@ -167,10 +291,11 @@
           <thead>
             <tr>
               <th>商品名称</th>
-              <th>批发价</th>
+              <th>一级代理商家</th>
+              <th>进货价</th>
               <th>建议零售价</th>
               <th>加价%</th>
-              <th>库存</th>
+              <th>库存(件)</th>
               <th>收费周期</th>
               <th>创建时间</th>
               <th>操作</th>
@@ -179,6 +304,7 @@
           <tbody>
             <tr v-for="item in distributorProducts" :key="item.id">
               <td>{{ item.name || item.id }}</td>
+              <td>{{ item.distributorMerchantName || distributorNameMap[item.distributorMerchantId || ''] || item.distributorMerchantId || '—' }}</td>
               <td>{{ item.wholesalePrice ?? '—' }}</td>
               <td>{{ item.suggestedRetailPrice ?? '—' }}</td>
               <td>{{ markupPercent(item) }}</td>
@@ -342,11 +468,27 @@
           </div>
           <div class="modalBody">
             <div class="field">
+              <label class="label">一级代理商家 <em class="reqMark">*</em></label>
+              <select v-model="createProductForm.distributorMerchantId" class="input" :disabled="!!editingProductId">
+                <option value="">请选择一级代理商家</option>
+                <option v-for="m in enabledDistributorOptions" :key="m.id" :value="m.id">{{ m.name }}</option>
+              </select>
+              <p class="subHint">
+                {{
+                  editingProductId
+                    ? '货源商品归属的代理商家创建后不可修改'
+                    : distributorStateUnavailable
+                      ? '后端暂未返回代理状态，已列出全部已审核商家；未开通一级代理的商家提交时会被后端拒绝'
+                      : '仅可选择已开通一级代理权限的商家（v8.11 必传）'
+                }}
+              </p>
+            </div>
+            <div class="field">
               <label class="label">商品名称</label>
               <input v-model="createProductForm.name" class="input" maxlength="100" />
             </div>
             <div class="field">
-              <label class="label">批发价</label>
+              <label class="label">进货价（一级代理批发价）</label>
               <input v-model.number="createProductForm.wholesalePrice" type="number" min="0" step="0.01" class="input" />
             </div>
             <div class="field">
@@ -360,8 +502,9 @@
               />
             </div>
             <div class="field">
-              <label class="label">拿货名额（stock）</label>
+              <label class="label">库存件数</label>
               <input v-model.number="createProductForm.stock" type="number" min="0" class="input" />
+              <p class="subHint">业主小店按件拿货时从此库存扣减。</p>
             </div>
             <div class="field">
               <label class="label">服务区间</label>
@@ -388,10 +531,17 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { distributorProductApi, propertyCompanyApi, residentMerchantAdminApi } from '../../api/services'
+import {
+  distributorAdminApi,
+  distributorProductApi,
+  merchantApi,
+  propertyCompanyApi,
+  residentMerchantAdminApi
+} from '../../api/services'
 import { formatApiError } from '../../api/request'
 import type {
   DistributorProductItem,
+  MerchantItem,
   PropertyCompanyItem,
   ResidentMerchantApplicationItem,
   ResidentMerchantDepositItem,
@@ -404,6 +554,8 @@ import {
   BILLING_CYCLE_LABEL,
   BILLING_CYCLE_OPTIONS,
   DISTRIBUTOR_SERVICE_SCOPE_OPTIONS,
+  MERCHANT_AUDIT_STATUS,
+  MERCHANT_AUDIT_STATUS_LABEL,
   RESIDENT_MERCHANT_STATUS,
   RESIDENT_MERCHANT_STATUS_LABEL,
   RESIDENT_MERCHANT_STATUS_OPTIONS,
@@ -444,7 +596,8 @@ const tabs = [
   { key: 'applications', label: '申请审核' },
   { key: 'deposits', label: '保证金' },
   { key: 'settlements', label: '结算明细' },
-  { key: 'products', label: '分销商品' }
+  { key: 'distributors', label: '一级代理商家' },
+  { key: 'products', label: '货源商品' }
 ] as const
 
 type TabKey = (typeof tabs)[number]['key']
@@ -459,9 +612,49 @@ const distributorProducts = ref<DistributorProductItem[]>([])
 const productKeyword = ref('')
 const productPage = ref(1)
 const productTotalPages = ref(1)
+// v8.11 §60.12 一级代理商家标签页
+const distributors = ref<MerchantItem[]>([])
+const distributorKeyword = ref('')
+const distributorPage = ref(1)
+const distributorTotalPages = ref(1)
+const togglingId = ref('')
+// 新建/编辑货源商品时的候选代理商家（仅已开通一级代理）
+const distributorOptions = ref<MerchantItem[]>([])
+/**
+ * v8.11 临时兜底：后端 `GET /merchants` 暂未返回 `is_distributor`，
+ * 导致状态列恒定显示「未开通」且下拉为空，故用本地状态覆盖显示。
+ * 待后端补字段后（列表项返回 isDistributor）可移除本段兜底逻辑。
+ */
+const localDistributorState = ref<Record<string, boolean>>({})
+const distributorStateUnavailable = ref(false)
+const toggleSuccess = ref('')
+let toggleSuccessTimer: ReturnType<typeof setTimeout> | undefined
+
+function isDistributorOf(item: MerchantItem) {
+  const local = item.id ? localDistributorState.value[item.id] : undefined
+  return local ?? item.isDistributor ?? false
+}
+
+const enabledDistributorOptions = computed(() => {
+  const all = distributorOptions.value
+  const flagged = all.filter((m) => isDistributorOf(m))
+  // 仅在「后端确实未返回状态字段」时才降级为「全部已审核商家」，由后端做最终校验；
+  // 字段已回读时若商家一个都没开通，下拉就该为空（不能误列未开通商家）。
+  if (distributorStateUnavailable.value && !flagged.length) return all
+  return flagged
+})
+const distributorNameMap = computed(() => {
+  const map: Record<string, string> = {}
+  for (const m of [...distributorOptions.value, ...distributors.value]) {
+    if (m.id && m.name) map[m.id] = m.name
+  }
+  return map
+})
 const propertyCompanies = ref<PropertyCompanyItem[]>([])
 const selectedPropertyId = ref('')
 const applicationStatus = ref(RESIDENT_MERCHANT_STATUS.PENDING_AUDIT)
+/** v8.28：keyword 支持住户姓名/手机号 + 店铺名称 */
+const applicationKeyword = ref('')
 
 const emptyHint = computed(() => {
   if (activeTab.value === 'applications') {
@@ -497,6 +690,7 @@ const createProductSaving = ref(false)
 const createProductError = ref('')
 const editingProductId = ref('')
 const createProductForm = ref({
+  distributorMerchantId: '',
   name: '',
   wholesalePrice: 0,
   suggestedRetailPrice: 0,
@@ -536,7 +730,8 @@ async function loadPropertyCompanies() {
 async function loadApplications() {
   const propertyCompanyId = resolvePropertyCompanyId() || undefined
   const status = applicationStatus.value
-  const base = { page: 1, pageSize: 50, propertyCompanyId }
+  const keyword = applicationKeyword.value.trim() || undefined
+  const base = { page: 1, pageSize: 50, propertyCompanyId, keyword }
 
   if (status === RESIDENT_MERCHANT_STATUS.PENDING_AUDIT) {
     const [auditRes, reviewRes] = await Promise.all([
@@ -586,6 +781,63 @@ async function loadDistributorProducts(pageNo = 1) {
   productTotalPages.value = res.pagination?.totalPages ?? 1
 }
 
+// v8.11 §60.12：一级代理商家列表（商家表 is_distributor 标志）
+async function loadDistributors(pageNo = 1) {
+  const propertyCompanyId = resolvePropertyCompanyId()
+  if (isPlatformAdmin.value && !propertyCompanyId) {
+    distributors.value = []
+    distributorPage.value = 1
+    distributorTotalPages.value = 1
+    return
+  }
+  const res = await merchantApi.list({
+    page: pageNo,
+    pageSize: 20,
+    keyword: distributorKeyword.value.trim() || undefined,
+    propertyCompanyId: propertyCompanyId || undefined,
+    sort: '-createdAt'
+  })
+  distributors.value = res.list || []
+  // 后端是否真的返回了一级代理状态字段：整页都取不到 ⇒ 未返回（触发兜底提示）
+  distributorStateUnavailable.value =
+    distributors.value.length > 0 &&
+    distributors.value.every((m) => m.isDistributor === undefined)
+  // v8.11.1：字段已回读后以接口为准，清空本地兜底状态，避免陈旧值覆盖真实数据
+  if (!distributorStateUnavailable.value) {
+    localDistributorState.value = {}
+  }
+  distributorPage.value = res.pagination?.page ?? pageNo
+  distributorTotalPages.value = res.pagination?.totalPages ?? 1
+}
+
+// 新建/编辑货源商品时拉取候选代理商家（仅保留已开通一级代理的商家）
+async function loadDistributorOptions() {
+  const propertyCompanyId = resolvePropertyCompanyId()
+  if (isPlatformAdmin.value && !propertyCompanyId) {
+    distributorOptions.value = []
+    return
+  }
+  try {
+    const res = await merchantApi.list({
+      page: 1,
+      pageSize: 100,
+      propertyCompanyId: propertyCompanyId || undefined,
+      auditStatus: MERCHANT_AUDIT_STATUS.APPROVED
+    })
+    distributorOptions.value = res.list || []
+    // 与「一级代理商家」列表同一判定：整批取不到字段 ⇒ 后端未回读
+    // （覆盖用户先打开「货源商品」页、没进过一级代理列表的场景）
+    if (distributorOptions.value.length) {
+      distributorStateUnavailable.value = distributorOptions.value.every(
+        (m) => m.isDistributor === undefined
+      )
+      if (!distributorStateUnavailable.value) localDistributorState.value = {}
+    }
+  } catch {
+    distributorOptions.value = []
+  }
+}
+
 async function loadCurrent() {
   loading.value = true
   error.value = ''
@@ -593,6 +845,7 @@ async function loadCurrent() {
     if (activeTab.value === 'applications') await loadApplications()
     else if (activeTab.value === 'deposits') await loadDeposits()
     else if (activeTab.value === 'settlements') await loadSettlements()
+    else if (activeTab.value === 'distributors') await loadDistributors(1)
     else await loadDistributorProducts(1)
   } catch (e) {
     error.value = resolveError(e)
@@ -619,6 +872,54 @@ async function changeProductPage(next: number) {
     error.value = resolveError(e)
   } finally {
     loading.value = false
+  }
+}
+
+function reloadDistributors() {
+  loadCurrent()
+}
+
+async function changeDistributorPage(next: number) {
+  loading.value = true
+  error.value = ''
+  try {
+    await loadDistributors(next)
+  } catch (e) {
+    error.value = resolveError(e)
+  } finally {
+    loading.value = false
+  }
+}
+
+function showToggleSuccess(text: string) {
+  toggleSuccess.value = text
+  if (toggleSuccessTimer) clearTimeout(toggleSuccessTimer)
+  toggleSuccessTimer = setTimeout(() => {
+    toggleSuccess.value = ''
+  }, 6000)
+}
+
+async function toggleDistributor(item: MerchantItem, enable: boolean) {
+  if (!enable && !confirm(`确认取消「${item.name || item.id}」的一级代理资格？历史货源商品将保留。`)) {
+    return
+  }
+  togglingId.value = item.id
+  error.value = ''
+  toggleSuccess.value = ''
+  const label = item.name || item.id
+  try {
+    if (enable) await distributorAdminApi.enable(item.id)
+    else await distributorAdminApi.disable(item.id)
+    // 后端确认成功后立即落地本地状态：列表接口不返回该字段时也能看到状态变化
+    if (item.id) {
+      localDistributorState.value = { ...localDistributorState.value, [item.id]: enable }
+    }
+    await Promise.all([loadDistributors(distributorPage.value), loadDistributorOptions()])
+    showToggleSuccess(enable ? `已开通一级代理：${label}` : `已取消一级代理：${label}`)
+  } catch (e) {
+    error.value = resolveError(e)
+  } finally {
+    togglingId.value = ''
   }
 }
 
@@ -691,6 +992,7 @@ async function saveSettings() {
 function openCreateProduct() {
   editingProductId.value = ''
   createProductForm.value = {
+    distributorMerchantId: '',
     name: '',
     wholesalePrice: 0,
     suggestedRetailPrice: 0,
@@ -699,11 +1001,13 @@ function openCreateProduct() {
   }
   createProductError.value = ''
   createProductOpen.value = true
+  void loadDistributorOptions()
 }
 
 function openEditProduct(item: DistributorProductItem) {
   editingProductId.value = item.id
   createProductForm.value = {
+    distributorMerchantId: item.distributorMerchantId || '',
     name: item.name || '',
     wholesalePrice: Number(item.wholesalePrice) || 0,
     suggestedRetailPrice: Number(item.suggestedRetailPrice) || 0,
@@ -712,6 +1016,7 @@ function openEditProduct(item: DistributorProductItem) {
   }
   createProductError.value = ''
   createProductOpen.value = true
+  void loadDistributorOptions()
 }
 
 async function submitCreateProduct() {
@@ -719,10 +1024,14 @@ async function submitCreateProduct() {
     createProductError.value = '请填写商品名称'
     return
   }
+  if (!editingProductId.value && !createProductForm.value.distributorMerchantId) {
+    createProductError.value = '请选择一级代理商家（v8.11 必传）'
+    return
+  }
   createProductSaving.value = true
   createProductError.value = ''
   try {
-    const payload = {
+    const base = {
       name: createProductForm.value.name.trim(),
       wholesalePrice: Number(createProductForm.value.wholesalePrice) || 0,
       suggestedRetailPrice: Number(createProductForm.value.suggestedRetailPrice) || 0,
@@ -730,9 +1039,13 @@ async function submitCreateProduct() {
       serviceScope: createProductForm.value.serviceScope || undefined
     }
     if (editingProductId.value) {
-      await distributorProductApi.update(editingProductId.value, payload)
+      // 归属商家创建后不可修改，编辑仅提交内容字段
+      await distributorProductApi.update(editingProductId.value, base)
     } else {
-      await distributorProductApi.create(payload)
+      await distributorProductApi.create({
+        ...base,
+        distributorMerchantId: createProductForm.value.distributorMerchantId
+      })
     }
     const reloadPage = editingProductId.value ? productPage.value : 1
     createProductOpen.value = false
@@ -826,6 +1139,12 @@ onMounted(async () => {
 }
 .visibilityTag.public { background: #eaf7ee; color: #15803d; }
 .visibilityTag.private { background: #f1f5f9; color: #64748b; }
+.shopCell { display: flex; gap: 10px; align-items: flex-start; min-width: 180px; }
+.shopCover { width: 44px; height: 44px; border-radius: 8px; object-fit: cover; flex-shrink: 0; background: #f5f5f7; }
+.shopMeta { display: flex; flex-direction: column; gap: 2px; }
+.shopName { font-weight: 600; color: #1f1f2e; }
+.shopSub { font-size: 12px; color: #8c8c9a; }
+.shopDesc { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .btnPrimary { padding: 10px 18px; border-radius: 8px; border: none; background: #5c5c9e; color: #ffffff; font-size: 14px; cursor: pointer; transition: background 0.2s; }
 .btnPrimary:hover { background: #52529a; }
 .btnPrimary:disabled { opacity: 0.6; cursor: not-allowed; }
@@ -833,6 +1152,10 @@ onMounted(async () => {
 .btnSecondary:hover { border-color: #5c5c9e; color: #5c5c9e; }
 .hint { color: #8c8c9a; font-size: 14px; padding: 24px; margin: 0; }
 .error { color: #e05c5c; font-size: 14px; padding: 24px; margin: 0; }
+.bannerSuccess { font-size: 13px; color: #3aaf7d; background: #f0fdf4; border: 1px solid #d3f2df; border-radius: 8px; padding: 10px 14px; margin: 16px 24px 0; }
+.bannerError { font-size: 13px; color: #e05c5c; background: #fff1f0; border: 1px solid #ffd9d6; border-radius: 8px; padding: 10px 14px; margin: 16px 24px 0; }
+.warnHint { color: #b45309; }
+.linkBtn:disabled { opacity: 0.5; cursor: not-allowed; }
 .modalOverlay { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; padding: 24px; }
 .modal { width: min(520px, 100%); max-height: 90vh; background: #fff; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.12); overflow: auto; display: flex; flex-direction: column; }
 .modalHeader { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px; border-bottom: 1px solid #f0f0f3; flex-shrink: 0; }

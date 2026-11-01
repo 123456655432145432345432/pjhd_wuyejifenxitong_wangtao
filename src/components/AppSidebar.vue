@@ -52,7 +52,9 @@
 <script setup lang="ts">
 import { computed, reactive, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { getMenusForProfile, getPortalSubtitle } from '../constants/roles'
+import { getMenusForProfile, getPortalSubtitle, normalizeAdminIdentity } from '../constants/roles'
+import { appendMenusByPermission, filterMenusByPermission } from '../constants/permissionCodes'
+import { USER_ROLE } from '../constants/enums'
 import { useAuthStore } from '../stores/auth'
 import IconSvg from './IconSvg.vue'
 
@@ -71,7 +73,34 @@ const emit = defineEmits<{
 
 const currentRoute = useRoute()
 const auth = useAuthStore()
-const menuList = computed(() => getMenusForProfile(auth.profile))
+
+/**
+ * v2：只有「管理端 / 领导标签」身份参与权限码追加。
+ *
+ * 商家 / 配送员 / 技工的工作台菜单与权限配置无关，若也参与追加，
+ * 会给快递员凭空加出「送货管理」这类管理端入口（delivery:grab 本就是他们的码）。
+ */
+const canAppendByPermission = computed(() => {
+  const profile = auth.profile
+  if (!profile) return false
+  if (profile.adminWorkspace === false) return false
+  const role = normalizeAdminIdentity(profile).role
+  return (
+    role === USER_ROLE.PLATFORM_ADMIN ||
+    role === USER_ROLE.PROPERTY_ADMIN ||
+    role === USER_ROLE.COMMUNITY_ADMIN ||
+    // 活动组长 / 统筹 / 板块 / 个体负责人的 role 恒为 resident，靠标签菜单 + 权限追加
+    role === USER_ROLE.RESIDENT
+  )
+})
+
+const menuList = computed(() => {
+  // v2：先按角色取菜单 → 按权限码过滤（登记过的码才生效）→ 按权限码追加（有码则加）
+  // 过滤只能删不能加，追加这一步是标签身份出现管理端 tab 的唯一来源。
+  const allowed = (code: string) => auth.hasPermission(code)
+  const base = filterMenusByPermission(getMenusForProfile(auth.profile), allowed)
+  return canAppendByPermission.value ? appendMenusByPermission(base, allowed) : base
+})
 const portalSubtitle = computed(() => getPortalSubtitle(auth.profile?.role))
 
 const expandedGroups = reactive<Record<string, boolean>>({})

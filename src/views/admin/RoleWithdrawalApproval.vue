@@ -170,7 +170,7 @@
               <label class="fieldLabel">转账凭证 <em>*</em></label>
               <MediaUploader
                 v-model="auditForm.transferProof"
-                :category="FILE_CATEGORY.PROOF"
+                :category="FILE_CATEGORY.WITHDRAWAL_PROOF"
                 accept="image"
                 :max="1"
                 hint="请上传人工转账凭证"

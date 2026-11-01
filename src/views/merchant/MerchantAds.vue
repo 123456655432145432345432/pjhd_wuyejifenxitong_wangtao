@@ -31,11 +31,15 @@
             <span>{{ paymentLabel(item.paymentMethod) }}</span>
           </div>
           <p>{{ item.content || '—' }}</p>
+          <p v-if="isPendingPayment(item)" class="pendingHint">
+            待支付，需在微信小程序内完成支付后才会开始投放
+          </p>
           <small>
             {{ item.startDate || '—' }} ~ {{ item.endDate || '—' }}
             · {{ item.durationDays ?? '—' }} 天
             · ¥{{ formatMoney(item.payAmount) }}
             · 推送 {{ item.recipientCount ?? 0 }} 人
+            <template v-if="item.status"> · {{ adStatusLabel(item.status) }}</template>
           </small>
         </article>
       </div>
@@ -46,6 +50,7 @@
             <th>标题</th>
             <th>天数</th>
             <th>支付</th>
+            <th>状态</th>
             <th>推送人数</th>
             <th>创建时间</th>
           </tr>
@@ -56,6 +61,11 @@
             <td>{{ item.title }}</td>
             <td>{{ item.durationDays ?? '—' }}</td>
             <td>{{ paymentLabel(item.paymentMethod) }} · ¥{{ formatMoney(item.payAmount) }}</td>
+            <td>
+              <span class="statusDot" :class="adStatusClass(item.status)">
+                {{ adStatusLabel(item.status) }}
+              </span>
+            </td>
             <td>{{ item.recipientCount ?? 0 }}</td>
             <td>{{ item.createdAt || '—' }}</td>
           </tr>
@@ -87,9 +97,7 @@
               :quote-loading="targetedQuoteLoading"
               :free-remaining="freeRemaining"
               :free-enabled="freeEnabled"
-              :point-balance="pointBalance"
-              :coin-balance="coinBalance"
-              :wechat-disabled="!wechatPayAvailable"
+              :wechat-payment-enabled="wechatPaymentEnabled"
             />
             <div class="field">
               <label class="label">目标楼栋（每行一个）</label>
@@ -145,9 +153,7 @@
               :quote-loading="quoteLoading"
               :free-remaining="freeRemaining"
               :free-enabled="freeEnabled"
-              :point-balance="pointBalance"
-              :coin-balance="coinBalance"
-              :wechat-disabled="!wechatPayAvailable"
+              :wechat-payment-enabled="wechatPaymentEnabled"
             />
             <div class="field">
               <label class="label">图片（可选）</label>
@@ -174,7 +180,7 @@
 
 <script setup lang="ts">
 import { computed, defineComponent, h, onMounted, ref, watch } from 'vue'
-import { merchantApplymentApi, merchantPortalApi, merchantTargetedAdApi } from '../../api/services'
+import { merchantPortalApi, merchantTargetedAdApi } from '../../api/services'
 import { ApiError, formatApiError } from '../../api/request'
 import type {
   MerchantAdItem,
@@ -188,23 +194,19 @@ import {
   getPhase2ErrorMessage,
   MERCHANT_AD_PAYMENT_METHOD,
   MERCHANT_AD_PAYMENT_METHOD_LABEL,
-  MERCHANT_AUDIT_STATUS,
-  isApplymentFinished
+  MERCHANT_AD_STATUS,
+  MERCHANT_AD_STATUS_LABEL
 } from '../../constants/enums'
-import { isApplymentNotFound, isOrderPayUnavailable } from '../../utils/ecommerce'
+import { isOrderPayUnavailable } from '../../utils/ecommerce'
 import { useIsMobile } from '../../composables/useIsMobile'
-import { useAuthStore } from '../../stores/auth'
 import MediaUploader from '../../components/MediaUploader.vue'
 
 const { isMobile } = useIsMobile()
-const auth = useAuthStore()
 const loading = ref(false)
 const error = ref('')
 const list = ref<MerchantAdItem[]>([])
 const quota = ref<MerchantAdQuota | null>(null)
 const quoteHint = ref<MerchantAdQuote | null>(null)
-const pointBalance = ref(0)
-const coinBalance = computed(() => Number(auth.profile?.coinBalance ?? 0))
 
 const modalOpen = ref(false)
 const targetedModalOpen = ref(false)
@@ -215,11 +217,25 @@ const targetedFormError = ref('')
 const successHint = ref('')
 const targetedSuccessHint = ref('')
 const merchantId = ref('')
-const wechatPayAvailable = ref(true)
 const quote = ref<MerchantAdQuote | null>(null)
 const targetedQuote = ref<MerchantAdQuote | null>(null)
 const quoteLoading = ref(false)
 const targetedQuoteLoading = ref(false)
+
+/**
+ * v8.26：微信支付入口是否可用，**只以** quote / quota 的 `wechatPaymentEnabled` 为准。
+ * 不要再用商家进件状态推断，也不要写死「暂未开放」。
+ *
+ * 字段缺失（后端尚未升级到 v8.26）时回退 true：后端默认值就是 true，
+ * 此时最多在提交时收到 10002「在线支付未开通」，用户仍可改用免费额度；
+ * 若回退 false，会把微信入口直接藏掉，免费额度用尽的商家将完全无法投放。
+ */
+const wechatPaymentEnabled = computed(() => {
+  if (quota.value?.wechatPaymentEnabled != null) return quota.value.wechatPaymentEnabled
+  if (quote.value?.wechatPaymentEnabled != null) return quote.value.wechatPaymentEnabled
+  if (quoteHint.value?.wechatPaymentEnabled != null) return quoteHint.value.wechatPaymentEnabled
+  return true
+})
 
 const form = ref({
   title: '',
@@ -227,7 +243,7 @@ const form = ref({
   imageUrls: [] as string[],
   productId: '',
   durationDays: 7,
-  paymentMethod: MERCHANT_AD_PAYMENT_METHOD.COIN
+  paymentMethod: MERCHANT_AD_PAYMENT_METHOD.FREE
 })
 const targetedForm = ref({
   title: '',
@@ -237,7 +253,7 @@ const targetedForm = ref({
   targetAgeBracketsText: '',
   productId: '',
   durationDays: 7,
-  paymentMethod: MERCHANT_AD_PAYMENT_METHOD.COIN
+  paymentMethod: MERCHANT_AD_PAYMENT_METHOD.FREE
 })
 
 const freeRemaining = computed(() => {
@@ -261,21 +277,56 @@ function paymentLabel(method?: string) {
   return getEnumLabel(MERCHANT_AD_PAYMENT_METHOD_LABEL, method, '—')
 }
 
+function adStatusLabel(status?: string) {
+  if (!status) return '—'
+  return getEnumLabel(MERCHANT_AD_STATUS_LABEL, status, status)
+}
+
+function adStatusClass(status?: string) {
+  if (status === MERCHANT_AD_STATUS.ACTIVE) return 'ok'
+  if (status === MERCHANT_AD_STATUS.PENDING_PAYMENT) return 'warn'
+  if (status === MERCHANT_AD_STATUS.CANCELLED) return 'muted'
+  return ''
+}
+
+function isPendingPayment(item: MerchantAdItem) {
+  return item.status === MERCHANT_AD_STATUS.PENDING_PAYMENT
+}
+
+/**
+ * v8.26：可用支付方式只算 free / wechat。
+ * 优先免费额度，否则落微信支付；两者都不可用时返回空串，由提交前校验拦住。
+ */
+function defaultPaymentMethod() {
+  if (freeRemaining.value > 0 && freeEnabled.value) return MERCHANT_AD_PAYMENT_METHOD.FREE
+  if (wechatPaymentEnabled.value) return MERCHANT_AD_PAYMENT_METHOD.WECHAT
+  return ''
+}
+
+/** 当前支付方式失效时回退到默认值（不再回退到已下线的物业币） */
+function fallbackPaymentMethod(current: string) {
+  if (current === MERCHANT_AD_PAYMENT_METHOD.FREE && freeRemaining.value > 0 && freeEnabled.value) {
+    return current
+  }
+  if (current === MERCHANT_AD_PAYMENT_METHOD.WECHAT && wechatPaymentEnabled.value) return current
+  return defaultPaymentMethod()
+}
+
 function resolveError(e: unknown) {
   if (isOrderPayUnavailable(e)) {
-    if (form.value.paymentMethod === MERCHANT_AD_PAYMENT_METHOD.WECHAT) {
-      form.value.paymentMethod = MERCHANT_AD_PAYMENT_METHOD.COIN
-    }
-    if (targetedForm.value.paymentMethod === MERCHANT_AD_PAYMENT_METHOD.WECHAT) {
-      targetedForm.value.paymentMethod = MERCHANT_AD_PAYMENT_METHOD.COIN
-    }
+    form.value.paymentMethod = fallbackPaymentMethod(form.value.paymentMethod)
+    targetedForm.value.paymentMethod = fallbackPaymentMethod(targetedForm.value.paymentMethod)
   }
   if (e instanceof ApiError) return formatApiError(e, getPhase2ErrorMessage(e.code, e.message))
   if (e instanceof Error) return e.message
   return '操作失败'
 }
 
+/** 格式化为创建成功提示；待支付时提示未开始投放 */
 function formatSuccess(item: MerchantAdItem) {
+  if (isPendingPayment(item)) {
+    return '广告已提交，待微信支付完成后开始投放（支付成功前不投放、不占免费额度）。'
+  }
   const n = item.recipientCount ?? 0
   const end = item.endDate || '—'
   return `已推送给 ${n} 位住户，投放至 ${end}`
@@ -290,9 +341,7 @@ const AdPricingFields = defineComponent({
     quoteLoading: { type: Boolean, default: false },
     freeRemaining: { type: Number, default: 0 },
     freeEnabled: { type: Boolean, default: true },
-    pointBalance: { type: Number, default: 0 },
-    coinBalance: { type: Number, default: 0 },
-    wechatDisabled: { type: Boolean, default: false }
+    wechatPaymentEnabled: { type: Boolean, default: false }
   },
   emits: ['update:durationDays', 'update:paymentMethod'],
   setup(props, { emit }) {
@@ -327,6 +376,7 @@ const AdPricingFields = defineComponent({
         ]),
         h('div', { class: 'field' }, [
           h('label', { class: 'label' }, '支付方式'),
+          /** v8.26：coin / point / mock 已下线，只保留免费额度与微信支付 */
           h(
             'div',
             { class: 'payOptions' },
@@ -337,15 +387,10 @@ const AdPricingFields = defineComponent({
                 disabled: freeDisabled.value
               },
               {
-                value: MERCHANT_AD_PAYMENT_METHOD.COIN,
-                label: `物业币（余额 ¥${formatMoney(props.coinBalance)}）`
-              },
-              {
-                value: MERCHANT_AD_PAYMENT_METHOD.POINT,
-                label: `商家积分（余额 ${props.pointBalance}）`
-              },
-              { value: MERCHANT_AD_PAYMENT_METHOD.WECHAT, label: '微信支付', disabled: props.wechatDisabled },
-              { value: MERCHANT_AD_PAYMENT_METHOD.MOCK, label: '模拟支付' }
+                value: MERCHANT_AD_PAYMENT_METHOD.WECHAT,
+                label: '微信支付',
+                disabled: !props.wechatPaymentEnabled
+              }
             ].map((opt) =>
               h('label', { class: ['payOption', opt.disabled ? 'disabled' : ''] }, [
                 h('input', {
@@ -362,11 +407,13 @@ const AdPricingFields = defineComponent({
               ])
             )
           ),
-          freeDisabled.value
-            ? h('p', { class: 'hint warn' }, '免费额度已用尽或已关闭，请选择付费投放')
-            : props.wechatDisabled
-              ? h('p', { class: 'hint warn' }, '商家尚未完成微信进件，微信支付不可用，请改用积分或物业币')
-              : null
+          freeDisabled.value && !props.wechatPaymentEnabled
+            ? h('p', { class: 'hint warn' }, '免费额度已用尽或已关闭，且微信支付当前不可用。请联系平台开通微信支付后再投放。')
+            : freeDisabled.value
+              ? h('p', { class: 'hint warn' }, '免费额度已用尽或已关闭，请选择微信支付')
+              : !props.wechatPaymentEnabled
+                ? h('p', { class: 'hint' }, '微信支付当前不可用，仅可使用免费额度')
+                : null
         ])
       ])
   }
@@ -407,53 +454,18 @@ watch(
     if (targetedModalOpen.value) void fetchQuote(days, 'targeted')
   }
 )
-watch(freeRemaining, (n) => {
-  if (n <= 0 || !freeEnabled.value) {
-    if (form.value.paymentMethod === MERCHANT_AD_PAYMENT_METHOD.FREE) {
-      form.value.paymentMethod = MERCHANT_AD_PAYMENT_METHOD.COIN
-    }
-    if (targetedForm.value.paymentMethod === MERCHANT_AD_PAYMENT_METHOD.FREE) {
-      targetedForm.value.paymentMethod = MERCHANT_AD_PAYMENT_METHOD.COIN
-    }
-  }
+watch(freeRemaining, () => {
+  form.value.paymentMethod = fallbackPaymentMethod(form.value.paymentMethod)
+  targetedForm.value.paymentMethod = fallbackPaymentMethod(targetedForm.value.paymentMethod)
 })
-
-async function loadApplymentGate() {
-  try {
-    const data = await merchantApplymentApi.getMine()
-    wechatPayAvailable.value = isApplymentFinished(data?.applymentState)
-  } catch (e) {
-    wechatPayAvailable.value = !isApplymentNotFound(e)
-  }
-  if (!wechatPayAvailable.value) {
-    if (form.value.paymentMethod === MERCHANT_AD_PAYMENT_METHOD.WECHAT) {
-      form.value.paymentMethod = MERCHANT_AD_PAYMENT_METHOD.COIN
-    }
-    if (targetedForm.value.paymentMethod === MERCHANT_AD_PAYMENT_METHOD.WECHAT) {
-      targetedForm.value.paymentMethod = MERCHANT_AD_PAYMENT_METHOD.COIN
-    }
-  }
-}
+watch(wechatPaymentEnabled, () => {
+  form.value.paymentMethod = fallbackPaymentMethod(form.value.paymentMethod)
+  targetedForm.value.paymentMethod = fallbackPaymentMethod(targetedForm.value.paymentMethod)
+})
 
 async function loadQuota() {
   try {
     quota.value = await merchantPortalApi.adQuota()
-  } catch (e) {
-    console.error(e)
-  }
-}
-
-async function loadPointBalance() {
-  try {
-    const res = await merchantPortalApi.pointPurchases({
-      page: 1,
-      pageSize: 100,
-      auditStatus: MERCHANT_AUDIT_STATUS.APPROVED
-    })
-    pointBalance.value = (res.list || []).reduce(
-      (sum, item) => sum + (item.remainingPoints ?? 0),
-      0
-    )
   } catch (e) {
     console.error(e)
   }
@@ -489,10 +501,7 @@ function openCreate() {
     imageUrls: [],
     productId: '',
     durationDays: 7,
-    paymentMethod:
-      freeRemaining.value > 0 && freeEnabled.value
-        ? MERCHANT_AD_PAYMENT_METHOD.FREE
-        : MERCHANT_AD_PAYMENT_METHOD.COIN
+    paymentMethod: defaultPaymentMethod()
   }
   formError.value = ''
   successHint.value = ''
@@ -509,10 +518,7 @@ function openTargetedCreate() {
     targetAgeBracketsText: '',
     productId: '',
     durationDays: 7,
-    paymentMethod:
-      freeRemaining.value > 0 && freeEnabled.value
-        ? MERCHANT_AD_PAYMENT_METHOD.FREE
-        : MERCHANT_AD_PAYMENT_METHOD.COIN
+    paymentMethod: defaultPaymentMethod()
   }
   targetedFormError.value = ''
   targetedSuccessHint.value = ''
@@ -541,7 +547,18 @@ async function submitTargeted() {
     targetedForm.value.paymentMethod === MERCHANT_AD_PAYMENT_METHOD.FREE &&
     (freeRemaining.value <= 0 || !freeEnabled.value)
   ) {
-    targetedFormError.value = '本周免费额度已用完，请选择付费投放'
+    targetedFormError.value = '本周免费额度已用完，请选择微信支付'
+    return
+  }
+  if (!targetedForm.value.paymentMethod) {
+    targetedFormError.value = '免费额度已用尽且微信支付不可用，暂时无法投放，请联系平台开通'
+    return
+  }
+  if (
+    targetedForm.value.paymentMethod === MERCHANT_AD_PAYMENT_METHOD.WECHAT &&
+    !wechatPaymentEnabled.value
+  ) {
+    targetedFormError.value = '微信支付当前不可用，请改用免费额度或联系平台开通'
     return
   }
   targetedSaving.value = true
@@ -568,7 +585,7 @@ async function submitTargeted() {
       paymentMethod: targetedForm.value.paymentMethod
     })
     targetedSuccessHint.value = formatSuccess(created)
-    await Promise.all([loadList(), loadQuota(), loadPointBalance()])
+    await Promise.all([loadList(), loadQuota()])
     setTimeout(() => {
       targetedModalOpen.value = false
     }, 1200)
@@ -592,7 +609,18 @@ async function submit() {
     form.value.paymentMethod === MERCHANT_AD_PAYMENT_METHOD.FREE &&
     (freeRemaining.value <= 0 || !freeEnabled.value)
   ) {
-    formError.value = '本周免费额度已用完，请选择付费投放'
+    formError.value = '本周免费额度已用完，请选择微信支付'
+    return
+  }
+  if (!form.value.paymentMethod) {
+    formError.value = '免费额度已用尽且微信支付不可用，暂时无法投放，请联系平台开通'
+    return
+  }
+  if (
+    form.value.paymentMethod === MERCHANT_AD_PAYMENT_METHOD.WECHAT &&
+    !wechatPaymentEnabled.value
+  ) {
+    formError.value = '微信支付当前不可用，请改用免费额度或联系平台开通'
     return
   }
   const imageUrls = form.value.imageUrls.filter(Boolean)
@@ -609,7 +637,7 @@ async function submit() {
       paymentMethod: form.value.paymentMethod
     })
     successHint.value = formatSuccess(created)
-    await Promise.all([loadList(), loadQuota(), loadPointBalance()])
+    await Promise.all([loadList(), loadQuota()])
     setTimeout(() => {
       modalOpen.value = false
     }, 1200)
@@ -625,9 +653,7 @@ onMounted(async () => {
     loadMerchantId(),
     loadQuota(),
     loadList(),
-    loadPointBalance(),
-    fetchQuote(7, 'normal'),
-    loadApplymentGate()
+    fetchQuote(7, 'normal')
   ])
 })
 </script>
@@ -685,6 +711,24 @@ onMounted(async () => {
   color: #8c8c9a;
 }
 .hint.warn { color: #d48806; }
+/* v8.26 广告状态标签：pending_payment 待支付 / active 投放中 / cancelled 已取消 */
+.statusDot {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  background: #f2f3f7;
+  color: #5c5c6b;
+  white-space: nowrap;
+}
+.statusDot.ok { background: #e7f7ed; color: #15803d; }
+.statusDot.warn { background: #fff7e6; color: #d48806; }
+.statusDot.muted { background: #f2f3f7; color: #9a9aa8; }
+.pendingHint {
+  margin: 4px 0;
+  font-size: 12px;
+  color: #d48806;
+}
 .error {
   color: #d14343;
   font-size: 13px;

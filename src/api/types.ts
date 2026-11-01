@@ -61,6 +61,73 @@ export interface UserProfile {
   isBuildingLeader?: boolean
   /** v8.9：楼长 ID（bl_ 前缀）；非楼长为 null */
   buildingLeaderId?: string | null
+  /**
+   * v8.11：是否为启用中的物业公司经理（「住户 + 经理」复合身份，role 始终为 resident）。
+   * 后端 /auth/profile 暂未返回该字段，由前端调用 GET /property-managers/my 探测后回填。
+   */
+  isPropertyManager?: boolean
+  /** v8.11：物业经理 ID（pm_ 前缀）；非经理为 null */
+  propertyManagerId?: string | null
+  /**
+   * v8.13：统筹负责人标签。residents.role 恒为 resident，负责人身份由业务表 active 记录派生，
+   * 勿再用 role 判断。true 仅代表「有标签」，是否可用还需看业务表 status 是否为 active。
+   */
+  isCoordinator?: boolean
+  /** v8.13：板块负责人标签 */
+  isSectorLeader?: boolean
+  /** v8.13：板块负责人 ID 列表；非负责人返回**空数组**（不是 null） */
+  sectorLeaderIds?: string[]
+  /** v8.13：个体负责人标签 */
+  isIndividualLeader?: boolean
+  /** v8.14：活动组组长标签 */
+  isActivityLeader?: boolean
+  activityLeaderId?: string | null
+  /** 业主小店店主标签 */
+  isResidentMerchant?: boolean
+  residentMerchantId?: string | null
+  /** v8.12.1：一级代理商标签；未开通时后端返回 false（不是 60030） */
+  isDistributor?: boolean
+  distributorId?: string | null
+  /**
+   * v1.2（2026-10-29）：/auth/profile 新增权限字段。
+   * `effectivePermissions` 与 GET /auth/my-permissions 的 `permissions` 同口径，
+   * 最终生效集合 = 角色预设 ∪ 额外授予 − 显式撤销。
+   * 注意：merchant / courier 调 /auth/profile 会 20004，这类角色改用 /auth/my-permissions。
+   */
+  normalizedRole?: string
+  /** @deprecated 后端实际字段名为 roleCodes，本字段仅为历史兼容，请优先用 roleCodes */
+  effectiveRoleCodes?: string[]
+  /**
+   * v1.3（2026-10-29 管理端权限与工作台文档）：有效角色码集合。
+   * 关键：活动组长 / 统筹 / 板块 / 个体的 role 恒为 resident，
+   * 身份只在这里（如 ['activity_leader','resident']）。禁止用 role 判断这些身份。
+   */
+  roleCodes?: string[]
+  /**
+   * v1.3：管理端总开关。false 表示不具备管理端工作台身份，不得进入权限驱动的管理端页面。
+   * 注意：仅在明确为 false 时拦截，undefined（老环境未下发）按放行处理。
+   */
+  adminWorkspace?: boolean
+  rolePresetId?: string | null
+  rolePresetName?: string | null
+  /** 权限码（resource:action 冒号格式），菜单 / 路由 / 按钮的唯一依据 */
+  effectivePermissions?: string[]
+}
+
+/** GET /auth/my-permissions — 任意登录角色可取的轻量权限刷新接口（v1.2） */
+export interface MyPermissionsResult {
+  role?: string
+  normalizedRole?: string
+  propertySubRole?: string | null
+  propertyCompanyId?: string
+  /** 标签派生的角色集合，如 ['coordinator','resident'] */
+  roleCodes?: string[]
+  /** 管理端总开关，与该接口返回的 profile 同口径 */
+  adminWorkspace?: boolean
+  /** 有效权限码（冒号格式） */
+  permissions?: string[]
+  /** 兼容字段，部分环境可能复用 profile 的字段名 */
+  effectivePermissions?: string[]
 }
 
 export interface ResidentItem {
@@ -76,6 +143,15 @@ export interface ResidentItem {
   hasChildren?: boolean
   role?: string
   userType?: string
+  /** v8.13+：负责人 / 组长 / 店主 / 代理商标签（GET /residents/{id} 下发），此时 role 恒为 resident */
+  isCoordinator?: boolean
+  isSectorLeader?: boolean
+  sectorLeaderIds?: string[]
+  isIndividualLeader?: boolean
+  isActivityLeader?: boolean
+  isResidentMerchant?: boolean
+  isDistributor?: boolean
+  isBuildingLeader?: boolean
   propertyCompanyId?: string
   propertyName?: string
   communityId?: string
@@ -412,6 +488,8 @@ export interface MerchantItem {
   recommendedSort?: number
   /** v8.7 §7.1 列表项新增字段：是否被官方/物业推荐（合并语义，含原 isOfficialRecommended） */
   isRecommended?: boolean
+  /** v8.11 §60.12：是否已开通一级代理权限（merchants.is_distributor，管理端开通/取消） */
+  isDistributor?: boolean
 }
 
 export interface MerchantUpdatePayload {
@@ -674,6 +752,14 @@ export interface PermissionItemDto {
   group?: string
   enabled?: boolean
   granted?: boolean
+  /** v1.3：平台专属权限，物业端不展示 */
+  isPlatformOnly?: boolean
+  /**
+   * v1.3：是否允许授予「标签身份」（活动组长 / 统筹 / 板块 / 个体 / 社区管理员）。
+   * 当前后端仅对 community:read / community:manage 开放为 true。
+   */
+  grantableToTagIdentities?: boolean
+  status?: string
 }
 
 export interface RolePresetDto {
@@ -684,6 +770,10 @@ export interface RolePresetDto {
   permissionCodes?: string[]
   permissions?: string[]
   isDefault?: boolean
+  /** v1.3：内置预设（propertyCompanyId=null）只允许改描述，权限码不可编辑 */
+  isBuiltin?: boolean
+  propertyCompanyId?: string | null
+  description?: string
   createdAt?: string
 }
 
@@ -692,6 +782,12 @@ export interface AdminUserAccount {
   name: string
   phone?: string
   role: string
+  /** v1.3：归一化角色，活动组长等标签身份此处仍为 resident */
+  normalizedRole?: string
+  /** v1.3：有效角色码集合，如 ['activity_leader','resident']；身份展示以本字段为准 */
+  roleCodes?: string[]
+  /** v1.3：是否具备管理端工作台身份；false 的账号不应出现在授权目标里 */
+  adminWorkspace?: boolean
   propertyCompanyId?: string
   status?: string
   effectivePermissionCount?: number
@@ -701,9 +797,14 @@ export interface UserPermissionsDetail {
   userId: string
   userName?: string
   role?: string
+  /** v1.3：有效角色码集合，用于展示「活动组组长」等标签身份 */
+  roleCodes?: string[]
   rolePresetId?: string
   rolePresetName?: string
+  /** v1.3：按 roleCodes 命中的预设（活动组长为 rp_003） */
+  appliedPreset?: { id: string; name: string; code?: string } | null
   effectivePermissions?: string[]
+  effectivePermissionCount?: number
   grantedPermissions?: Array<{ code: string; reason?: string; grantedAt?: string }>
   revokedPermissions?: Array<{ code: string; reason?: string; revokedAt?: string }>
 }
@@ -780,6 +881,11 @@ export interface PropertyCompanyAdmin {
   name?: string
   phone?: string
   role?: string
+  /**
+   * v8.28：仅「创建物业公司」与「重置密码」两个响应里返回一次，为后端随机 14 位密码。
+   * 前端不得持久化，也不得用固定值兜底。
+   */
+  initialPassword?: string
 }
 
 export interface PropertyCompanyDetail {
@@ -796,7 +902,12 @@ export interface PropertyCompanyDetail {
   coinEnabled?: boolean
   coinDisplayEnabled?: boolean
   communities?: PropertyCompanyCommunity[]
+  /**
+   * 管理员列表。v8.28 文档口径为 `adminAccounts`，历史实现返回 `admins`，
+   * 读取请用 `adminAccounts ?? admins` 兼容两者。
+   */
   admins?: PropertyCompanyAdmin[]
+  adminAccounts?: PropertyCompanyAdmin[]
   /** v3.9 详情回显补全 */
   deliveryPerKgFee?: number
   /** 物业级参考兑换比（默认100）；订单支付请用商家详情/挂接配置的 pointExchangeRate */
@@ -832,6 +943,9 @@ export interface PropertyCompanyUpdatePayload {
   coinDisplayEnabled?: boolean
   deliveryPerKgFee?: number
   pointExchangeRate?: number
+  /** 参考比例（不进主分成链）：详情响应会返回，admin 更新 DTO 不含，需走 §14.6 路径 */
+  regionalLeaderRate?: number
+  projectLeaderRate?: number
   residentPointShareRate?: number
   merchantPointShareRate?: number
   coinPointShareRate?: number
@@ -875,7 +989,7 @@ export interface PropertyCompanyCreateResult extends PropertyCompanyItem {
     name?: string
     phone?: string
     role?: string
-    /** 仅创建响应返回一次，默认 admin123456 */
+    /** 仅创建响应返回一次：后端随机生成的 14 位初始密码，无固定值 */
     initialPassword?: string
   }
   defaultConfigs?: string
@@ -1163,6 +1277,15 @@ export interface OrderItem {
   courierId?: string | null
   courierName?: string | null
   deliveryId?: string | null
+  /**
+   * 配送单状态码。后端 2026-10-27 回复：`GET /admin/delivery-orders` 实际下发的是
+   * `deliveryStatusCode`（不是 deliveryStatus），无配送单时为 null。
+   * 取值域：pending/accepted/picked/delivering/completed/failed/property_fallback/
+   * merchant_self/merchant_delivering/refunded —— **不会出现 delivered**
+   * （delivered 为历史配送单状态，读写两侧均已归一为 completed）。
+   */
+  deliveryStatusCode?: string | null
+  /** @deprecated 后端不再下发该字段，读取请用 deliveryStatusCode */
   deliveryStatus?: string
   deliveryStatusLabel?: string
   /** 是否需要配送；false 则无履约选择、无配送单 */
@@ -1283,7 +1406,17 @@ export interface MyMerchantDetail {
   /** 是否社区食堂主商家（仅 merchantType=canteen 有意义） */
   isCanteenMainMerchant?: boolean
   totalOrders?: number
+  /**
+   * v8.28：累计已完成订单金额（order_status=completed 的 totalAmount 合计）。
+   * 仅商家本人/管理端查询返回；公开 GET /merchants/{id} 不下发。
+   */
   totalRevenue?: number
+  /**
+   * v8.28：积分兑换比（1 元 = X 积分）。配置缺失或非正数时后端回退 100.0000。
+   * 商家购买积分试算请用 `元金额 × pointExchangeRate` 本地计算，
+   * **不要**再调未实现的 GET /merchant/points/quote。
+   */
+  pointExchangeRate?: number
   /** 可提现余额（§A1） */
   withdrawableAmount?: number
   /** 待结算金额（v5.4） */
@@ -2030,7 +2163,7 @@ export interface AdminIndividualLeaderCreatePayload {
   commissionRate?: number
 }
 
-/** 住户一级代理申请 GET /admin/individual-leaders/applications */
+/** 住户个体负责人申请 GET /admin/individual-leaders/applications（注意：与 §60.16 一级代理申请不是同一条链路） */
 export interface IndividualLeaderApplicationItem {
   id: string
   residentId?: string
@@ -2065,6 +2198,51 @@ export interface IndividualLeaderApplicationAuditResult {
   individualLeader?: IndividualLeaderItem | null
 }
 
+/** §101.1 GET /admin/activity-leader-applications 列表项（v8.14 新增，v8.15 修复审核 400） */
+export interface ActivityLeaderApplicationItem {
+  id: string
+  residentId?: string
+  residentName?: string
+  /** 已脱敏 */
+  residentPhone?: string
+  /** 部分版本回传 phone，兜底读取 */
+  phone?: string
+  /** 活动领域，≤50 字，选填 */
+  activityField?: string | null
+  /** 申请备注，≤200 字，选填 */
+  remark?: string | null
+  /** pending / approved / rejected */
+  auditStatus?: string
+  status?: string
+  rejectReason?: string | null
+  /** 审核通过后创建的组长身份记录ID（ali_ 前缀） */
+  activityLeaderIdentityId?: string | null
+  auditedAt?: string
+  createdAt?: string
+  propertyCompanyId?: string
+  propertyCompanyName?: string
+}
+
+/** §101.2 / §101.3 审核与撤销响应（撤销时 auditStatus=revoked） */
+export interface ActivityLeaderApplicationAuditResult {
+  applicationId?: string
+  /** approved / rejected / revoked */
+  auditStatus?: string
+  residentId?: string
+  residentName?: string
+  rejectReason?: string | null
+  auditedAt?: string
+  activityLeaderIdentityId?: string | null
+}
+
+/** §101.2 POST /admin/activity-leader-applications/{applicationId}/audit 请求体
+ * 通过后后端同事务建组长身份 + 自动开通组长小店，前端不要再调开店接口 */
+export interface ActivityLeaderApplicationAuditPayload {
+  auditStatus: string
+  /** rejected 时必填，否则后端返回 PARAM_MISSING */
+  rejectReason?: string
+}
+
 /** POST /admin/individual-leaders/applications/{applicationId}/audit */
 export interface IndividualLeaderApplicationAuditPayload {
   auditResult: string
@@ -2074,6 +2252,53 @@ export interface IndividualLeaderApplicationAuditPayload {
   sector?: string
   name?: string
   commissionRate?: number
+}
+
+/** v8.12.1 §60.16：一级代理（货源 distributor）申请 — GET /admin/distributor-applications */
+export interface DistributorApplicationItem {
+  /** 申请 ID，前缀 dap_ */
+  id: string
+  residentId?: string
+  residentName?: string
+  residentPhone?: string
+  propertyCompanyId?: string
+  propertyCompanyName?: string
+  /** 联系人姓名（申请表 contact_name） */
+  contactName?: string
+  /** 联系人电话（申请表 contact_phone） */
+  contactPhone?: string
+  /** 经营品类：fresh / daily / grain / other */
+  businessScope?: string
+  /** 服务范围：community / city */
+  serviceScope?: string
+  remark?: string
+  /** 审核状态：pending / approved / rejected */
+  auditStatus?: string
+  rejectReason?: string
+  /** 审核通过后自动创建/关联的商家载体 ID（mch_） */
+  distributorMerchantId?: string
+  createdAt?: string
+  submittedAt?: string
+  auditedAt?: string
+  auditedBy?: string
+}
+
+/** POST /admin/distributor-applications/{id}/audit */
+export interface DistributorApplicationAuditPayload {
+  /** approved / rejected */
+  auditResult: string
+  /** rejected 时必填 */
+  rejectReason?: string
+}
+
+/** POST /admin/distributor-applications/{id}/audit 响应 */
+export interface DistributorApplicationAuditResult {
+  applicationId?: string
+  auditStatus?: string
+  /** 通过时为自动创建的商家载体 ID */
+  distributorMerchantId?: string | null
+  rejectReason?: string
+  auditedAt?: string
 }
 
 export interface SectorLeaderMerchantAuditPayload {
@@ -2171,7 +2396,10 @@ export interface MerchantTargetedAdCreatePayload {
   targetAgeBrackets?: string[]
   /** 展示天数 1~30，必填 */
   durationDays: number
-  /** free / coin / point / wechat / mock，必填 */
+  /**
+   * v8.26：仅 free / wechat 可用。
+   * coin / point / mock 已下线，继续传后端返回 10002。
+   */
   paymentMethod: string
 }
 
@@ -2182,10 +2410,18 @@ export interface DistributorProductBillingCyclePayload {
 
 export interface DistributorProductItem {
   id: string
+  /** v8.11 §60.12：货源商品归属的一级代理商家 ID（mch_） */
+  distributorMerchantId?: string
+  distributorMerchantName?: string
+  propertyCompanyId?: string
   name?: string
+  coverUrl?: string
+  category?: string
+  description?: string
   billingCycle?: string
   wholesalePrice?: number
   suggestedRetailPrice?: number
+  /** 库存件数（业主小店按件拿货扣减） */
   stock?: number
   serviceScope?: string
   status?: string
@@ -2418,6 +2654,23 @@ export interface CommunityPostItem {
   likeCount?: number
   commentCount?: number
   likedByMe?: boolean
+  createdAt?: string
+  updatedAt?: string
+  /** v8.14 影子封禁：仅管理员视图（adminView=true）才返回，普通视图不带此字段 */
+  shadowBanned?: boolean
+}
+
+/** GET /admin/community/forum-bans 列表项（v8.14 影子封禁） */
+export interface ForumBanItem {
+  id: string
+  residentId?: string
+  residentName?: string
+  residentPhone?: string
+  reason?: string
+  /** active 生效中 / lifted 已解除 / expired 已到期 */
+  status?: string
+  /** 为空表示永久禁言 */
+  expiresAt?: string | null
   createdAt?: string
   updatedAt?: string
 }
@@ -2692,6 +2945,19 @@ export interface DirectedMessageSendResult {
   createdAt?: string
 }
 
+/** v2（文档 §8）：定向消息统计 GET /admin/directed-messages/stats */
+export interface DirectedMessageStats {
+  propertyCompanyId?: string
+  taskCount?: number
+  recipientCount?: number
+  readCount?: number
+  unreadCount?: number
+  /** 0~1 的小数，如 0.6974 */
+  readRate?: number
+  todayTaskCount?: number
+  last7DaysTaskCount?: number
+}
+
 /* ---------- 二期 §53 社区多物业 ---------- */
 
 export interface CommunityEntityItem {
@@ -2833,6 +3099,11 @@ export interface MerchantAdQuota {
   remainingCount?: number
   freeQuotaRemaining?: number
   freeQuotaEnabled?: boolean
+  /**
+   * v8.26：微信支付是否可用（后端开关 MERCHANT_AD_WECHAT_PAYMENT_ENABLED 且通道已配置）。
+   * 前端据此显示/隐藏微信支付入口，**不要写死「暂未开放」**。
+   */
+  wechatPaymentEnabled?: boolean
 }
 
 export interface MerchantAdQuote {
@@ -2841,6 +3112,8 @@ export interface MerchantAdQuote {
   payAmount: number
   freeQuotaRemaining?: number
   freeQuotaEnabled?: boolean
+  /** v8.26：同 MerchantAdQuota.wechatPaymentEnabled */
+  wechatPaymentEnabled?: boolean
 }
 
 export interface MerchantAdSettings {
@@ -2855,6 +3128,7 @@ export interface MerchantAdItem {
   content?: string
   imageUrls?: string[]
   productId?: string
+  /** pending_payment 待支付 / active 投放中 / cancelled 已取消 */
   status?: string
   createdAt?: string
   durationDays?: number
@@ -2863,6 +3137,13 @@ export interface MerchantAdItem {
   payAmount?: number
   paymentMethod?: string
   recipientCount?: number
+  /** v8.26：微信预下单成功后返回，用于查询支付状态 */
+  paymentRecordId?: string
+  /**
+   * v8.26：微信小程序调起支付参数（timeStamp / nonceStr / package / signType / paySign）。
+   * 本仓是 Web 管理端，**没有** wx.requestPayment 能力，此字段仅供透传给小程序端使用。
+   */
+  payParams?: Record<string, unknown> | null
 }
 
 export interface MerchantAdCreatePayload {
@@ -2872,7 +3153,10 @@ export interface MerchantAdCreatePayload {
   productId?: string
   /** 展示天数 1~30，必填 */
   durationDays: number
-  /** free / coin / point / wechat / mock，必填 */
+  /**
+   * v8.26：仅 free / wechat 可用。
+   * coin / point / mock 已下线，继续传后端返回 10002。
+   */
   paymentMethod: string
 }
 
@@ -2949,6 +3233,12 @@ export interface ResidentMerchantApplicationItem {
   statusCode?: string
   /** public=对外 / private=不对外 */
   visibility?: string
+  /** v8.28：申请列表补店铺信息，审核时可直接查看，无需再查店铺接口 */
+  shopName?: string
+  description?: string
+  businessHours?: string
+  contactPhone?: string
+  coverUrl?: string
   createdAt?: string
   auditedAt?: string
 }
@@ -3031,11 +3321,16 @@ export interface ResidentMerchantSettings {
 }
 
 export interface DistributorProductCreatePayload {
+  /** v8.11 新增必传：一级代理商家 ID（mch_，须已开通 is_distributor 且属本物业），未传返回 60031 */
+  distributorMerchantId: string
   name: string
   coverUrl?: string
   categoryId?: string
+  /** 货源类目（公开列表按此筛选，如「食品饮料」「日用百货」） */
+  category?: string
   wholesalePrice: number
   suggestedRetailPrice: number
+  /** 库存件数，默认 0 */
   stock?: number
   serviceScope?: string
   description?: string
@@ -3835,6 +4130,11 @@ export interface ApplymentDetail {
   submitted?: boolean
   legalValidationUrl?: string | null
   signUrl?: string | null
+  /**
+   * 小程序侧待确认 #3：若后端补了下发签约二维码地址，管理端直接渲染二维码；
+   * 未下发时退化为「复制链接发给法定代表人」。
+   */
+  signQrCodeUrl?: string | null
   rejectReason?: string | null
   subMchid?: string | null
   submitMode?: string
@@ -3862,6 +4162,30 @@ export interface ApplymentSubmitPayload {
 
 export interface ApplymentMediaUploadResult {
   mediaId?: string
+}
+
+/**
+ * v8.28 附录 C.3.3：商家特约商户号绑定记录（`merchant_wechat_accounts`）。
+ * 只有 `status=active` 且 `subMchid` 非空时，该商家商城订单才可走服务商通道。
+ */
+export interface MerchantWechatAccount {
+  id?: string
+  merchantId?: string
+  subMchid?: string
+  merchantName?: string | null
+  /** active / auditing / frozen */
+  status?: string
+  createdAt?: string
+  updatedAt?: string
+}
+
+/** PUT /admin/merchants/{merchantId}/wechat-account */
+export interface MerchantWechatAccountPayload {
+  /** 8~20 位数字；不能等于服务商 sp_mchid 或平台直连商户号 */
+  subMchid: string
+  merchantName?: string
+  /** active（默认）/ auditing / frozen */
+  status?: string
 }
 
 export interface TransferAccountItem {
@@ -3912,6 +4236,8 @@ export interface BuildingLeaderListItem {
   communityId?: string
   communityName?: string
   building?: string
+  /** v8.11：单元（经理工作台指定楼长使用 unit，与管理端 building 并存） */
+  unit?: string
   /** 占物业公司分成的比例 (0,1] */
   commissionRate?: number
   description?: string
@@ -3966,4 +4292,220 @@ export interface SellerWalletOverview {
   withdrawnAmount?: number
   pendingAmount?: number
   withdrawableAmount?: number
+}
+
+/* ============ v8.11 物业公司经理（property_manager） ============ */
+
+/**
+ * 管理端 /admin/property-managers 列表项与详情（§100.1）
+ * 「住户 + 经理」复合身份，登录 role 仍为 resident，不进 residents.role。
+ */
+export interface PropertyManagerListItem {
+  id: string
+  residentId?: string
+  residentName?: string
+  residentPhone?: string
+  propertyCompanyId?: string
+  propertyCompanyName?: string
+  /** 抽成比例（占单元楼长分成），[0,1) */
+  commissionRate?: number
+  status?: string
+  createdAt?: string
+  description?: string
+}
+
+export type PropertyManagerDetail = PropertyManagerListItem
+
+/** POST /admin/property-managers 请求体（§100.1） */
+export interface CreatePropertyManagerPayload {
+  residentId: string
+  commissionRate?: number
+  status?: string
+}
+
+/** PUT /admin/property-managers/{id} 请求体（§100.1，可选；经理本人不可改自己 commissionRate，返回 91008） */
+export interface UpdatePropertyManagerPayload {
+  commissionRate?: number
+  status?: string
+}
+
+/** GET /property-managers/my（§100.2.1，经理本人） */
+export interface PropertyManagerMy {
+  propertyManagerId?: string
+  residentId?: string
+  residentName?: string
+  propertyCompanyId?: string
+  propertyCompanyName?: string
+  commissionRate?: number
+  status?: string
+}
+
+/** GET /property-managers/my/earnings 收益流水项（§100.2.4） */
+export interface PropertyManagerEarningItem {
+  id: string
+  orderId?: string
+  distributionRecordId?: string
+  /** 流水类型 property_manager_share */
+  entryType?: string
+  /** 正数入账 / 负数冲正 */
+  amount?: number
+  balanceType?: string
+  refRecordId?: string
+  createdAt?: string
+}
+
+/** GET /property-managers/my/wallet 钱包概览（§100.2.5） */
+export interface PropertyManagerWallet {
+  /** 累计抽成收益（含退款冲正负向） */
+  totalEarning?: number
+  withdrawnAmount?: number
+  pendingAmount?: number
+  withdrawableAmount?: number
+}
+
+/** POST /property-managers/my/building-leaders 请求体（复用管理端 DTO，unit 为单元） */
+export interface PropertyManagerBuildingLeaderPayload {
+  residentId: string
+  communityId?: string
+  unit?: string
+  commissionRate?: number
+  description?: string
+  status?: string
+}
+
+/* ============================================================
+ * §106 平台交易明细 v8.20（仅 platform_admin）
+ * 口径要点：金额一律非负数，收支看 direction；不同 unit 不可相加
+ * ============================================================ */
+
+/** 金额单位：元 / 积分 / 物业币 / 食堂定向余额 */
+export type TransactionUnit = 'CNY' | 'POINT' | 'COIN' | 'CNY_DIRECTED'
+
+/** 收/支方向：neutral 表示未发生真实资金移动（待支付、已驳回、失败等） */
+export type TransactionDirection = 'income' | 'expense' | 'neutral'
+
+/** 账本分组 */
+export type TransactionGroup = 'PAYMENT' | 'WALLET' | 'SETTLEMENT' | 'VALUE'
+
+/** 交易分类（11 类） */
+export type TransactionCategory =
+  | 'payment'
+  | 'refund'
+  | 'wallet'
+  | 'distribution'
+  | 'split'
+  | 'withdrawal'
+  | 'transfer'
+  | 'settlement'
+  | 'point'
+  | 'coin'
+  | 'canteen'
+
+/** GET /admin/transactions 查询参数（总览与导出同参，仅无分页） */
+export interface TransactionQueryParams {
+  /** 不传 = 全部物业；platform_admin 可跨物业 */
+  propertyCompanyId?: string
+  /** yyyy-MM-dd / yyyy-MM-dd HH:mm:ss / ISO8601；不传默认 30 天前 */
+  startDate?: string
+  endDate?: string
+  group?: TransactionGroup
+  category?: TransactionCategory
+  direction?: TransactionDirection
+  /** 业务原始状态，如 paid / pending_audit / finished */
+  status?: string
+  /** 最长 100 字：交易ID / 业务单号 / 订单号 / 渠道流水号 / 主体名称 / 说明 / 物业名称 */
+  keyword?: string
+  page?: number
+  pageSize?: number
+}
+
+/** 明细行（§106.3.1） */
+export interface TransactionLedgerItem {
+  /** 来源记录ID；payment / refund 可能共用同一个支付流水ID */
+  id?: string
+  category?: TransactionCategory
+  categoryLabel?: string
+  group?: TransactionGroup
+  groupLabel?: string
+  /** 发生时间 yyyy-MM-dd HH:mm:ss */
+  occurredAt?: string
+  direction?: TransactionDirection
+  directionLabel?: string
+  unit?: TransactionUnit
+  unitLabel?: string
+  /** 金额绝对值（方向看 direction） */
+  amount?: number
+  /** 手续费（提现） */
+  feeAmount?: number
+  /** 实收/实付/净额（支付=现金部分；提现=实际到账；分账=订单总额） */
+  netAmount?: number
+  /** 平台分成/佣金 */
+  platformAmount?: number
+  status?: string
+  statusLabel?: string
+  bizType?: string
+  typeLabel?: string
+  /** 说明或失败原因 */
+  description?: string
+  orderId?: string
+  bizId?: string
+  tradeNo?: string
+  partyType?: string
+  partyId?: string
+  partyName?: string
+  propertyCompanyId?: string
+  propertyCompanyName?: string
+  /** 支付现金部分 */
+  cashAmount?: number
+  pointUsed?: number
+  coinUsed?: number
+  directedUsed?: number
+}
+
+/** 汇总桶：groups[] / categories[] / statusBreakdown[] 共用 */
+export interface TransactionSummaryBucket {
+  group?: TransactionGroup
+  groupLabel?: string
+  category?: TransactionCategory
+  categoryLabel?: string
+  status?: string
+  statusLabel?: string
+  unit?: TransactionUnit
+  unitLabel?: string
+  /** 笔数 */
+  count?: number
+  /** 流水总额（含 neutral） */
+  volumeAmount?: number
+  incomeAmount?: number
+  expenseAmount?: number
+  feeAmount?: number
+  /** 实收/实付合计 */
+  actualAmount?: number
+  platformAmount?: number
+}
+
+/** 日趋势点 */
+export interface TransactionTrendPoint {
+  date?: string
+  unit?: TransactionUnit
+  unitLabel?: string
+  incomeAmount?: number
+  expenseAmount?: number
+  count?: number
+}
+
+/** GET /admin/transactions/overview 响应（§106.3.2） */
+export interface TransactionOverview {
+  /** 实际生效的时间范围与物业 */
+  range?: {
+    start?: string
+    end?: string
+    propertyCompanyId?: string
+  }
+  /** 口径说明：分组合计剔除了重叠分类 */
+  note?: string
+  groups?: TransactionSummaryBucket[]
+  categories?: TransactionSummaryBucket[]
+  statusBreakdown?: TransactionSummaryBucket[]
+  trend?: TransactionTrendPoint[]
 }

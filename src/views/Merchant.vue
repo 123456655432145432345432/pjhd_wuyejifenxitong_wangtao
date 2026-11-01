@@ -1217,7 +1217,11 @@ const pageDesc = computed(() =>
 const viewMode = ref<ViewMode>('property')
 const isPlatformAdmin = computed(() => auth.profile?.role === USER_ROLE.PLATFORM_ADMIN)
 const canKick = computed(
-  () => auth.profile?.role === USER_ROLE.PROPERTY_ADMIN || auth.profile?.role === USER_ROLE.PLATFORM_ADMIN
+  () =>
+    (auth.profile?.role === USER_ROLE.PROPERTY_ADMIN ||
+      auth.profile?.role === USER_ROLE.PLATFORM_ADMIN) &&
+    // v1.2：踢出属高风险操作，额外要 merchant:kickout 权限码
+    auth.hasPermission('merchant:kickout')
 )
 const canManageAdQuota = computed(
   () => auth.profile?.role === USER_ROLE.PROPERTY_ADMIN || auth.profile?.role === USER_ROLE.PLATFORM_ADMIN

@@ -5,14 +5,20 @@
         <h1 class="title">参数配置</h1>
         <p class="desc">
           {{ companyDetail.name ? `${companyDetail.name} · ` : '' }}单物业业务规则（分成、积分、物业币、提现等）。
-          平台盘「我们公司」占比、配送费抽成、提现手续费由<strong>平台管理员</strong>统一控制；
+          <template v-if="isPlatformAdmin">
+            当前为<strong>平台管理员</strong>：可切换物业，分成比例、配送费抽成、提现手续费仅本角色可写。
+          </template>
+          <template v-else>
+            当前为<strong>物业领导</strong>：仅可修改本物业的运营参数（积分/物业币开关、抵扣规则、提现设置）；
+            分成比例与提现手续费为平台专属，页面置灰。
+          </template>
           全平台默认归属/提现粒度见侧栏「平台配置」。
         </p>
       </div>
       <button
         v-if="!isMobile"
         class="btnSave"
-        :disabled="loading || saving || !companyId || pointShareSaveBlocked"
+        :disabled="loading || saving || !companyId"
         @click="handleSave"
       >
         {{ saving ? '保存中...' : '保存全局设置' }}
@@ -186,42 +192,6 @@
               </p>
             </div>
 
-            <details class="fold">
-              <summary>参考比例（不进主分成链）</summary>
-              <div class="shareGrid foldBody">
-                <div class="field">
-                  <label class="label">区域负责人</label>
-                  <div class="inputWrap">
-                    <input
-                      v-model.number="config.regionalLeaderPercent"
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.1"
-                      class="input"
-                      :disabled="!canEditPlatformFinance"
-                    />
-                    <span class="unit">%</span>
-                  </div>
-                </div>
-                <div class="field">
-                  <label class="label">项目负责人</label>
-                  <div class="inputWrap">
-                    <input
-                      v-model.number="config.projectLeaderPercent"
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.1"
-                      class="input"
-                      :disabled="!canEditPlatformFinance"
-                    />
-                    <span class="unit">%</span>
-                  </div>
-                </div>
-              </div>
-            </details>
-
             <p class="cardFoot">
               「我们公司」占比请到
               <RouterLink v-if="isPlatformAdmin" class="inlineLink" :to="{ name: 'platform-share-config' }">
@@ -241,7 +211,7 @@
               </div>
             </div>
 
-            <div class="shareGrid three">
+            <div class="shareGrid">
               <div class="field">
                 <label class="label">我们公司抽成（只读）</label>
                 <div class="inputWrap">
@@ -256,19 +226,26 @@
                   <span class="unit">%</span>
                 </div>
               </div>
+            </div>
+
+            <div class="shareGrid">
               <div class="field">
-                <label class="label">按重量加价</label>
+                <label class="label">利润测算参考值</label>
                 <div class="inputWrap prefix">
                   <span class="prefixText">¥</span>
                   <input
-                    v-model.number="config.deliveryPerKgFee"
+                    v-model.number="config.deliveryBaseFee"
                     type="number"
                     min="0"
                     step="0.01"
                     class="input"
                   />
-                  <span class="unit">/ kg</span>
+                  <span class="unit">/ 单</span>
                 </div>
+                <p class="fieldHint">
+                  仅用于平台商家「利润测算」参考，<strong>不影响住户下单配送费</strong>
+                  （住户配送费按商家 `deliveryFee` 计）。字段名 `deliveryBaseFee`。
+                </p>
               </div>
             </div>
 
@@ -288,9 +265,9 @@
       <section class="section">
         <div class="sectionHead">
           <h2 class="sectionTitle">积分</h2>
-          <p class="sectionDesc">抵扣规则、清零策略，以及消费返积分比例（变更走价格审批）。</p>
+          <p class="sectionDesc">抵扣规则、清零策略。积分分成与兑换比例已按后端最终口径下架（无业务消费方）。</p>
         </div>
-        <div class="grid">
+        <div class="grid single">
           <div class="card">
             <div class="header">
               <div class="icon purple"><IconSvg name="points" /></div>
@@ -328,36 +305,18 @@
               </div>
             </div>
             <div class="field">
-              <label class="label">积分兑换比例</label>
-              <div class="inline">
-                <div class="inputWrap">
-                  <input
-                    v-model.number="config.pointExchangeRate"
-                    type="number"
-                    min="1"
-                    step="1"
-                    class="input"
-                  />
-                </div>
-                <span class="hint">积分 / 1 元</span>
-              </div>
-              <p class="fieldHint">物业级参考值；商家购分报价实际按各商家挂接配置的积分兑换比计算。</p>
-            </div>
-            <div class="field">
-              <label class="label">积分归属</label>
-              <select v-model="config.pointsAttributionMode" class="select">
-                <option v-for="opt in ATTRIBUTION_MODE_OPTIONS" :key="opt.value" :value="opt.value">
-                  {{ opt.label }}
-                </option>
-              </select>
-            </div>
-            <div class="field">
-              <label class="label">奖励金归属</label>
-              <select v-model="config.rewardAttributionMode" class="select">
-                <option v-for="opt in ATTRIBUTION_MODE_OPTIONS" :key="opt.value" :value="opt.value">
-                  {{ opt.label }}
-                </option>
-              </select>
+              <label class="label">归属模式（平台级）</label>
+              <p class="fieldHint">
+                积分归属与奖励金归属是<strong>平台级</strong>参数（`GET/PUT /admin/platform-config`），
+                不按物业公司单独设置。原先放在本页会写进物业配置接口，而后端
+                `UpdatePropertyCompanyRequest` 里没有这两个字段，属于「改了不落库」，故移除。
+                <template v-if="isPlatformAdmin">
+                  请到
+                  <RouterLink class="inlineLink" :to="{ name: 'platform-config' }">平台配置</RouterLink>
+                  修改。
+                </template>
+                <template v-else>该项仅平台管理员可改。</template>
+              </p>
             </div>
             <div class="field">
               <label class="label">清零规则</label>
@@ -369,109 +328,6 @@
             </div>
           </div>
 
-          <div class="card">
-            <div class="header">
-              <div class="icon purple"><IconSvg name="points" /></div>
-              <div class="headerText">
-                <span>积分分成比例</span>
-                <span class="headerSub">
-                  四项合计必须为 100%，{{ isPlatformAdmin ? '保存后直接生效' : '保存时提交价格审批' }}
-                </span>
-              </div>
-            </div>
-            <div class="shareGrid">
-              <div class="field">
-                <label class="label">业主</label>
-                <div class="inputWrap">
-                  <input
-                    v-model.number="pointShare.residentPercent"
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.1"
-                    class="input"
-                    :class="{ inputError: pointShareInvalid }"
-                  />
-                  <span class="unit">%</span>
-                </div>
-              </div>
-              <div class="field">
-                <label class="label">商家</label>
-                <div class="inputWrap">
-                  <input
-                    v-model.number="pointShare.merchantPercent"
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.1"
-                    class="input"
-                    :class="{ inputError: pointShareInvalid }"
-                  />
-                  <span class="unit">%</span>
-                </div>
-              </div>
-              <div class="field">
-                <label class="label">物业币</label>
-                <div class="inputWrap">
-                  <input
-                    v-model.number="pointShare.coinPercent"
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.1"
-                    class="input"
-                    :class="{ inputError: pointShareInvalid }"
-                  />
-                  <span class="unit">%</span>
-                </div>
-              </div>
-              <div class="field">
-                <label class="label">共享</label>
-                <div class="inputWrap">
-                  <input
-                    v-model.number="pointShare.sharedPercent"
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.1"
-                    class="input"
-                    :class="{ inputError: pointShareInvalid }"
-                  />
-                  <span class="unit">%</span>
-                </div>
-              </div>
-            </div>
-            <div class="bar" :class="{ barDanger: pointShareInvalid }">
-              <div
-                class="fill"
-                :class="{ fillDanger: pointShareInvalid }"
-                :style="{ width: `${Math.min(pointShareTotalPercent, 100)}%` }"
-              />
-            </div>
-            <p class="shareTotal" :class="{ error: pointShareInvalid }">
-              合计 {{ pointShareTotalPercent.toFixed(1) }}% / 必须为 100%
-              <span v-if="pointShareInvalid">（请调整后再提交）</span>
-            </p>
-            <p v-if="pointShareDirty && !pointShareInvalid" class="sharePendingHint">
-              <template v-if="isPlatformAdmin">
-                已修改：点「保存全局设置」后直接生效。
-              </template>
-              <template v-else>
-                已修改：点「保存全局设置」将提交价格审批，生效前仍显示原值。
-                <RouterLink class="inlineLink" :to="{ name: 'price-approvals' }">价格审批</RouterLink>
-              </template>
-            </p>
-            <div class="shareActions">
-              <button
-                type="button"
-                class="btnSecondary"
-                :disabled="!pointShareDirty || saving"
-                @click="resetPointShareForm"
-              >
-                还原
-              </button>
-            </div>
-          </div>
         </div>
       </section>
 
@@ -479,7 +335,7 @@
       <section class="section">
         <div class="sectionHead">
           <h2 class="sectionTitle">物业币</h2>
-          <p class="sectionDesc">发放、展示、商城抵扣与使用门槛。</p>
+          <p class="sectionDesc">有效期、展示开关、商城抵扣与使用门槛。发放模式与「新用户默认冻结」已按后端口径下架（无业务消费方）。</p>
         </div>
         <div class="grid">
           <div class="card">
@@ -494,14 +350,6 @@
                   <input v-model.number="config.coinExpiryDays" type="number" min="1" class="input" />
                   <span class="unit">天</span>
                 </div>
-              </div>
-              <div class="field">
-                <label class="label">发放模式</label>
-                <select v-model="config.coinIssueMode" class="select">
-                  <option v-for="opt in COIN_ISSUE_MODE_OPTIONS" :key="opt.value" :value="opt.value">
-                    {{ opt.label }}
-                  </option>
-                </select>
               </div>
             </div>
             <div class="field">
@@ -520,16 +368,22 @@
                 </button>
               </div>
             </div>
-            <div class="field">
+            <div v-if="canEditCoinDisplay" class="field">
               <div class="switchRow">
                 <div>
-                  <div class="label">新用户默认冻结</div>
+                  <div class="label">向住户显示物业币入口</div>
+                  <p class="note">
+                    关闭后住户端隐藏物业币入口（余额、明细、商城抵扣一并不可见）。
+                    本开关独立生效，点击即刻保存，不随「保存全局设置」提交。
+                  </p>
+                  <p v-if="coinDisplayMsg" class="note">{{ coinDisplayMsg }}</p>
                 </div>
                 <button
                   type="button"
                   class="switch"
-                  :class="{ active: config.coinFreezeDefault }"
-                  @click="config.coinFreezeDefault = !config.coinFreezeDefault"
+                  :class="{ active: coinDisplayEnabled }"
+                  :disabled="coinDisplaySaving"
+                  @click="toggleCoinDisplay"
                 >
                   <span class="thumb" />
                 </button>
@@ -546,11 +400,16 @@
               <div class="switchRow">
                 <div>
                   <div class="label">商城可用物业币抵扣</div>
+                  <p v-if="!canEditMallRules" class="note">
+                    商城抵扣规则由物业领导在本小区设置；平台账号只读（后端
+                    `PUT /admin/property-coin/mall-rules` 仅 `property_admin`）。
+                  </p>
                 </div>
                 <button
                   type="button"
                   class="switch"
                   :class="{ active: config.coinMallEnabled }"
+                  :disabled="!canEditMallRules"
                   @click="config.coinMallEnabled = !config.coinMallEnabled"
                 >
                   <span class="thumb" />
@@ -568,6 +427,7 @@
                     max="100"
                     step="1"
                     class="input"
+                    :disabled="!canEditMallRules"
                   />
                   <span class="unit">%</span>
                 </div>
@@ -582,6 +442,7 @@
                     min="0"
                     step="0.01"
                     class="input"
+                    :disabled="!canEditMallRules"
                   />
                 </div>
               </div>
@@ -640,6 +501,7 @@
                     max="168"
                     step="1"
                     class="input"
+                    :disabled="!canEditPlatformFinance"
                   />
                   <span class="unit">小时</span>
                 </div>
@@ -654,6 +516,7 @@
                     max="30"
                     step="1"
                     class="input"
+                    :disabled="!canEditPlatformFinance"
                   />
                   <span class="unit">天</span>
                 </div>
@@ -668,6 +531,7 @@
                     max="30"
                     step="1"
                     class="input"
+                    :disabled="!canEditPlatformFinance"
                   />
                   <span class="unit">天</span>
                 </div>
@@ -676,10 +540,13 @@
             <p class="fieldHint">核实时限只作用于纯团购单；时限内商家未操作则系统自动通过。混装或非团购商品不进核实。冻结期满后不可再申请退货。退款窗口天数不能超过冻结期。</p>
             <p v-if="orderConfigError" class="error">{{ orderConfigError }}</p>
             <p v-if="orderConfigSuccess" class="success">{{ orderConfigSuccess }}</p>
+            <p v-if="!canEditPlatformFinance" class="fieldHint">
+              订单配置为平台级参数，可查看，仅平台管理员（platform_admin）可以修改。
+            </p>
             <button
               type="button"
               class="btnSave compact"
-              :disabled="orderConfigSaving || !companyId"
+              :disabled="orderConfigSaving || !companyId || !canEditPlatformFinance"
               @click="saveOrderConfig"
             >
               {{ orderConfigSaving ? '保存中...' : '保存订单配置' }}
@@ -693,8 +560,8 @@
         <div class="sectionHead">
           <h2 class="sectionTitle">提现与其它</h2>
           <p class="sectionDesc">
-            手续费与自动提现仅平台管理员可改。
-            <template v-if="!canEditPlatformFinance">当前账号只读。</template>
+            提现手续费与费率<strong>仅平台管理员</strong>可改（后端 §1.2）；自动提现开关与周期物业领导可改（仅本物业）。
+            <template v-if="!canEditPlatformFinance">当前账号：手续费只读，自动提现可编辑。</template>
           </p>
         </div>
         <div class="grid">
@@ -739,12 +606,12 @@
               <div class="switchRow">
                 <div>
                   <div class="label">自动提现</div>
+                  <p class="note">物业领导可改本物业设置（后端 §80 按 propertyCompanyId 区分）</p>
                 </div>
                 <button
                   type="button"
                   class="switch"
                   :class="{ active: withdrawSettings.autoEnabled }"
-                  :disabled="!canEditPlatformFinance"
                   @click="withdrawSettings.autoEnabled = !withdrawSettings.autoEnabled"
                 >
                   <span class="thumb" />
@@ -760,7 +627,6 @@
                   min="1"
                   step="1"
                   class="input"
-                  :disabled="!canEditPlatformFinance"
                 />
                 <span class="unit">天</span>
               </div>
@@ -770,7 +636,7 @@
             <button
               type="button"
               class="btnSave compact"
-              :disabled="withdrawSaving || !companyId || !canEditPlatformFinance"
+              :disabled="withdrawSaving || !companyId"
               @click="saveWithdrawSettings"
             >
               {{ withdrawSaving ? '保存中...' : '保存自动提现' }}
@@ -828,7 +694,7 @@
     <div v-if="isMobile" class="mobileSaveBar" :class="{ mobileSaveBarInShell: inMobileShell }">
       <button
         class="btnSave"
-        :disabled="loading || saving || !companyId || pointShareSaveBlocked"
+        :disabled="loading || saving || !companyId"
         @click="handleSave"
       >
         {{ saving ? '保存中...' : '保存全局设置' }}
@@ -841,7 +707,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import IconSvg from '../components/IconSvg.vue'
-import { adminOrderConfigApi, configApi, propertyCoinMallApi, propertyCompanyApi, coinUseConditionApi, coinWithdrawalAdminApi, platformShareApi, priceApprovalApi } from '../api/services'
+import { adminOrderConfigApi, configApi, propertyCoinMallApi, propertyCompanyApi, coinUseConditionApi, coinWithdrawalAdminApi, platformShareApi } from '../api/services'
 import {
   normalizePropertyCompanyDetail,
   rateToFormPercent
@@ -849,17 +715,20 @@ import {
 import { ApiError } from '../api/request'
 import { useAuthStore } from '../stores/auth'
 import type { PropertyCompanyConfig, PropertyCompanyDetail, PropertyCompanyItem } from '../api/types'
-import { API_ERROR_CODE, ATTRIBUTION_MODE, ATTRIBUTION_MODE_OPTIONS, COIN_ISSUE_MODE, COIN_ISSUE_MODE_OPTIONS, COIN_USE_CONDITION, COIN_USE_CONDITION_OPTIONS, PRICE_APPROVAL_ITEM_TYPE, USER_ROLE } from '../constants/enums'
+import { COIN_USE_CONDITION, COIN_USE_CONDITION_OPTIONS, USER_ROLE } from '../constants/enums'
 import { useInMobileShell } from '../composables/useInMobileShell'
 
 const auth = useAuthStore()
 const { isMobile, inMobileShell } = useInMobileShell()
 const isPlatformAdmin = computed(() => auth.profile?.role === USER_ROLE.PLATFORM_ADMIN)
 const isPropertyAdmin = computed(() => auth.profile?.role === USER_ROLE.PROPERTY_ADMIN)
-/** 各角色分成比例、手续费开关、手续费比例：仅平台管理员可写 */
+/** 各角色分成比例、手续费开关、手续费比例：仅平台管理员可写（后端 §1.2 确认） */
 const canEditPlatformFinance = computed(() => isPlatformAdmin.value)
-/** @deprecated 兼容旧名，等同 canEditPlatformFinance */
-const canEditCashShare = canEditPlatformFinance
+/**
+ * 商城抵扣规则：后端 §1.4 确认 `PUT /admin/property-coin/mall-rules`
+ * 仍只允许 property_admin（物业领导），平台账号调用必然 403，故平台侧只读。
+ */
+const canEditMallRules = computed(() => isPropertyAdmin.value && !isPlatformAdmin.value)
 
 const propertyCompanies = ref<PropertyCompanyItem[]>([])
 const selectedPropertyId = ref('')
@@ -871,6 +740,32 @@ const saveError = ref('')
 const saveSuccess = ref('')
 
 const companyDetail = reactive<PropertyCompanyDetail>({ id: '' })
+
+/**
+ * v2（文档 §8）：物业币显示开关，权限码 coin:display_control。
+ * 走 PUT /admin/property-companies/{id}/coin-display，独立保存，不并入「保存全局设置」。
+ * 无该权限码时不渲染开关（与后端 403 口径一致），避免「看得到但点不动」。
+ */
+const canEditCoinDisplay = computed(() => auth.hasPermission('coin:display_control'))
+const coinDisplayEnabled = ref(true)
+const coinDisplaySaving = ref(false)
+const coinDisplayMsg = ref('')
+
+async function toggleCoinDisplay() {
+  if (!companyId.value || coinDisplaySaving.value) return
+  const next = !coinDisplayEnabled.value
+  coinDisplaySaving.value = true
+  coinDisplayMsg.value = ''
+  try {
+    await propertyCompanyApi.setCoinDisplay(companyId.value, next)
+    coinDisplayEnabled.value = next
+    coinDisplayMsg.value = next ? '已开启：住户端显示物业币入口' : '已关闭：住户端隐藏物业币入口'
+  } catch (e) {
+    coinDisplayMsg.value = e instanceof ApiError ? e.message : '切换失败，请稍后重试'
+  } finally {
+    coinDisplaySaving.value = false
+  }
+}
 const companyId = computed(
   () => selectedPropertyId.value || auth.propertyCompanyId || auth.profile?.propertyCompanyId || ''
 )
@@ -901,108 +796,44 @@ const withdrawSaving = ref(false)
 const withdrawError = ref('')
 const withdrawSuccess = ref('')
 
-/** v5.3 积分分成比例（表单用百分比，四项合计必须为 100%）；变更走价格审批 */
-const pointShare = reactive({
-  residentPercent: 0,
-  merchantPercent: 0,
-  coinPercent: 0,
-  sharedPercent: 0
-})
-/** 当前已生效值（用于对比是否 dirty、提交审批 oldValue） */
-const pointShareSaved = reactive({
-  residentPercent: 0,
-  merchantPercent: 0,
-  coinPercent: 0,
-  sharedPercent: 0
-})
-
-const pointShareTotalPercent = computed(
-  () =>
-    Number(pointShare.residentPercent || 0) +
-    Number(pointShare.merchantPercent || 0) +
-    Number(pointShare.coinPercent || 0) +
-    Number(pointShare.sharedPercent || 0)
-)
-const pointShareInvalid = computed(() => {
-  const values = [
-    pointShare.residentPercent,
-    pointShare.merchantPercent,
-    pointShare.coinPercent,
-    pointShare.sharedPercent
-  ].map((value) => Number(value))
-  return (
-    values.some((value) => !Number.isFinite(value) || value < 0 || value > 100) ||
-    Math.abs(pointShareTotalPercent.value - 100) > 0.01
-  )
-})
-
-function ratesClose(a: number, b: number) {
-  return Math.abs(Number(a || 0) - Number(b || 0)) < 0.0001
-}
-
-const pointShareDirty = computed(
-  () =>
-    !ratesClose(pointShare.residentPercent, pointShareSaved.residentPercent) ||
-    !ratesClose(pointShare.merchantPercent, pointShareSaved.merchantPercent) ||
-    !ratesClose(pointShare.coinPercent, pointShareSaved.coinPercent) ||
-    !ratesClose(pointShare.sharedPercent, pointShareSaved.sharedPercent)
-)
-const pointShareSaveBlocked = computed(() => pointShareDirty.value && pointShareInvalid.value)
-
 const config = reactive({
   pointToFeeRatePercent: 1,
   twoYearClearEnabled: false,
   pointEnabled: true,
   coinEnabled: true,
   coinExpiryDays: 365,
-  coinIssueMode: COIN_ISSUE_MODE.AUTO,
-  coinFreezeDefault: false,
   coinMallEnabled: false,
   coinMallMaxRatioPercent: 50,
   coinMallMinAmount: 10,
   deliveryBaseFee: 0.5,
-  deliveryPerKgFee: 0,
   propertySharePercent: 60,
   coordinatorSharePercent: 30,
   sectorLeaderPercent: 60,
   individualLeaderPercent: 50,
-  regionalLeaderPercent: 0,
-  projectLeaderPercent: 0,
   platformSharePercent: 0,
   platformDeliverySharePercent: 0,
   platformWithdrawalFeeSharePercent: 0,
-  pointExchangeRate: 100,
   withdrawalFeeRatePercent: 0.6,
   neighborDailyContactLimit: 3,
-  pointsAttributionMode: ATTRIBUTION_MODE.PROPERTY,
-  rewardAttributionMode: ATTRIBUTION_MODE.PROPERTY
 } as {
   pointToFeeRatePercent: number
   twoYearClearEnabled: boolean
   pointEnabled: boolean
   coinEnabled: boolean
   coinExpiryDays: number
-  coinIssueMode: string
-  coinFreezeDefault: boolean
   coinMallEnabled: boolean
   coinMallMaxRatioPercent: number
   coinMallMinAmount: number
   deliveryBaseFee: number
-  deliveryPerKgFee: number
   propertySharePercent: number
   coordinatorSharePercent: number
   sectorLeaderPercent: number
   individualLeaderPercent: number
-  regionalLeaderPercent: number
-  projectLeaderPercent: number
   platformSharePercent: number
   platformDeliverySharePercent: number
   platformWithdrawalFeeSharePercent: number
-  pointExchangeRate: number
   withdrawalFeeRatePercent: number
   neighborDailyContactLimit: number
-  pointsAttributionMode: string
-  rewardAttributionMode: string
 })
 
 /** 平台盘三档：我们公司 + 物业 + 管理 */
@@ -1116,33 +947,31 @@ function toggleFeeCharge() {
 function mapConfigToForm(apiConfig: PropertyCompanyConfig) {
   config.pointToFeeRatePercent = rateToFormPercent(apiConfig.pointToFeeRate ?? 0.01)
   config.twoYearClearEnabled = apiConfig.twoYearClearEnabled ?? false
-  config.pointEnabled = apiConfig.pointEnabled ?? apiConfig.pointDisplayEnabled ?? true
-  config.coinEnabled = apiConfig.coinEnabled ?? apiConfig.coinDisplayEnabled ?? true
+  /**
+   * 后端 §1.1：详情返回 pointEnabled / coinEnabled，空值按 true。
+   * 不再回退 pointDisplayEnabled / coinDisplayEnabled：
+   * 后两者是独立的「是否对住户展示」开关（coinDisplayEnabled 有自己的接口），
+   * 回退会让「展示关闭」被误判成「功能关闭」，是上一版就被后端点出的覆盖问题。
+   */
+  config.pointEnabled = apiConfig.pointEnabled ?? true
+  config.coinEnabled = apiConfig.coinEnabled ?? true
   config.coinExpiryDays = apiConfig.coinExpiryDays ?? 365
-  config.coinIssueMode = apiConfig.coinIssueMode || COIN_ISSUE_MODE.AUTO
-  config.coinFreezeDefault = apiConfig.coinFreezeDefault ?? false
   config.coinMallEnabled = apiConfig.coinMallEnabled ?? false
   config.coinMallMaxRatioPercent = rateToFormPercent(apiConfig.coinMallMaxRatio ?? 0.5)
   config.coinMallMinAmount = apiConfig.coinMallMinAmount ?? 10
   config.deliveryBaseFee = apiConfig.deliveryBaseFee ?? 0.5
-  config.deliveryPerKgFee = apiConfig.deliveryPerKgFee ?? apiConfig.perKgFee ?? 0
   config.propertySharePercent = rateToFormPercent(apiConfig.propertyShareRate ?? 0.6)
   config.coordinatorSharePercent = rateToFormPercent(apiConfig.coordinatorShareRate ?? 0.3)
   config.sectorLeaderPercent = rateToFormPercent(apiConfig.sectorLeaderRate ?? 0.6)
   config.individualLeaderPercent = rateToFormPercent(apiConfig.individualLeaderRate ?? 0.5)
-  config.regionalLeaderPercent = rateToFormPercent(apiConfig.regionalLeaderRate ?? 0)
-  config.projectLeaderPercent = rateToFormPercent(apiConfig.projectLeaderRate ?? 0)
   config.platformSharePercent = rateToFormPercent(apiConfig.platformShareRate ?? 0)
   config.platformDeliverySharePercent = rateToFormPercent(apiConfig.platformDeliveryShareRate ?? 0)
   config.platformWithdrawalFeeSharePercent = rateToFormPercent(apiConfig.platformWithdrawalFeeShareRate ?? 0)
-  config.pointExchangeRate = apiConfig.pointExchangeRate ?? 100
   config.withdrawalFeeRatePercent = rateToFormPercent(apiConfig.withdrawalFeeRate ?? 0.006)
   if (config.withdrawalFeeRatePercent > 0) {
     lastPositiveFeePercent.value = config.withdrawalFeeRatePercent
   }
   config.neighborDailyContactLimit = apiConfig.neighborDailyContactLimit ?? 3
-  config.pointsAttributionMode = apiConfig.pointsAttributionMode || ATTRIBUTION_MODE.PROPERTY
-  config.rewardAttributionMode = apiConfig.rewardAttributionMode || ATTRIBUTION_MODE.PROPERTY
   loadManagementSplitFromCascade()
 }
 
@@ -1172,30 +1001,35 @@ function toNonNegativeNumber(value: unknown, fallback = 0) {
   return Number.isFinite(n) && n >= 0 ? n : fallback
 }
 
+/**
+ * 参数保存载荷（v8.31 后端最终口径）。
+ *
+ * 只提交后端确认「能落库且已生效」的字段：
+ * - pointEnabled / coinEnabled：P0 已补进 UpdatePropertyCompanyRequest，平台 + 物业领导（本物业）可写；
+ * - coinExpiryDays / pointToFeeRate / twoYearClearEnabled / neighborDailyContactLimit / deliveryBaseFee。
+ *
+ * 已下架字段（后端 §1.4 明确不再接收、详情也不返回）一律不提交：
+ * coinIssueMode、coinFreezeDefault、deliveryPerKgFee、pointExchangeRate、
+ * pointsAttributionMode、rewardAttributionMode、regionalLeaderRate、projectLeaderRate、4 项积分分成。
+ *
+ * coinMall* 不在此处：商城抵扣规则走专用接口 `PUT /admin/property-coin/mall-rules`（仅物业领导）。
+ * coinDisplayEnabled 不在此处：走独立接口 `PUT /{id}/coin-display`，避免覆盖独立开关。
+ */
 function mapFormToConfig(): PropertyCompanyConfig {
   syncCascadeFromManagementSplit()
   const payload: PropertyCompanyConfig = {
     pointEnabled: config.pointEnabled,
-    pointDisplayEnabled: config.pointEnabled,
     coinEnabled: config.coinEnabled,
-    coinDisplayEnabled: config.coinEnabled,
-    coinIssueMode: config.coinIssueMode,
     coinExpiryDays: Math.round(Number(config.coinExpiryDays)),
-    coinFreezeDefault: config.coinFreezeDefault,
-    // 平台管理员无 mall-rules 写权限，统一经物业配置落库；物业管理员也会同步写一份兜底
-    coinMallEnabled: config.coinMallEnabled,
-    coinMallMaxRatio: percentToRate(config.coinMallMaxRatioPercent),
-    coinMallMinAmount: toNonNegativeNumber(config.coinMallMinAmount),
     deliveryBaseFee: toNonNegativeNumber(config.deliveryBaseFee),
-    deliveryPerKgFee: toNonNegativeNumber(config.deliveryPerKgFee),
     pointToFeeRate: percentToRate(config.pointToFeeRatePercent),
     twoYearClearEnabled: config.twoYearClearEnabled,
-    neighborDailyContactLimit: Math.round(Number(config.neighborDailyContactLimit)),
-    pointExchangeRate: toNonNegativeNumber(config.pointExchangeRate, 100),
-    pointsAttributionMode: config.pointsAttributionMode,
-    rewardAttributionMode: config.rewardAttributionMode
+    neighborDailyContactLimit: Math.round(Number(config.neighborDailyContactLimit))
   }
-  // 分成比例 + 手续费：仅平台管理员写入；三档绝对比例（含我们公司），对齐 v8.2 / 97006
+  /**
+   * 分成比例 + 手续费：后端 §1.2 确认仅 platform_admin 可写，物业领导传入直接 403 20004。
+   * 因此只在平台账号下附加，物业领导保存时完全不出现这些键。
+   */
   if (canEditPlatformFinance.value) {
     payload.withdrawalFeeRate = percentToRate(config.withdrawalFeeRatePercent)
     payload.platformShareRate = percentToRate(config.platformSharePercent)
@@ -1203,8 +1037,6 @@ function mapFormToConfig(): PropertyCompanyConfig {
     payload.coordinatorShareRate = percentToRate(config.coordinatorSharePercent)
     payload.sectorLeaderRate = percentToRate(config.sectorLeaderPercent)
     payload.individualLeaderRate = percentToRate(config.individualLeaderPercent)
-    payload.regionalLeaderRate = percentToRate(config.regionalLeaderPercent)
-    payload.projectLeaderRate = percentToRate(config.projectLeaderPercent)
   }
   return payload
 }
@@ -1223,66 +1055,6 @@ function applyMallRules(rules: {
   }
 }
 
-function applyPointShareFromDetail(detail: PropertyCompanyDetail, options?: { keepLocalIfEmpty?: boolean }) {
-  const next = {
-    residentPercent: rateToFormPercent(detail.residentPointShareRate),
-    merchantPercent: rateToFormPercent(detail.merchantPointShareRate),
-    coinPercent: rateToFormPercent(detail.coinPointShareRate),
-    sharedPercent: rateToFormPercent(detail.sharedPointShareRate)
-  }
-  const remoteSum =
-    next.residentPercent + next.merchantPercent + next.coinPercent + next.sharedPercent
-  const localSum =
-    Number(pointShareSaved.residentPercent || 0) +
-    Number(pointShareSaved.merchantPercent || 0) +
-    Number(pointShareSaved.coinPercent || 0) +
-    Number(pointShareSaved.sharedPercent || 0)
-  // 详情未带回四项（或被后续部分 PUT 冲成 0）时，保留本地已保存值，避免表单被刷成全 0
-  if (options?.keepLocalIfEmpty && remoteSum < 0.01 && localSum > 0.01) {
-    Object.assign(pointShare, { ...pointShareSaved })
-    return
-  }
-  Object.assign(pointShare, next)
-  Object.assign(pointShareSaved, next)
-}
-
-function mapPointShareToPayload() {
-  return {
-    residentPointShareRate: percentToRate(Number(pointShare.residentPercent) || 0),
-    merchantPointShareRate: percentToRate(Number(pointShare.merchantPercent) || 0),
-    coinPointShareRate: percentToRate(Number(pointShare.coinPercent) || 0),
-    sharedPointShareRate: percentToRate(Number(pointShare.sharedPercent) || 0)
-  }
-}
-
-function mapSavedPointShareToPayload() {
-  return {
-    residentPointShareRate: percentToRate(Number(pointShareSaved.residentPercent) || 0),
-    merchantPointShareRate: percentToRate(Number(pointShareSaved.merchantPercent) || 0),
-    coinPointShareRate: percentToRate(Number(pointShareSaved.coinPercent) || 0),
-    sharedPointShareRate: percentToRate(Number(pointShareSaved.sharedPercent) || 0)
-  }
-}
-
-function resetPointShareForm() {
-  Object.assign(pointShare, { ...pointShareSaved })
-}
-
-async function submitPointShareApproval(propertyCompanyId: string) {
-  const oldValue = JSON.stringify(mapSavedPointShareToPayload())
-  const newValue = JSON.stringify(mapPointShareToPayload())
-  await priceApprovalApi.create({
-    // 平台管理员提交必须带物业公司；领导由后端取绑定公司
-    ...(isPlatformAdmin.value ? { propertyCompanyId } : {}),
-    itemType: PRICE_APPROVAL_ITEM_TYPE.RESIDENT_SHARE_RATE,
-    itemId: propertyCompanyId,
-    oldValue,
-    newValue,
-    reason: '参数配置：调整积分分成比例（业主/商家/物业币/共享）'
-  })
-  // 未生效前表单回退到当前已生效值，避免误以为已保存
-  resetPointShareForm()
-}
 
 function applyDetail(raw: Partial<PropertyCompanyDetail & PropertyCompanyConfig>, fallbackId?: string) {
   const detail = normalizePropertyCompanyDetail(raw, fallbackId || companyId.value || '')
@@ -1295,18 +1067,17 @@ function applyDetail(raw: Partial<PropertyCompanyDetail & PropertyCompanyConfig>
     status: detail.status,
     communityCount: detail.communityCount,
     communities: detail.communities || [],
-    admins: detail.admins || [],
-    residentPointShareRate: detail.residentPointShareRate,
-    merchantPointShareRate: detail.merchantPointShareRate,
-    coinPointShareRate: detail.coinPointShareRate,
-    sharedPointShareRate: detail.sharedPointShareRate,
-    regionalLeaderRate: detail.regionalLeaderRate,
-    projectLeaderRate: detail.projectLeaderRate
+    admins: detail.admins || []
   })
+  /**
+   * v8.31：详情接口已新增返回 pointEnabled / coinEnabled（后端 P0）。
+   * 这两个字段在响应根层级，不在 config 子对象里，必须显式回填，
+   * 否则开关永远显示默认的「开启」，用户看不出实际状态。
+   */
   mapConfigToForm({
     ...(detail.config || {}),
-    regionalLeaderRate: detail.config?.regionalLeaderRate ?? detail.regionalLeaderRate,
-    projectLeaderRate: detail.config?.projectLeaderRate ?? detail.projectLeaderRate
+    pointEnabled: detail.pointEnabled ?? detail.config?.pointEnabled,
+    coinEnabled: detail.coinEnabled ?? detail.config?.coinEnabled
   })
 }
 
@@ -1323,7 +1094,7 @@ async function loadPlatformShareReadonlyValues(propertyCompanyId: string) {
   }
 }
 
-async function loadDetail(options?: { silent?: boolean; keepPointShareIfEmpty?: boolean }) {
+async function loadDetail(options?: { silent?: boolean }) {
   const id = companyId.value
   if (!id) {
     loadError.value = isPlatformAdmin.value
@@ -1336,9 +1107,11 @@ async function loadDetail(options?: { silent?: boolean; keepPointShareIfEmpty?: 
   try {
     const detail = await configApi.propertyCompany(id)
     applyDetail(detail, id)
-    applyPointShareFromDetail(detail, { keepLocalIfEmpty: options?.keepPointShareIfEmpty })
+    // v2：后端未下发该字段时按「显示」处理，避免老环境把开关默认显示为关闭而误导
+    coinDisplayEnabled.value = detail.coinDisplayEnabled !== false
     applyCoinUseFromDetail(detail)
     applyWithdrawSettingsFromDetail(detail)
+    await loadWithdrawSettings(id)
     // 配置无独立 GET；详情已含字段，不再对 /config 发 GET（会 405）
     try {
       const mallRules = await propertyCoinMallApi.getRules(id)
@@ -1370,6 +1143,27 @@ function applyWithdrawSettingsFromDetail(detail: PropertyCompanyDetail) {
   }
   if (detail.autoWithdrawalPeriodDays != null) {
     withdrawSettings.periodDays = Number(detail.autoWithdrawalPeriodDays) || 7
+  }
+}
+
+/**
+ * §80.1 提现设置回显。
+ * 详情里的 autoWithdrawalEnabled / autoWithdrawalPeriodDays 是同一组库字段的兜底，
+ * 但 feeRate 只有本接口返回，所以优先用它，失败再保留详情值。
+ */
+async function loadWithdrawSettings(id: string) {
+  try {
+    const res = await coinWithdrawalAdminApi.getSettings(id)
+    if (res.autoEnabled !== undefined) withdrawSettings.autoEnabled = Boolean(res.autoEnabled)
+    if (res.periodDays != null) withdrawSettings.periodDays = Number(res.periodDays) || 7
+    if (res.feeRate != null) {
+      config.withdrawalFeeRatePercent = rateToFormPercent(res.feeRate)
+      if (config.withdrawalFeeRatePercent > 0) {
+        lastPositiveFeePercent.value = config.withdrawalFeeRatePercent
+      }
+    }
+  } catch {
+    // 接口未部署时保留详情字段回显
   }
 }
 
@@ -1408,6 +1202,10 @@ async function loadOrderConfig() {
 
 async function saveOrderConfig() {
   if (orderConfigSaving.value || !companyId.value) return
+  if (!canEditPlatformFinance.value) {
+    orderConfigError.value = '仅平台管理员可修改订单配置'
+    return
+  }
   const hours = Number(orderConfig.merchantVerificationHours) || 0
   const freezeDays = Number(orderConfig.freezeDays) || 0
   const refundWindowDays = Number(orderConfig.refundWindowDays) || 0
@@ -1448,7 +1246,7 @@ async function saveOrderConfig() {
 }
 
 async function saveWithdrawSettings() {
-  if (withdrawSaving.value || !canEditPlatformFinance.value) return
+  if (withdrawSaving.value) return
   const id = companyId.value
   if (!id) return
   withdrawSaving.value = true
@@ -1460,17 +1258,14 @@ async function saveWithdrawSettings() {
   }
   try {
     try {
-      const res = await coinWithdrawalAdminApi.updateSettings(payload)
+      const res = await coinWithdrawalAdminApi.updateSettings(payload, id)
       withdrawSettings.autoEnabled = res.autoEnabled ?? withdrawSettings.autoEnabled
       withdrawSettings.periodDays = res.periodDays ?? withdrawSettings.periodDays
       withdrawSettings.feeRate = res.feeRate ?? withdrawSettings.feeRate
     } catch (e) {
-      // 测服可能未挂 §80 settings；回退写物业详情字段
+      // 不再回退到 §14.6：后端已确认它与 admin 共用同一 DTO，回退写入同样被忽略，只会制造「保存成功」假象
       if (!(e instanceof ApiError) || (e.code !== 404 && e.code !== 405)) throw e
-      await propertyCompanyApi.update(id, {
-        autoWithdrawalEnabled: payload.autoEnabled,
-        autoWithdrawalPeriodDays: payload.periodDays
-      })
+      throw new ApiError(404, '测试服未部署自动提现设置接口（§80），当前无法保存该项')
     }
     withdrawSuccess.value = '提现设置已保存（手续费比例请一并点「保存全局设置」落库）'
   } catch (e) {
@@ -1482,7 +1277,7 @@ async function saveWithdrawSettings() {
 
 async function handleSave() {
   const id = companyId.value
-  if (!id || saving.value || pointShareSaveBlocked.value) return
+  if (!id || saving.value) return
   if (canEditPlatformFinance.value && poolTierWarn.value) {
     saveError.value = '平台盘三档（我们公司 + 物业 + 管理盘）合计须约 100% 后再保存'
     return
@@ -1490,49 +1285,13 @@ async function handleSave() {
   saving.value = true
   saveError.value = ''
   saveSuccess.value = ''
-  const expectedExchange = toNonNegativeNumber(config.pointExchangeRate, 100)
-  const expectedPerKg = toNonNegativeNumber(config.deliveryPerKgFee)
-  const shareMessages: string[] = []
+  const notices: string[] = []
   try {
-    // 先落库现金分成（v8.2：三档绝对值 + 97006）
-    await configApi.updateConfig(id, mapFormToConfig())
-
-    // v5.3：平台管理员直接修改；物业管理员提交价格审批
-    // 注意：PUT 物业详情若只带部分字段，测服可能把未传的积分分成冲成 0——兑换比/配送费与分成合并一次提交
-    let pointShareJustSaved = false
-    if (pointShareDirty.value) {
-      try {
-        if (isPlatformAdmin.value) {
-          await propertyCompanyApi.update(id, {
-            ...mapPointShareToPayload(),
-            pointExchangeRate: expectedExchange,
-            deliveryPerKgFee: expectedPerKg
-          })
-          Object.assign(pointShareSaved, { ...pointShare })
-          pointShareJustSaved = true
-          shareMessages.push('积分分成比例已直接生效')
-        } else {
-          await submitPointShareApproval(id)
-          shareMessages.push('积分分成比例已提交价格审批，待领导通过后生效')
-        }
-      } catch (e) {
-        const actionLabel = isPlatformAdmin.value ? '积分分成修改' : '积分分成审批提交'
-        if (e instanceof ApiError && e.code === 97006) {
-          saveError.value = `${actionLabel}失败：${e.message || '商品平台盘一级比例合计必须为 100%'}`
-        } else {
-          saveError.value =
-            e instanceof ApiError && e.errorCode === API_ERROR_CODE.INVALID_SHARE_RATE_TOTAL
-              ? `${actionLabel}失败：业主、商家、物业币和共享四项合计必须为 100%`
-              : e instanceof ApiError
-                ? `${actionLabel}失败：${e.message}`
-                : `${actionLabel}失败`
-        }
-        return
-      }
-    }
-
-    // PUT /admin/property-coin/mall-rules 仅 property_admin；平台管理员走物业配置接口
-    if (isPropertyAdmin.value) {
+    /**
+     * 商城抵扣规则走专用接口，后端 §1.4 确认只允许 property_admin（物业领导）：
+     * 平台账号调用必然 403，因此只在可编辑时发送，且失败不阻断主保存。
+     */
+    if (canEditMallRules.value) {
       try {
         await propertyCoinMallApi.updateRules({
           propertyCompanyId: id,
@@ -1541,51 +1300,28 @@ async function handleSave() {
           coinMallMinAmount: toNonNegativeNumber(config.coinMallMinAmount)
         })
       } catch (e) {
-        console.warn('mall-rules update failed, fallback to company config', e)
+        console.warn('mall-rules update failed', e)
+        notices.push('商城抵扣规则未保存（接口失败），其余配置已保存')
       }
     }
-    try {
-      await configApi.updateConfig(id, {
-        pointExchangeRate: expectedExchange,
-        deliveryPerKgFee: expectedPerKg
-      })
-    } catch (e) {
-      console.warn('focused exchange/perKg patch failed', e)
-    }
-    // 未改积分分成时才单独写兑换比；已与分成合并提交过则跳过，避免二次 PUT 冲掉分成
-    if (!pointShareJustSaved) {
-      try {
-        await propertyCompanyApi.update(id, {
-          pointExchangeRate: expectedExchange,
-          deliveryPerKgFee: expectedPerKg
-        })
-      } catch (e) {
-        console.warn('property-company exchange/perKg update failed', e)
-      }
-    }
+
+    /**
+     * 主保存：PATCH /admin/property-companies/{id}/config。
+     * 平台账号额外携带分成/手续费（后端确认仅平台可写）；
+     * 物业领导不发送这些键，避免 403 20004 导致整单保存失败。
+     */
+    await configApi.updateConfig(id, mapFormToConfig())
+
     if (isPlatformAdmin.value) {
       auth.setPropertyCompanyId(id)
     }
-    await loadDetail({ silent: true, keepPointShareIfEmpty: pointShareJustSaved })
-    const exchangeMismatch = Math.abs(Number(config.pointExchangeRate) - expectedExchange) > 0.0001
-    const perKgMismatch = Math.abs(Number(config.deliveryPerKgFee) - expectedPerKg) > 0.0001
-    if (exchangeMismatch || perKgMismatch) {
-      saveError.value =
-        '保存请求已发出，但部分字段回显未更新。请确认测试服已部署最新版本，并可在浏览器网络面板核对配置保存请求。'
-      saveSuccess.value = shareMessages.join('；')
-    } else {
-      saveSuccess.value = shareMessages.length
-        ? `配置已保存。${shareMessages.join('；')}`
-        : '配置已保存'
-    }
+    await loadDetail({ silent: true })
+    saveSuccess.value = notices.length ? `配置已保存。${notices.join('；')}` : '配置已保存'
   } catch (e) {
-    if (shareMessages.length) {
-      saveSuccess.value = shareMessages.join('；')
-      saveError.value = e instanceof ApiError
-        ? `部分配置已保存，但后续步骤失败：${e.message}`
-        : '部分配置已保存，但后续步骤暂未完成，请重试'
-    } else if (e instanceof ApiError && e.code === 97006) {
+    if (e instanceof ApiError && e.code === 97006) {
       saveError.value = e.message || '分账保存失败：商品平台盘一级比例（我们公司+物业+管理盘）合计须为 100%'
+    } else if (e instanceof ApiError && e.code === 20004) {
+      saveError.value = '当前账号无权修改分成比例或提现手续费（平台专属参数），请联系平台管理员'
     } else {
       saveError.value = e instanceof ApiError ? e.message : '保存失败，请稍后重试'
     }
@@ -1593,6 +1329,8 @@ async function handleSave() {
     saving.value = false
   }
 }
+
+
 
 async function loadPropertyCompanies() {
   if (!isPlatformAdmin.value) return
@@ -1643,6 +1381,8 @@ onMounted(async () => {
 .sectionDesc { margin: 0; font-size: 13px; color: #8c8c9a; line-height: 1.55; max-width: 720px; }
 .stack { display: flex; flex-direction: column; gap: 16px; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+/* 积分区块下架积分分成卡后只剩一张卡，单列铺满，避免半宽留白 */
+.grid.single { grid-template-columns: 1fr; }
 .metaGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
 
 .card { background: #ffffff; border-radius: 12px; padding: 22px 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }

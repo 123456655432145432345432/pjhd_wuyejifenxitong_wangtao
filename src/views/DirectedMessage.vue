@@ -31,6 +31,38 @@
       </template>
     </div>
 
+    <div v-if="canViewStats" class="card statsCard">
+      <div class="cardHead">发送统计</div>
+      <div v-if="statsLoading" class="hint">加载中...</div>
+      <p v-else-if="statsError" class="error">{{ statsError }}</p>
+      <div v-else class="statsGrid">
+        <div class="statItem">
+          <span class="statValue">{{ stats.taskCount ?? 0 }}</span>
+          <span class="statLabel">任务数</span>
+        </div>
+        <div class="statItem">
+          <span class="statValue">{{ stats.recipientCount ?? 0 }}</span>
+          <span class="statLabel">触达</span>
+        </div>
+        <div class="statItem">
+          <span class="statValue">{{ stats.readCount ?? 0 }}</span>
+          <span class="statLabel">已读</span>
+        </div>
+        <div class="statItem">
+          <span class="statValue">{{ readRatePercent }}</span>
+          <span class="statLabel">已读率</span>
+        </div>
+        <div class="statItem">
+          <span class="statValue">{{ stats.todayTaskCount ?? 0 }}</span>
+          <span class="statLabel">今日发送</span>
+        </div>
+        <div class="statItem">
+          <span class="statValue">{{ stats.last7DaysTaskCount ?? 0 }}</span>
+          <span class="statLabel">近 7 天</span>
+        </div>
+      </div>
+    </div>
+
     <div class="grid">
       <div class="card">
         <div class="cardHead">发送定向消息</div>
@@ -276,6 +308,7 @@ import { ApiError } from '../api/request'
 import { useIsMobile } from '../composables/useIsMobile'
 import type {
   AgeBracketItem,
+  DirectedMessageStats,
   DirectedMessageTaskItem,
   DirectedMessageRecipientItem,
   ProductItem,
@@ -830,8 +863,34 @@ async function loadProducts() {
   }
 }
 
+/**
+ * v2（文档 §8 / §10.3）：定向消息统计，权限码 directed_message:stats。
+ * 无该码的账号不显示统计卡片，与后端 403 口径一致（避免「看得到卡片但拿不到数」）。
+ */
+const canViewStats = computed(() => auth.hasPermission('directed_message:stats'))
+const stats = ref<DirectedMessageStats>({})
+const statsLoading = ref(false)
+const statsError = ref('')
+const readRatePercent = computed(() => {
+  const rate = stats.value.readRate
+  return typeof rate === 'number' ? `${(rate * 100).toFixed(1)}%` : '—'
+})
+
+async function loadStats() {
+  if (!canViewStats.value) return
+  statsLoading.value = true
+  statsError.value = ''
+  try {
+    stats.value = (await directedMessageApi.getStats()) || {}
+  } catch (e) {
+    statsError.value = e instanceof ApiError ? e.message : '统计加载失败'
+  } finally {
+    statsLoading.value = false
+  }
+}
+
 onMounted(async () => {
-  await Promise.all([loadBuildingOptions(), loadAgeBrackets(), loadProducts(), loadTasks(1)])
+  await Promise.all([loadBuildingOptions(), loadAgeBrackets(), loadProducts(), loadTasks(1), loadStats()])
 })
 
 watch(detailOpen, (open, wasOpen) => {
@@ -849,6 +908,18 @@ watch(detailOpen, (open, wasOpen) => {
 .grid { display: grid; grid-template-columns: 1fr 1.2fr; gap: 20px; }
 @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } }
 .card, .ageCard { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+.statsCard { margin-bottom: 20px; }
+.statsGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 16px; }
+.statItem {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: #f7f7fb;
+}
+.statValue { font-size: 20px; font-weight: 600; color: #1f1f2e; }
+.statLabel { font-size: 12px; color: #8c8c9a; }
 .cardHead { font-size: 15px; font-weight: 500; color: #5c5c9e; margin-bottom: 20px; }
 .form { display: flex; flex-direction: column; gap: 16px; }
 .field { display: flex; flex-direction: column; gap: 8px; }

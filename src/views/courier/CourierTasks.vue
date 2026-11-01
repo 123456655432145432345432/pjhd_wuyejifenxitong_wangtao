@@ -191,7 +191,7 @@
               <label class="label">送达凭证（可选，最多 5 张）</label>
               <MediaUploader
                 v-model="completeForm.proofUrls"
-                category="proof"
+                :category="FILE_CATEGORY.DELIVERY_PROOF"
                 accept="image"
                 :max="5"
               />
@@ -224,6 +224,7 @@ import {
   COURIER_TASK_STATUS_OPTIONS,
   DELIVERY_STATUS,
   DELIVERY_STATUS_LABEL,
+  FILE_CATEGORY,
   getEnumLabel
 } from '../../constants/enums'
 import { useIsMobile } from '../../composables/useIsMobile'

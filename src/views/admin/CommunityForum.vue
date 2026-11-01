@@ -10,6 +10,7 @@
     <div class="tabs">
       <button class="tab" :class="{ active: tab === 'posts' }" @click="switchTab('posts')">帖子管理</button>
       <button class="tab" :class="{ active: tab === 'reports' }" @click="switchTab('reports')">举报处理</button>
+      <button class="tab" :class="{ active: tab === 'bans' }" @click="switchTab('bans')">禁言名单</button>
     </div>
 
     <div v-if="tab === 'posts'" class="panel">
@@ -46,17 +47,30 @@
           <tr v-for="item in posts" :key="item.id">
             <td>{{ item.authorName || item.authorId || '—' }}</td>
             <td class="contentCell">{{ item.content || '—' }}</td>
-            <td>{{ getEnumLabel(COMMUNITY_POST_STATUS_LABEL, item.status) }}</td>
+            <td>
+              {{ getEnumLabel(COMMUNITY_POST_STATUS_LABEL, item.status) }}
+              <span v-if="item.shadowBanned" class="shadowTag">影子封禁</span>
+            </td>
             <td>{{ item.likeCount ?? 0 }} / {{ item.commentCount ?? 0 }}</td>
             <td>{{ item.createdAt || '—' }}</td>
             <td>
-              <button class="linkBtn" @click="openDeleteComment(item)">删评论</button>
+              <button v-permission="'community:manage'" class="linkBtn" @click="openDeleteComment(item)">删评论</button>
               <button
+                v-permission="'community:manage'"
                 class="linkBtn danger"
                 :disabled="item.status === COMMUNITY_POST_STATUS.DELETED"
                 @click="deletePost(item)"
               >
                 删帖
+              </button>
+              <button
+                v-if="item.authorId"
+                v-permission="'community:manage'"
+                class="linkBtn warn"
+                :disabled="banning"
+                @click="openBanModal(item.authorId, item.authorName)"
+              >
+                禁言作者
               </button>
             </td>
           </tr>
@@ -70,7 +84,7 @@
       </div>
     </div>
 
-    <div v-else class="panel">
+    <div v-else-if="tab === 'reports'" class="panel">
       <div class="toolbar">
         <select v-model="reportStatus" class="input select" @change="loadReports(1)">
           <option v-for="opt in COMMUNITY_REPORT_STATUS_OPTIONS" :key="opt.value || 'all'" :value="opt.value">
@@ -108,6 +122,7 @@
             <td>
               <button
                 v-if="item.status === COMMUNITY_REPORT_STATUS.PENDING"
+                v-permission="'community:manage'"
                 class="linkBtn"
                 @click="openHandleReport(item)"
               >
@@ -125,6 +140,115 @@
         <button class="pageBtn" :disabled="reportPage >= reportTotalPages || loading" @click="loadReports(reportPage + 1)">&gt;</button>
       </div>
     </div>
+
+    <!-- v8.14 影子封禁：被禁用户完全无感知，管理端才可标记与管理 -->
+    <div v-else class="panel">
+      <div class="toolbar">
+        <select v-model="banStatus" class="input select" @change="loadBans(1)">
+          <option v-for="opt in FORUM_BAN_STATUS_OPTIONS" :key="opt.value || 'all'" :value="opt.value">
+            {{ opt.label }}
+          </option>
+        </select>
+        <button class="btnPrimary" :disabled="loading" @click="loadBans(1)">刷新</button>
+        <button v-permission="'community:manage'" class="btnPrimary" @click="openBanModal()">下发禁言</button>
+      </div>
+      <p class="hintInline">
+        影子封禁生效后：该住户仍可正常发帖评论且自己可见，但其他人均不可见。移动端不出现任何「已禁言」提示。
+      </p>
+
+      <p v-if="banSuccess" class="bannerSuccess">{{ banSuccess }}</p>
+      <div v-if="loading" class="hint">加载中...</div>
+      <p v-else-if="error" class="error">{{ error }}</p>
+      <table v-else-if="bans.length" class="table">
+        <thead>
+          <tr>
+            <th>住户</th>
+            <th>手机号</th>
+            <th>原因</th>
+            <th>状态</th>
+            <th>到期时间</th>
+            <th>下发时间</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="item in bans" :key="item.id">
+            <td>{{ item.residentName || item.residentId || '—' }}</td>
+            <td>{{ item.residentPhone || '—' }}</td>
+            <td class="contentCell">{{ item.reason || '—' }}</td>
+            <td>
+              <span class="statusDot" :class="banStatusClass(item.status)">
+                {{ getEnumLabel(FORUM_BAN_STATUS_LABEL, item.status, '—') }}
+              </span>
+            </td>
+            <td>{{ item.expiresAt || '永久' }}</td>
+            <td>{{ item.createdAt || '—' }}</td>
+            <td class="actions">
+              <button
+                v-if="item.status === FORUM_BAN_STATUS.ACTIVE && item.residentId"
+                v-permission="'community:manage'"
+                type="button"
+                class="linkBtn"
+                :disabled="liftingId === item.residentId"
+                @click="liftBan(item.residentId, item.residentName)"
+              >
+                {{ liftingId === item.residentId ? '解除中...' : '解除禁言' }}
+              </button>
+              <span v-else class="mutedCell">—</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <p v-else class="hint">暂无禁言记录</p>
+      <div v-if="banTotalPages > 1" class="pagination">
+        <button class="pageBtn" :disabled="banPage <= 1 || loading" @click="loadBans(banPage - 1)">&lt;</button>
+        <span class="pageInfo">{{ banPage }} / {{ banTotalPages }}</span>
+        <button class="pageBtn" :disabled="banPage >= banTotalPages || loading" @click="loadBans(banPage + 1)">&gt;</button>
+      </div>
+    </div>
+
+    <Teleport to="body">
+      <div v-if="banModalOpen" class="modalOverlay" @click.self="closeBanModal">
+        <div class="modal">
+          <div class="modalHeader">
+            <h3 class="modalTitle">下发禁言</h3>
+            <button class="modalClose" @click="closeBanModal">&times;</button>
+          </div>
+          <div class="modalBody">
+            <div v-if="banTargetName" class="auditInfo">
+              <div class="infoRow">
+                <span class="infoLabel">目标住户</span>
+                <span>{{ banTargetName }}</span>
+              </div>
+            </div>
+            <div v-else class="field">
+              <label class="label">选择住户</label>
+              <ResidentSearchSelect
+                v-model="banForm.residentId"
+                auto-open
+                @select="onBanResidentSelect"
+              />
+            </div>
+            <div class="field">
+              <label class="label">禁言到期时间</label>
+              <input v-model="banForm.expiresAt" type="datetime-local" class="input" />
+              <p class="fieldHint">留空表示永久禁言；到期后由后端每 10 分钟扫描自动解除。</p>
+            </div>
+            <div class="field">
+              <label class="label">原因（可选）</label>
+              <input v-model="banForm.reason" type="text" class="input" placeholder="如：多次发布广告" />
+            </div>
+            <p v-if="formError" class="error">{{ formError }}</p>
+            <div class="modalFooter">
+              <button class="btnSecondary" @click="closeBanModal">取消</button>
+              <button class="btnPrimary" :disabled="banning" @click="submitBan">
+                {{ banning ? '提交中...' : '确认禁言' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
     <Teleport to="body">
       <div v-if="commentModalOpen" class="modalOverlay" @click.self="closeCommentModal">
@@ -244,10 +368,19 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+import ResidentSearchSelect from '../../components/ResidentSearchSelect.vue'
 import { communityForumAdminApi } from '../../api/services'
-import type { CommunityCommentItem, CommunityPostItem, ContentReportItem } from '../../api/types'
+import type {
+  CommunityCommentItem,
+  CommunityPostItem,
+  ContentReportItem,
+  ForumBanItem,
+  ResidentItem
+} from '../../api/types'
 import { ApiError } from '../../api/request'
+import { vPermission } from '../../directives/permission'
+import { resolveResidentDisplayName } from '../../api/mappers'
 import {
   COMMUNITY_COMMENT_STATUS,
   COMMUNITY_POST_STATUS,
@@ -260,11 +393,14 @@ import {
   COMMUNITY_REPORT_STATUS_OPTIONS,
   COMMUNITY_REPORT_TARGET,
   COMMUNITY_REPORT_TARGET_LABEL,
+  FORUM_BAN_STATUS,
+  FORUM_BAN_STATUS_LABEL,
+  FORUM_BAN_STATUS_OPTIONS,
   getEnumLabel
 } from '../../constants/enums'
 
 const PAGE_SIZE = 20
-const tab = ref<'posts' | 'reports'>('posts')
+const tab = ref<'posts' | 'reports' | 'bans'>('posts')
 const loading = ref(false)
 const error = ref('')
 
@@ -278,6 +414,20 @@ const reports = ref<ContentReportItem[]>([])
 const reportStatus = ref('')
 const reportPage = ref(1)
 const reportTotalPages = ref(1)
+
+/** v8.14 影子封禁名单 */
+const bans = ref<ForumBanItem[]>([])
+const banStatus = ref('')
+const banPage = ref(1)
+const banTotalPages = ref(1)
+const banModalOpen = ref(false)
+const banning = ref(false)
+/** 正在解除禁言的住户，用于按钮 loading 与防重复点击 */
+const liftingId = ref('')
+const banSuccess = ref('')
+/** 从帖子行「禁言作者」进入时已知目标，跳过住户搜索 */
+const banTargetName = ref('')
+const banForm = reactive({ residentId: '', expiresAt: '', reason: '' })
 
 const commentModalOpen = ref(false)
 const commentPost = ref<CommunityPostItem | null>(null)
@@ -332,11 +482,110 @@ async function loadReports(page = reportPage.value) {
   }
 }
 
-function switchTab(next: 'posts' | 'reports') {
+async function loadBans(page = banPage.value) {
+  loading.value = true
+  error.value = ''
+  try {
+    const res = await communityForumAdminApi.listForumBans({
+      page,
+      pageSize: PAGE_SIZE,
+      status: banStatus.value || undefined
+    })
+    bans.value = res.list || []
+    banPage.value = res.pagination?.page ?? page
+    banTotalPages.value = res.pagination?.totalPages ?? 1
+  } catch (e) {
+    error.value = e instanceof ApiError ? e.message : '禁言名单加载失败'
+    bans.value = []
+  } finally {
+    loading.value = false
+  }
+}
+
+function banStatusClass(status?: string) {
+  if (status === FORUM_BAN_STATUS.ACTIVE) return 'active'
+  if (status === FORUM_BAN_STATUS.LIFTED) return 'lifted'
+  return 'expired'
+}
+
+function openBanModal(residentId?: string, residentName?: string) {
+  formError.value = ''
+  banForm.residentId = residentId || ''
+  banForm.expiresAt = ''
+  banForm.reason = ''
+  banTargetName.value = residentId ? residentName || residentId : ''
+  banModalOpen.value = true
+}
+
+function closeBanModal() {
+  banModalOpen.value = false
+  banTargetName.value = ''
+  banForm.residentId = ''
+  banForm.expiresAt = ''
+  banForm.reason = ''
+  formError.value = ''
+}
+
+function onBanResidentSelect(item: ResidentItem) {
+  banTargetName.value = resolveResidentDisplayName(item)
+}
+
+async function submitBan() {
+  const residentId = banForm.residentId.trim()
+  if (!residentId) {
+    formError.value = '请选择要禁言的住户'
+    return
+  }
+  banning.value = true
+  formError.value = ''
+  try {
+    await communityForumAdminApi.forumBan(residentId, {
+      // 留空 = 永久禁言
+      expiresAt: banForm.expiresAt ? new Date(banForm.expiresAt).toISOString() : undefined,
+      reason: banForm.reason.trim() || undefined
+    })
+    closeBanModal()
+    await loadBans(1)
+    await loadPosts(postPage.value)
+  } catch (e) {
+    // 97050 重复禁言 / 97051 无生效记录，需友好提示
+    formError.value = e instanceof ApiError ? e.message : '禁言下发失败'
+  } finally {
+    banning.value = false
+  }
+}
+
+/**
+ * v8.14 §C.16 解除禁言。
+ * 后端 2026-10-27 建议直接调用，不必先判断名单状态；无生效记录返回 97051，
+ * 直接展示后端 message 即可（错误码表已补该映射兜底）。
+ */
+async function liftBan(residentId: string, residentName?: string) {
+  if (!residentId || liftingId.value) return
+  const label = residentName || residentId
+  if (!confirm(`确认解除「${label}」的禁言？解除后其历史被禁内容将恢复对外可见，评论计数同步回补。`)) return
+  liftingId.value = residentId
+  banSuccess.value = ''
+  error.value = ''
+  try {
+    await communityForumAdminApi.liftForumBan(residentId)
+    banSuccess.value = `已解除「${label}」的禁言，历史被禁内容已恢复对外可见。`
+    await loadBans(banPage.value)
+    await loadPosts(postPage.value)
+  } catch (e) {
+    error.value = e instanceof ApiError ? e.message : '解除禁言失败'
+  } finally {
+    liftingId.value = ''
+  }
+}
+
+function switchTab(next: 'posts' | 'reports' | 'bans') {
   tab.value = next
   error.value = ''
+  banSuccess.value = ''
   if (next === 'posts') void loadPosts(1)
-  else void loadReports(1)
+  else if (next === 'reports') void loadReports(1)
+  else void loadBans(1)
 }
 
 async function deletePost(item: CommunityPostItem) {
@@ -490,11 +739,35 @@ onMounted(() => {
 .contentCell { max-width: 280px; word-break: break-word; }
 .linkBtn { border: none; background: none; color: #5c5c9e; cursor: pointer; margin-right: 8px; padding: 0; }
 .linkBtn.danger { color: #e05c5c; }
+.linkBtn.warn { color: #f5a623; }
 .linkBtn:disabled { color: #c8c8d0; cursor: not-allowed; }
+.bannerSuccess {
+  background: #f0faf5;
+  border: 1px solid #b7e3cc;
+  color: #389e6d;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+.mutedCell { color: #c8c8d0; }
 .hint, .error { font-size: 14px; color: #8c8c9a; text-align: center; padding: 24px 0; }
 .error { color: #e05c5c; }
 .modalBody .error { text-align: left; padding: 0 0 8px; }
 .muted { color: #8c8c9a; font-size: 12px; margin-left: 4px; }
+/* v8.14 影子封禁标记：仅管理员视图可见 */
+.shadowTag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #fff1e6;
+  color: #d46b08;
+  font-size: 12px;
+}
+.statusDot.active { color: #e05c5c; }
+.statusDot.lifted { color: #8c8c9a; }
+.statusDot.expired { color: #8c8c9a; }
 .hintInline { margin: 0 0 12px; font-size: 13px; color: #5c5c66; }
 .pagination { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .pageInfo { font-size: 13px; color: #8c8c9a; }

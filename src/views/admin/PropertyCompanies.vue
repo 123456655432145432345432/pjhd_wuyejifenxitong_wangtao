@@ -4,8 +4,9 @@
       <div>
         <h1 class="title">物业公司</h1>
         <p class="desc">
-          创建须提供联系电话、至少一个小区、初始管理员（姓名+手机号）。成功后初始密码为
-          <code>admin123456</code>（仅创建响应返回一次）。日常请用「停用」；硬删除仅适用于无小区/住户/商家等关联的空壳公司。
+          创建须提供联系电话、至少一个小区、初始管理员（姓名+手机号）。成功后由后端随机生成 14 位初始密码，
+          <strong>仅在创建结果中展示一次</strong>；密码丢失时由平台管理员在下方「管理员」中重置（重置后旧密码立即失效，该账号所有登录态失效，需重新登录）。
+          日常请用「停用」；硬删除仅适用于无小区/住户/商家等关联的空壳公司。
         </p>
       </div>
       <button class="btnPrimary" @click="openCreate">新增物业公司</button>
@@ -52,6 +53,13 @@
             </td>
             <td>{{ item.createdAt || '—' }}</td>
             <td class="actions">
+              <button
+                v-if="isPlatformAdmin"
+                class="btnGhostSm"
+                @click="openAdmins(item)"
+              >
+                管理员
+              </button>
               <button
                 class="btnGhostSm"
                 :disabled="statusId === item.id"
@@ -137,15 +145,83 @@
         </div>
       </div>
     </Teleport>
+
+    <Teleport to="body">
+      <div v-if="adminsOpen" class="modalOverlay" @click.self="closeAdmins">
+        <div class="modal">
+          <div class="modalHeader">
+            <h3 class="modalTitle">管理员 · {{ adminsTarget?.name || adminsTarget?.id }}</h3>
+            <button class="modalClose" @click="closeAdmins">&times;</button>
+          </div>
+          <div class="modalBody">
+            <p v-if="resetTip" class="successBanner">
+              {{ resetTip }}
+              <button class="btnGhostSm" type="button" @click="resetTip = ''">关闭</button>
+            </p>
+            <p v-if="adminsError" class="formErrorBox">{{ adminsError }}</p>
+            <div v-if="adminsLoading" class="loading">加载中...</div>
+            <table v-else-if="adminAccounts.length" class="table">
+              <thead>
+                <tr>
+                  <th>姓名</th>
+                  <th>手机号</th>
+                  <th>角色</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="acc in adminAccounts" :key="acc.id">
+                  <td>{{ acc.name || acc.id }}</td>
+                  <td>{{ acc.phone || '—' }}</td>
+                  <td>{{ acc.role || '—' }}</td>
+                  <td class="actions">
+                    <button
+                      class="btnGhostSm"
+                      :disabled="resettingAccountId === acc.id"
+                      @click="resetAdminPassword(acc)"
+                    >
+                      {{ resettingAccountId === acc.id ? '重置中...' : '重置密码' }}
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <p v-else class="empty">该公司暂无管理员账号</p>
+            <p class="adminHint">
+              重置后旧密码立即失效，且该管理员的登录态（含刷新令牌）全部失效，需用新密码重新登录。
+              新密码仅在本弹窗展示一次，请立即转告对方。
+            </p>
+          </div>
+          <div class="modalFooter">
+            <button class="btnGhost" @click="closeAdmins">关闭</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { propertyCompanyApi } from '../../api/services'
-import type { PropertyCompanyCreatePayload, PropertyCompanyItem } from '../../api/types'
+import type {
+  PropertyCompanyAdmin,
+  PropertyCompanyCreatePayload,
+  PropertyCompanyItem
+} from '../../api/types'
 import { ApiError, formatApiError } from '../../api/request'
-import { ENTITY_STATUS, ENTITY_STATUS_LABEL, ENTITY_STATUS_OPTIONS, getEnumLabel } from '../../constants/enums'
+import {
+  ENTITY_STATUS,
+  ENTITY_STATUS_LABEL,
+  ENTITY_STATUS_OPTIONS,
+  USER_ROLE,
+  getEnumLabel
+} from '../../constants/enums'
+import { useAuthStore } from '../../stores/auth'
+
+const auth = useAuthStore()
+/** 重置管理员密码接口仅 platform_admin 可用（v8.28） */
+const isPlatformAdmin = computed(() => auth.profile?.role === USER_ROLE.PLATFORM_ADMIN)
 
 const loading = ref(false)
 const error = ref('')
@@ -163,6 +239,16 @@ const formError = ref('')
 const createSuccessTip = ref('')
 const removingId = ref('')
 const statusId = ref('')
+
+// v8.28 管理员列表 / 重置初始密码
+const adminsOpen = ref(false)
+const adminsLoading = ref(false)
+const adminsError = ref('')
+const adminsTarget = ref<PropertyCompanyItem | null>(null)
+const adminAccounts = ref<PropertyCompanyAdmin[]>([])
+const resettingAccountId = ref('')
+/** 新密码只在弹窗内展示一次，不落 localStorage */
+const resetTip = ref('')
 const form = reactive({
   name: '',
   contactPhone: '',
@@ -173,6 +259,63 @@ const form = reactive({
   adminName: '',
   adminPhone: ''
 })
+
+async function openAdmins(item: PropertyCompanyItem) {
+  adminsTarget.value = item
+  adminsOpen.value = true
+  adminsError.value = ''
+  resetTip.value = ''
+  adminAccounts.value = []
+  adminsLoading.value = true
+  try {
+    const detail = await propertyCompanyApi.detail(item.id)
+    // 文档口径 adminAccounts，历史实现 admins，两者兼容
+    adminAccounts.value = detail.adminAccounts || detail.admins || []
+  } catch (e) {
+    adminsError.value = formatApiError(e, '管理员列表加载失败')
+  } finally {
+    adminsLoading.value = false
+  }
+}
+
+function closeAdmins() {
+  adminsOpen.value = false
+  resetTip.value = ''
+  adminsError.value = ''
+  adminAccounts.value = []
+  adminsTarget.value = null
+}
+
+async function resetAdminPassword(acc: PropertyCompanyAdmin) {
+  const company = adminsTarget.value
+  if (!company) return
+  const who = `${acc.name || acc.id}${acc.phone ? `（${acc.phone}）` : ''}`
+  if (
+    !confirm(
+      `确认重置管理员「${who}」的密码？\n` +
+        '重置后旧密码立即失效，该管理员的已登录会话全部失效，需要用新密码重新登录。'
+    )
+  ) {
+    return
+  }
+  resettingAccountId.value = acc.id
+  adminsError.value = ''
+  resetTip.value = ''
+  try {
+    const result = await propertyCompanyApi.resetAdminPassword(company.id, acc.id)
+    const pwd = result.initialPassword
+    resetTip.value = pwd
+      ? `已重置「${result.name || who}」的密码：${pwd}（仅此处展示一次，请立即告知对方并让其修改）。`
+      : `已重置「${result.name || who}」的密码，但响应未返回新密码。请勿猜测，联系后端排查。`
+  } catch (e) {
+    adminsError.value = formatApiError(
+      e,
+      '重置失败：请确认当前账号为平台管理员，且该账号属于此物业公司'
+    )
+  } finally {
+    resettingAccountId.value = ''
+  }
+}
 
 function statusLabel(status?: string) {
   return getEnumLabel(ENTITY_STATUS_LABEL, status, '—')
@@ -269,10 +412,19 @@ async function submit() {
   createSuccessTip.value = ''
   try {
     const created = await propertyCompanyApi.create(payload)
-    const pwd = created.adminAccount?.initialPassword || 'admin123456'
+    /**
+     * v8.17 §103.3：后端随机生成 14 位初始密码，仅创建响应返回一次，且**没有重置接口**
+     * （后端 2026-10-27 回复：本轮才补重置接口）。
+     * 绝不能兜底任何固定密码 —— 新账号存的是随机密码哈希，兜底值连密码比对都过不去，
+     * 展示出去等于给客户一个必然登录失败的密码。
+     */
+    const pwd = created.adminAccount?.initialPassword
     const phone = created.adminAccount?.phone || adminPhone
     formOpen.value = false
-    createSuccessTip.value = `已创建「${created.name || name}」。管理员手机号 ${phone}，初始密码 ${pwd}（请妥善告知对方，此密码仅此处展示一次）。`
+    createSuccessTip.value = pwd
+      ? `已创建「${created.name || name}」。管理员手机号 ${phone}，初始密码 ${pwd}（请妥善告知对方，此密码仅此处展示一次）。`
+      : `已创建「${created.name || name}」。管理员手机号 ${phone}，但响应未返回初始密码。`
+        + '后台已生成随机密码且无法再次读取，请勿猜测或使用旧密码，联系后端重置后再告知对方。'
     await load(1)
   } catch (e) {
     // v8.1：业务冲突为 HTTP 400 + message；兜底「违反唯一性约束」未必是公司名/手机号
@@ -379,4 +531,5 @@ onMounted(() => load(1))
 .field.row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .label { display: block; font-size: 13px; color: #8c8c9a; margin-bottom: 6px; }
 .label em { color: #e05c5c; font-style: normal; }
+.adminHint { font-size: 12px; color: #8c8c9a; line-height: 1.6; margin: 8px 0 0; }
 </style>

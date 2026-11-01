@@ -50,7 +50,7 @@ import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { courierPortalApi } from '../../api/services'
 import type { CourierDeliveryItem } from '../../api/types'
-import { formatApiError } from '../../api/request'
+import { ApiError, formatApiError } from '../../api/request'
 import { CARRIER_TYPE, DELIVERY_STATUS } from '../../constants/enums'
 import { useIsMobile } from '../../composables/useIsMobile'
 

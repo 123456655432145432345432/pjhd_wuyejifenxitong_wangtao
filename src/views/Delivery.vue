@@ -193,7 +193,7 @@
                 <em v-if="isChoiceOverdue(item)" class="overdue">超时未选</em>
               </td>
               <td>{{ carrierTypeLabelOf(item) }}</td>
-              <td>{{ item.deliveryStatusLabel || deliveryStatusText(item.deliveryStatus) }}</td>
+              <td>{{ item.deliveryStatusLabel || deliveryStatusText(item.deliveryStatusCode || item.deliveryStatus) }}</td>
               <td>
                 <button class="linkBtn" @click="openOrderDetail(item.id)">详情</button>
               </td>

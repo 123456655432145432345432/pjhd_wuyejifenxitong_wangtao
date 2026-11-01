@@ -589,6 +589,7 @@ import {
   ROLE_LABEL,
   getEnumLabel
 } from '../constants/enums'
+import { getEffectiveRoles } from '../constants/roles'
 import { useAuthStore } from '../stores/auth'
 import { isSameHousing } from '../utils/housing'
 
@@ -701,11 +702,47 @@ const pageEnd = computed(() => {
   return Math.min(currentPage.value * PAGE_SIZE, residentTotal.value)
 })
 
-/** API 2.8：仅 property_admin 可编辑他人信息，platform_admin 无此权限 */
-const canEditResident = computed(() => authStore.profile?.role === USER_ROLE.PROPERTY_ADMIN)
-/** 统筹对住户只读：隐藏新建/冻/删等写入口 */
-const isCoordinatorReadonly = computed(() => authStore.profile?.role === USER_ROLE.COORDINATOR)
+/**
+ * v8.16 §102.4 + 后端 2026-10-27 回复：
+ * `PUT /residents/{id}` 允许 property_admin 与 platform_admin 提交；
+ * `role` 字段只有 platform_admin 能改（property_admin 传 role 返回 20004）。
+ * 旧注释「platform_admin 无此权限」已过期，platform_admin 已放行。
+ * 注：本页编辑弹窗不含 role 表单字段（新增时固定 role='resident'），
+ * 因此不存在 role 被物业管理员篡改的入口；若后续加 role 下拉，必须仅对 platform_admin 开放。
+ */
+const canEditResident = computed(() => {
+  const role = authStore.profile?.role
+  return role === USER_ROLE.PROPERTY_ADMIN || role === USER_ROLE.PLATFORM_ADMIN
+})
+/**
+ * v8.13+：统筹对住户只读。负责人 role 已归一为 resident，
+ * 必须改用「标签派生的有效角色」判断，否则条件恒为 false 会放大为可编辑权限。
+ */
+const isCoordinatorReadonly = computed(() =>
+  getEffectiveRoles(authStore.profile).includes(USER_ROLE.COORDINATOR)
+)
 const canMutateResident = computed(() => !isCoordinatorReadonly.value)
+
+/**
+ * v8.13+：负责人 / 组长不再是 role，改为业务表派生的布尔标签。
+ * 标签为 true 仅代表「有身份」，实际是否可用还取决于业务表 status 是否为 active。
+ */
+const RESIDENT_LEADER_TAGS: { key: keyof ResidentItem; label: string }[] = [
+  { key: 'isCoordinator', label: '统筹负责人' },
+  { key: 'isSectorLeader', label: '板块负责人' },
+  { key: 'isIndividualLeader', label: '个体负责人' },
+  { key: 'isActivityLeader', label: '活动组组长' },
+  { key: 'isBuildingLeader', label: '单元楼长' },
+  { key: 'isResidentMerchant', label: '业主小店店主' },
+  { key: 'isDistributor', label: '一级代理商' }
+]
+
+function leaderTagText(d?: ResidentItem | null): string {
+  if (!d) return '—'
+  const obj = d as unknown as Record<string, unknown>
+  const labels = RESIDENT_LEADER_TAGS.filter((t) => obj[t.key] === true).map((t) => t.label)
+  return labels.length ? labels.join('、') : '—'
+}
 
 const detailRows = computed(() => {
   const d = detailData.value
@@ -716,6 +753,7 @@ const detailRows = computed(() => {
     { label: '手机号', value: d.phone || '—' },
     { label: '身份', value: getEnumLabel(RESIDENT_USER_TYPE_LABEL, d.userType, '—') },
     { label: '角色', value: getEnumLabel(ROLE_LABEL, d.role, '—') },
+    { label: '负责人身份', value: leaderTagText(d) },
     { label: '状态', value: getEnumLabel(RESIDENT_STATUS_LABEL, d.status) },
     { label: '物业公司', value: d.propertyName || d.propertyCompanyId || '—' },
     { label: '小区', value: d.communityName || d.communityId || '—' },
@@ -1183,7 +1221,7 @@ function buildUpdatePayload(): ResidentUpdatePayload {
 async function submitEdit() {
   if (!editingId.value) return
   if (!canEditResident.value) {
-    formError.value = '当前账号无编辑住户权限，请使用物业管理员账号登录'
+    formError.value = '当前账号无编辑住户权限，请使用物业管理员或平台管理员账号登录'
     return
   }
   resetFormError()

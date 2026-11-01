@@ -23,7 +23,7 @@
       </div>
 
       <div v-if="!mobile" class="appHeaderSeparator" />
-      <span v-if="roleLabel" class="appHeaderRole">{{ roleLabel }}</span>
+      <span v-if="roleLabel" class="appHeaderRole" :title="roleLabel">{{ roleLabel }}</span>
       <div v-if="!mobile" class="appHeaderSeparator" />
       <button class="appHeaderLogout" :class="{ appHeaderLogoutMobile: mobile }" @click="handleLogout">
         <span v-if="!mobile">退出</span>
@@ -42,8 +42,8 @@ import { useRoute, useRouter } from 'vue-router'
 import IconSvg from './IconSvg.vue'
 import { propertyCompanyApi } from '../api/services'
 import type { PropertyCompanyItem } from '../api/types'
-import { ENTITY_STATUS, getUserRoleDisplayLabel, USER_ROLE } from '../constants/enums'
-import { isAdminRole } from '../constants/roles'
+import { ENTITY_STATUS, USER_ROLE } from '../constants/enums'
+import { getIdentityDisplayLabel, isAdminRole } from '../constants/roles'
 import { useAuthStore } from '../stores/auth'
 
 withDefaults(
@@ -65,9 +65,8 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const pageTitle = computed(() => (route.meta.title as string) || '')
-const roleLabel = computed(() =>
-  getUserRoleDisplayLabel(auth.profile?.role, auth.profile?.propertySubRole)
-)
+/** v8.13+：复合身份展示（住户 · 楼长 · 统筹负责人），不再只显示 role 字段 */
+const roleLabel = computed(() => getIdentityDisplayLabel(auth.profile))
 
 const companies = ref<PropertyCompanyItem[]>([])
 const canSwitchCompany = computed(() => auth.profile?.role === USER_ROLE.PLATFORM_ADMIN)
@@ -168,6 +167,11 @@ onMounted(loadCompanies)
 .appHeaderRole {
   font-size: 13px;
   color: #8c8c9a;
+  /* 复合身份可能较长（住户 · 统筹负责人 · 板块负责人），超长省略避免挤压左侧标题 */
+  max-width: 260px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .appHeaderRight {
@@ -268,6 +272,10 @@ onMounted(loadCompanies)
 @media (max-width: 768px) {
   .appHeaderBrand {
     display: none;
+  }
+
+  .appHeaderRole {
+    max-width: 140px;
   }
 
   .appHeaderRight {

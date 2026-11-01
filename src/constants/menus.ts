@@ -29,7 +29,10 @@ export const adminMenus: Menu[] = [
   { name: '统筹人员', icon: 'people', route: 'coordinators' },
   { name: '板块负责人', icon: 'people', route: 'sector-leaders' },
   { name: '单元楼长', icon: 'people', route: 'building-leaders' },
-  { name: '一级代理', icon: 'people', route: 'individual-leaders' },
+  { name: '物业经理', icon: 'people', route: 'property-managers' },
+  // v8.12.1 R4 消歧：本页是板块体系的「个体负责人」，非 §60.16 货源「一级代理申请」
+  { name: '个体负责人', icon: 'people', route: 'individual-leaders' },
+  { name: '一级代理申请', icon: 'people', route: 'distributor-applications' },
   { name: '社区绑定', icon: 'home', route: 'community-entity' },
   { name: '物业操作员', icon: 'people', route: 'property-operators' },
   { name: '参数配置', icon: 'param', route: 'param' },
@@ -40,6 +43,7 @@ export const adminMenus: Menu[] = [
   { name: '区域配额', icon: 'chart', route: 'region-quotas' },
   { name: '导航配置', icon: 'param', route: 'navigation-items' },
   { name: '活动组审核', icon: 'people', route: 'activity-group-reviews' },
+  { name: '组长申请审核', icon: 'people', route: 'activity-leader-applications' },
   { name: '通告发布', icon: 'notice', route: 'notice' },
   { name: '定向推送', icon: 'target', route: 'directed-message' },
   { name: '住户消息', icon: 'notice', route: 'property-chat' },
@@ -73,7 +77,8 @@ export const adminMenus: Menu[] = [
   { name: '平台分成配置', icon: 'money', route: 'platform-share-config' },
   { name: '平台配置', icon: 'param', route: 'platform-config' },
   { name: '住户注销终审', icon: 'resident', route: 'resident-deletion-reviews' },
-  { name: '平台收益', icon: 'chart', route: 'platform-earnings' }
+  { name: '平台收益', icon: 'chart', route: 'platform-earnings' },
+  { name: '平台交易明细', icon: 'money', route: 'platform-transactions' }
 ]
 
 /** 领导专属菜单（操作员侧栏不展示；价格审批对平台管理员+领导开放，守卫见 canAccessLeaderOnlyRoute） */
@@ -99,6 +104,7 @@ export const PLATFORM_ADMIN_ONLY_ROUTES = [
   'platform-share-config',
   'platform-config',
   'platform-earnings',
+  'platform-transactions',
   'property-companies',
   'resident-deletion-reviews'
 ] as const
@@ -198,6 +204,28 @@ export const buildingLeaderMenus: Menu[] = [
   { name: '楼长概览', icon: 'people', route: 'building-leader-overview' },
   { name: '楼长分成明细', icon: 'chart', route: 'building-leader-records' },
   { name: '楼长提现', icon: 'wallet', route: 'building-leader-withdrawals' }
+]
+
+/**
+ * v8.11 物业公司经理工作台菜单（「住户 + 经理」复合身份）
+ * 经理登录 role=resident，凭 GET /property-managers/my 探测结果动态插入住户菜单前
+ */
+export const propertyManagerMenus: Menu[] = [
+  { name: '经理概览', icon: 'people', route: 'property-manager-overview' },
+  { name: '名下楼长', icon: 'people', route: 'property-manager-leaders' },
+  { name: '抽成收益', icon: 'chart', route: 'property-manager-earnings' },
+  { name: '钱包提现', icon: 'wallet', route: 'property-manager-wallet' }
+]
+
+/**
+ * v2（2026-10-30）社区管理员工作台菜单。
+ *
+ * `community_admin` 默认只持有 community:read / community:manage（文档 §4），
+ * 因此基础菜单只给「社区论坛」这一项；其余管理端入口全部由
+ * appendMenusByPermission() 按已授予的权限码追加，不在角色菜单里写死。
+ */
+export const communityAdminMenus: Menu[] = [
+  { name: '社区论坛', icon: 'notice', route: 'community-forum' }
 ]
 
 /** @deprecated 请使用 getMenusForRole */

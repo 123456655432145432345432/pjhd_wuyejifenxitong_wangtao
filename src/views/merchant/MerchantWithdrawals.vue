@@ -116,6 +116,7 @@ import type { MerchantWithdrawalItem, MyMerchantDetail, PropertyCompanyDetail } 
 import { formatApiError } from '../../api/request'
 import { getEnumLabel, WITHDRAWAL_AUDIT_STATUS, WITHDRAWAL_AUDIT_STATUS_LABEL } from '../../constants/enums'
 import { useIsMobile } from '../../composables/useIsMobile'
+import { newRequestId } from '../../utils/idempotency'
 
 const route = useRoute()
 const { isMobile } = useIsMobile()
@@ -149,6 +150,8 @@ const modalOpen = ref(false)
 const amount = ref<number | ''>('')
 const submitting = ref(false)
 const formError = ref('')
+/** C1 幂等 ID：一次提现操作一个，重试复用，成功后清空（API v8.19 §105.1） */
+const requestId = ref('')
 
 const pendingAmount = computed(() => {
   if (wallet.value?.pendingWithdrawalAmount != null) {
@@ -215,11 +218,14 @@ function openModal() {
   }
   formError.value = ''
   amount.value = ''
+  // 一次新操作 = 一个新幂等 ID（API v8.19 §105.1），关窗/成功后作废
+  requestId.value = newRequestId()
   modalOpen.value = true
 }
 
 function closeModal() {
   modalOpen.value = false
+  requestId.value = ''
 }
 
 async function submit() {
@@ -240,7 +246,8 @@ async function submit() {
   submitting.value = true
   formError.value = ''
   try {
-    await merchantPortalApi.createWithdrawal({ amount: value })
+    // 复用本次操作已生成的 ID：弱网重发/失败重试不会重复提现
+    await merchantPortalApi.createWithdrawal({ amount: value }, requestId.value || undefined)
     closeModal()
     await Promise.all([loadWallet(), load(1)])
   } catch (e) {

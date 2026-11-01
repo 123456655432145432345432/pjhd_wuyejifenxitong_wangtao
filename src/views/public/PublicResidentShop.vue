@@ -77,6 +77,8 @@ async function load() {
   } catch (e) {
     if (e instanceof ApiError && e.code === 90111) {
       notPublic.value = true
+    } else if (e instanceof ApiError && e.code === 20001) {
+      error.value = '橱窗接口当前要求登录（缺少 Token），请重新登录后再打开'
     } else {
       error.value = e instanceof ApiError ? getPhase2ErrorMessage(e.code, e.message) : '加载失败'
     }

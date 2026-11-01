@@ -2,10 +2,12 @@
   <div class="page">
     <div class="header">
       <div>
-        <h1 class="title">一级代理</h1>
+        <h1 class="title">个体负责人</h1>
           <p class="desc">
             「已任命」可直接任命/撤销。「申请审核」走
             <code>GET /admin/individual-leaders/applications</code>（v8.2 已实现字面量路由）。
+            注意：本页是<b>板块体系下的个体负责人</b>，与菜单「一级代理申请」（货源带货，
+            <code>/admin/distributor-applications</code>）不是一个东西。
           </p>
       </div>
       <button class="btnPrimary" @click="openCreate">直接任命</button>
@@ -149,7 +151,7 @@
       <div v-if="formOpen" class="modalOverlay" @click.self="closeForm">
         <div class="modal">
           <div class="modalHeader">
-            <h3 class="modalTitle">任命一级代理</h3>
+            <h3 class="modalTitle">任命个体负责人</h3>
             <button class="modalClose" @click="closeForm">&times;</button>
           </div>
           <div class="modalBody">
@@ -202,7 +204,7 @@
       <div v-if="auditOpen" class="modalOverlay" @click.self="closeAudit">
         <div class="modal">
           <div class="modalHeader">
-            <h3 class="modalTitle">审核一级代理申请</h3>
+            <h3 class="modalTitle">审核个体负责人申请</h3>
             <button class="modalClose" @click="closeAudit">&times;</button>
           </div>
           <div class="modalBody">
@@ -331,8 +333,8 @@ const auditForm = reactive({
 })
 
 const emptyText = computed(() => {
-  if (tab.value === 'applications') return '暂无一级代理申请'
-  return '暂无一级代理'
+  if (tab.value === 'applications') return '暂无个体负责人申请'
+  return '暂无个体负责人'
 })
 
 const auditSectorLeaders = computed(() => {
@@ -500,7 +502,7 @@ async function submit() {
 }
 
 async function removeLeader(item: IndividualLeaderItem) {
-  if (!confirm(`确认撤销一级代理「${item.residentName || item.name || item.id}」？`)) return
+  if (!confirm(`确认撤销个体负责人「${item.residentName || item.name || item.id}」？`)) return
   removingId.value = item.id
   error.value = ''
   try {

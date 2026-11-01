@@ -120,7 +120,8 @@ async function loadStats() {
       courierPortalApi.my({
         page: 1,
         pageSize: 100,
-        status: DELIVERY_STATUS.DELIVERED,
+        // 现行完成态是 completed；后端对历史 delivered 入参会自动归一，这里直接用现行值
+        status: DELIVERY_STATUS.COMPLETED,
         sort: '-createdAt'
       }),
       courierPortalApi.my({ page: 1, pageSize: 5, sort: '-createdAt' }),

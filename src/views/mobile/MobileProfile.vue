@@ -36,7 +36,7 @@ import { useRouter } from 'vue-router'
 import IconSvg from '../../components/IconSvg.vue'
 import { ENTITY_STATUS, getUserRoleDisplayLabel, USER_ROLE } from '../../constants/enums'
 import { useAuthStore } from '../../stores/auth'
-import { getRoleHomeRoute, isAdminRole } from '../../constants/roles'
+import { getHomeRouteForProfile, isAdminRole } from '../../constants/roles'
 import { propertyCompanyApi } from '../../api/services'
 import type { PropertyCompanyItem } from '../../api/types'
 
@@ -83,7 +83,7 @@ async function loadCompanies() {
 }
 
 function goRoleHome() {
-  void router.push({ name: getRoleHomeRoute(auth.profile?.role) })
+  void router.push({ name: getHomeRouteForProfile(auth.profile) })
 }
 
 function goTransferAccounts() {

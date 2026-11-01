@@ -27,13 +27,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import AppSidebar from '../components/AppSidebar.vue'
 import AppHeader from '../components/AppHeader.vue'
 import { useIsMobile } from '../composables/useIsMobile'
 import MobileShellLayout from './MobileShellLayout.vue'
 import { usesMobileShell } from '../constants/mobilePortal'
+import { USER_ROLE } from '../constants/enums'
 import { useAuthStore } from '../stores/auth'
 
 const route = useRoute()
@@ -56,6 +57,15 @@ watch(
     closeMobileMenu()
   }
 )
+
+// v8.11：住户端复合身份探测——/auth/profile 不含 isPropertyManager，进入布局时按需探测一次
+function maybeProbePropertyManager() {
+  if (auth.profile?.role === USER_ROLE.RESIDENT) {
+    void auth.probePropertyManager()
+  }
+}
+onMounted(maybeProbePropertyManager)
+watch(() => auth.profile?.role, maybeProbePropertyManager)
 </script>
 
 <style scoped>
